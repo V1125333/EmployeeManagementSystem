@@ -85,8 +85,7 @@ export function Drawer({
 
         {/* Footer */}
         {footer && (
-          <div className="px-7 py-4 border-t border-[#E5E7EB] shrink-0 bg-warm-card">
-            {footer}
+<div className="px-7 py-3 border-t border-[#E5E7EB] shrink-0 bg-warm-card">            {footer}
           </div>
         )}
       </div>

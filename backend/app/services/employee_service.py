@@ -5,17 +5,10 @@ Employee Service — handles employee creation with DB persistence.
 import logging
 from sqlalchemy.orm import Session
 from app.models.employee import Employee
-from app.schemas.employee import AddEmployeeRequest, AddEmployeeResponse, OnboardingTask
+from app.schemas.employee import AddEmployeeRequest, AddEmployeeResponse
 from app.services.auth_service import generate_setup_code
 
 logger = logging.getLogger(__name__)
-
-ONBOARDING_TASKS = [
-    "Complete profile",
-    "Accept company policies",
-    "Assign reporting manager",
-    "Assign work location",
-]
 
 
 def create_employee(db: Session, data: AddEmployeeRequest) -> AddEmployeeResponse:
@@ -50,7 +43,7 @@ def create_employee(db: Session, data: AddEmployeeRequest) -> AddEmployeeRespons
         reporting_manager=data.reporting_manager,
         joining_date=data.joining_date,
         work_location=data.work_location,
-        onboarding_type=data.onboarding_type or "Standard Employee",
+        employment_status="active",
         setup_code=setup_code,
         is_first_login=True,
         is_active=True,
@@ -62,22 +55,9 @@ def create_employee(db: Session, data: AddEmployeeRequest) -> AddEmployeeRespons
 
     logger.info(f"Employee created: {employee.id} | Setup code: {setup_code}")
 
-    # Create onboarding checklist
-    onboarding_tasks: list[OnboardingTask] = []
-    checklist_created = False
-
-    if data.create_checklist:
-        onboarding_tasks = [
-            OnboardingTask(title=task, status="pending")
-            for task in ONBOARDING_TASKS
-        ]
-        checklist_created = True
-
     return AddEmployeeResponse(
         success=True,
         message=f"Employee {full_name} added successfully",
         employee_id=employee.id,
         setup_code=setup_code,
-        checklist_created=checklist_created,
-        onboarding_tasks=onboarding_tasks,
     )

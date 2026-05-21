@@ -8,8 +8,7 @@ export function TopNav() {
   const { user, logout } = useAuth();
 
   const handleViewProfile = () => {
-    // TODO: navigate to profile page
-    console.log('Navigate to profile');
+    navigate('/profile');
   };
 
   const handleAccountSettings = () => {

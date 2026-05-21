@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AlertCircle, ChevronDown, Search } from 'lucide-react';
+import { AlertCircle, CalendarDays, ChevronDown, Search } from 'lucide-react';
 import { Drawer } from '@/components/ui/Drawer';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/utils/cn';
@@ -14,7 +14,6 @@ const WORKFORCE_TYPES = ['Full-Time Employee', 'Paid Intern', 'Unpaid Intern', '
 const ROLES = ['HR', 'Admin', 'Manager', 'Employee', 'Intern', 'Trainee', 'Guest'];
 const DEPARTMENTS = ['Engineering', 'Product', 'Design', 'Marketing', 'Sales', 'Operations', 'People', 'Finance'];
 const LOCATIONS = ['Onshore', 'Offshore', 'Remote', 'Hybrid'];
-const ONBOARDING_TYPES = ['Standard Employee', 'Intern / Trainee', 'Guest / Contractor'];
 const MANAGERS = ['David Park', 'Sarah Chen', 'James Rivera', 'Priya Sharma', 'Marcus Chen'];
 const COUNTRY_CODES = [
   { code: '+1', flag: '🇺🇸', label: 'US' },
@@ -227,27 +226,6 @@ function PhoneInput({
   );
 }
 
-function Checkbox({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
-  return (
-    <label className="flex items-center gap-2.5 cursor-pointer group">
-      <div
-        onClick={() => onChange(!checked)}
-        className={cn(
-          'w-[18px] h-[18px] rounded-md border flex items-center justify-center transition-all duration-150 cursor-pointer shrink-0',
-          checked ? 'bg-olive border-olive' : 'bg-warm-bg border-[#E5E7EB] group-hover:border-olive/40'
-        )}
-      >
-        {checked && (
-          <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-            <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        )}
-      </div>
-      <span className="text-[13px] text-[#2F3437] font-medium">{label}</span>
-    </label>
-  );
-}
-
 function SectionTitle({ children }: { children: string }) {
   return (
     <div className="text-[11px] font-bold text-gray-400 tracking-widest uppercase mb-4 mt-2">
@@ -272,9 +250,6 @@ interface FormState {
   joiningDate: string;
   workLocation: string;
   dateOfBirth: string;
-  createAccount: boolean;
-  createChecklist: boolean;
-  onboardingType: string;
 }
 
 const INITIAL_FORM: FormState = {
@@ -291,19 +266,16 @@ const INITIAL_FORM: FormState = {
   joiningDate: '',
   workLocation: '',
   dateOfBirth: '',
-  createAccount: true,
-  createChecklist: true,
-  onboardingType: '',
 };
 
 export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
   const { showToast } = useToast();
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
-  const [submitting, setSubmitting] = useState(false);
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+    // Clear error on change
     if (errors[key]) {
       setErrors((prev) => ({ ...prev, [key]: undefined }));
     }
@@ -332,10 +304,13 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
     return Object.keys(newErrors).length === 0;
   };
 
+  const [submitting, setSubmitting] = useState(false);
+
   const handleSubmit = async () => {
     if (!validate()) return;
     setSubmitting(true);
 
+    // Build API payload
     const payload = {
       first_name: form.firstName,
       last_name: form.lastName,
@@ -350,12 +325,10 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
       reporting_manager: form.reportingManager,
       joining_date: form.joiningDate,
       work_location: form.workLocation,
-      create_account: form.createAccount,
-      create_checklist: form.createChecklist,
-      onboarding_type: form.onboardingType || 'Standard Employee',
     };
 
     try {
+      // Try real API first
       const response = await fetch('http://localhost:8000/api/v1/employees/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -372,6 +345,7 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
       setErrors({});
       onClose();
 
+      // Show success with setup code
       if (result.setup_code) {
         showToast({
           message: `Employee added! Setup code: ${result.setup_code}`,
@@ -389,6 +363,7 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
       }
 
     } catch {
+      // Fallback to mock if backend is not running
       console.log('Backend not available — using mock mode');
       console.log('Payload:', payload);
 
@@ -409,17 +384,6 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
     }
   };
 
-  const handleSaveDraft = () => {
-    setForm(INITIAL_FORM);
-    setErrors({});
-    onClose();
-
-    showToast({
-      message: 'Employee saved as draft',
-      duration: 4000,
-    });
-  };
-
   const handleCancel = () => {
     setForm(INITIAL_FORM);
     setErrors({});
@@ -431,27 +395,21 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
       open={open}
       onClose={handleCancel}
       title="Add Employee"
-      subtitle="Create a new workforce profile and start onboarding."
+      subtitle="Register a new employee in Reknew Orbit."
       width="w-[580px]"
       footer={
-        <div className="flex items-center justify-end gap-2.5">
+        <div className="flex items-center justify-end gap-3">
           <button
             onClick={handleCancel}
-            className="px-5 py-2.5 rounded-xl text-[13px] font-semibold text-gray-500 hover:bg-hover-bg transition-colors"
+            className="px-5 py-2.5 rounded-xl text-[13px] font-semibold text-gray-500 border border-[#E5E7EB] hover:bg-hover-bg transition-colors"
           >
             Cancel
-          </button>
-          <button
-            onClick={handleSaveDraft}
-            className="px-5 py-2.5 rounded-xl text-[13px] font-semibold text-olive border border-[#E5E7EB] hover:bg-hover-bg transition-colors"
-          >
-            Save as Draft
           </button>
           <button
             onClick={handleSubmit}
             disabled={submitting}
             className={cn(
-              'px-5 py-2.5 rounded-xl text-[13px] font-semibold text-white transition-all shadow-sm',
+              'px-6 py-2.5 rounded-xl text-[13px] font-semibold text-white transition-all shadow-sm',
               submitting
                 ? 'bg-olive/60 cursor-not-allowed'
                 : 'bg-olive hover:bg-olive-dark active:scale-[0.98]'
@@ -628,62 +586,6 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
           placeholder="Select work location"
           options={LOCATIONS}
         />
-      </div>
-
-      {/* ─── Section 3: Onboarding Setup ─── */}
-      <div className="h-px bg-[#E5E7EB] my-6" />
-      <SectionTitle>Onboarding Setup</SectionTitle>
-
-      <div className="bg-warm-bg border border-[#E5E7EB] rounded-xl p-5">
-        {/* Checkboxes */}
-        <div className="flex flex-col gap-3 mb-5">
-          <Checkbox
-            checked={form.createAccount}
-            onChange={(v) => update('createAccount', v)}
-            label="Create employee account"
-          />
-          <Checkbox
-            checked={form.createChecklist}
-            onChange={(v) => update('createChecklist', v)}
-            label="Create onboarding checklist"
-          />
-        </div>
-
-        {/* Onboarding Type dropdown */}
-        <div>
-          <FormLabel required>Onboarding Type</FormLabel>
-          <FormSelect
-            value={form.onboardingType}
-            onChange={(v) => update('onboardingType', v)}
-            placeholder="Select onboarding type"
-            options={ONBOARDING_TYPES}
-          />
-        </div>
-
-        {/* Checklist preview — shown when createChecklist is enabled */}
-        {form.createChecklist && (
-          <div className="mt-4 pt-4 border-t border-[#E5E7EB]">
-            <div className="text-[11px] font-bold text-gray-400 tracking-wider uppercase mb-2.5">
-              Checklist tasks to be created
-            </div>
-            <div className="flex flex-col gap-1.5">
-              {[
-                'Complete profile',
-                'Accept company policies',
-                'Assign reporting manager',
-                'Assign work location',
-              ].map((task) => (
-                <div
-                  key={task}
-                  className="flex items-center gap-2.5 py-1.5 text-[13px] text-[#2F3437] font-medium"
-                >
-                  <div className="w-1.5 h-1.5 rounded-full bg-sage shrink-0" />
-                  {task}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </Drawer>
   );

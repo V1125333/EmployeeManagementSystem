@@ -5,8 +5,9 @@ import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
 import { AppLayout } from '@/layouts/AppLayout';
 import { LoginPage } from '@/pages/LoginPage';
 import { DashboardPage } from '@/pages/DashboardPage';
+import { EmployeesPage } from '@/pages/EmployeesPage';
+import { ProfilePage } from '@/pages/ProfilePage';
 import {
-  EmployeesPage,
   OnboardingPage,
   ClientOnboardingPage,
   TimeOffPage,
@@ -31,6 +32,7 @@ export default function App() {
               <Route element={<AppLayout />}>
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/employees" element={<EmployeesPage />} />
+                <Route path="/profile" element={<ProfilePage />} />
                 <Route path="/onboarding" element={<OnboardingPage />} />
                 <Route path="/client-onboarding" element={<ClientOnboardingPage />} />
                 <Route path="/time-off" element={<TimeOffPage />} />

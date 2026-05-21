@@ -17,7 +17,7 @@ class AddEmployeeRequest(BaseModel):
     work_email: EmailStr
     country_code: str = Field(default="+91")
     phone: str = Field(..., min_length=1, max_length=20)
-    date_of_birth: Optional[date] = None
+    date_of_birth: Optional[date] = None  # needed for setup code
 
     workforce_type: str
     role: str
@@ -27,23 +27,40 @@ class AddEmployeeRequest(BaseModel):
     joining_date: date
     work_location: str
 
-    create_account: bool = True
-    create_checklist: bool = True
-    onboarding_type: Optional[str] = "Standard Employee"
-
-
-class OnboardingTask(BaseModel):
-    title: str
-    status: str = "pending"
-
 
 class AddEmployeeResponse(BaseModel):
     success: bool
     message: str
     employee_id: Optional[str] = None
     setup_code: Optional[str] = None
-    checklist_created: bool = False
-    onboarding_tasks: list[OnboardingTask] = []
+
+
+# ═══════════════════════════════════════
+# UPDATE EMPLOYEE
+# ═══════════════════════════════════════
+
+class UpdateEmployeeRequest(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    personal_email: Optional[str] = None
+    phone: Optional[str] = None
+    country_code: Optional[str] = None
+    date_of_birth: Optional[date] = None
+    gender: Optional[str] = None
+    designation: Optional[str] = None
+    workforce_type: Optional[str] = None
+    employment_status: Optional[str] = None
+    work_location: Optional[str] = None
+    location: Optional[str] = None
+    date_of_exit: Optional[date] = None
+    inactive_reason: Optional[str] = None
+    onboarding_type: Optional[str] = None
+    emergency_contact_name: Optional[str] = None
+    emergency_contact_phone: Optional[str] = None
+    emergency_contact_relation: Optional[str] = None
+    current_address: Optional[str] = None
+    permanent_address: Optional[str] = None
+    notes: Optional[str] = None
 
 
 # ═══════════════════════════════════════
@@ -88,7 +105,7 @@ class SetPasswordResponse(BaseModel):
     success: bool
     message: str
     totp_qr_base64: Optional[str] = None
-    totp_secret: Optional[str] = None
+    totp_secret: Optional[str] = None  # manual entry fallback
 
 
 # ═══════════════════════════════════════
