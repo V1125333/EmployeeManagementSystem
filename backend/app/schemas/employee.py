@@ -75,6 +75,8 @@ class CheckEmailResponse(BaseModel):
     exists: bool
     is_first_login: bool = False
     message: str
+    employee_id: str | None = None
+    role: str | None = None
 
 
 # ═══════════════════════════════════════

@@ -1,33 +1,54 @@
-import { Settings2 } from 'lucide-react';
-import { Card, CardHeader, Badge, Button, StatusDot } from '@/components/ui';
-import { pendingTasks } from '@/data/mockData';
+import { useState, useEffect } from 'react';
+import { Card, CardHeader } from '@/components/ui';
+
+const API_BASE = 'http://localhost:8000/api/v1';
+
+interface Task {
+  label: string;
+  count: number;
+  urgent: number;
+  color: string;
+}
 
 export function PendingTasks() {
+  const [tasks, setTasks] = useState<Task[]>([]);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/dashboard/pending-tasks`)
+      .then((res) => res.json())
+      .then((data) => setTasks(data.tasks || []))
+      .catch(() => setTasks([]));
+  }, []);
+
+  const totalUrgent = tasks.reduce((sum, t) => sum + t.urgent, 0);
+
   return (
     <Card>
       <CardHeader
         title="Pending Tasks"
-        icon={<Settings2 size={16} />}
-        action={<Button variant="ghost" size="sm">Customize</Button>}
+        badge={totalUrgent > 0 ? `${totalUrgent} urgent` : undefined}
+        badgeColor="warning"
       />
-      <div className="grid grid-cols-2 gap-2.5 p-5 sm:grid-cols-4">
-        {pendingTasks.map((task) => (
+      <div className="px-5 pb-4 grid grid-cols-4 gap-3">
+        {tasks.map((task) => (
           <div
             key={task.label}
-            className="flex items-center justify-between px-4 py-3.5 rounded-btn bg-warm-bg border border-[#E5E7EB] hover:bg-hover-bg cursor-pointer transition-colors"
+            className="flex flex-col items-center py-4 px-3 rounded-xl bg-warm-bg border border-[#E5E7EB] hover:border-olive/20 transition-colors cursor-pointer"
           >
-            <div>
-              <div className="text-[13px] font-medium text-[#2F3437] mb-1">
-                {task.label}
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xl font-bold text-olive">{task.count}</span>
-                {task.urgent > 0 && (
-                  <Badge variant="error">{task.urgent} urgent</Badge>
-                )}
-              </div>
+            <div
+              className="text-2xl font-bold mb-1"
+              style={{ color: task.color }}
+            >
+              {task.count}
             </div>
-            <StatusDot color={task.color} />
+            <div className="text-[11.5px] text-gray-500 font-medium text-center leading-tight">
+              {task.label}
+            </div>
+            {task.urgent > 0 && (
+              <div className="mt-1.5 text-[10px] font-bold text-status-error bg-status-error/10 px-2 py-0.5 rounded-full">
+                {task.urgent} urgent
+              </div>
+            )}
           </div>
         ))}
       </div>

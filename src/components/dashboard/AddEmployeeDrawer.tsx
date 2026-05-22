@@ -288,7 +288,7 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
     if (!form.lastName.trim()) newErrors.lastName = 'Last name is required';
     if (!form.workEmail.trim()) {
       newErrors.workEmail = 'Work email is required';
-    } else if (!form.workEmail.endsWith('@reknew.ai')) {
+    } else if (!form.workEmail.endsWith('@reknew.com')) {
       newErrors.workEmail = 'Use a valid ReKnew work email.';
     }
     if (!form.phone.trim()) newErrors.phone = 'Phone number is required';
@@ -450,7 +450,7 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
           <FormInput
             value={form.workEmail}
             onChange={(v) => update('workEmail', v)}
-            placeholder="john.doe@reknew.ai"
+            placeholder="john.doe@reknew.com"
             type="email"
             error={errors.workEmail}
           />

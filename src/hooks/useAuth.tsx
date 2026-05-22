@@ -91,9 +91,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (checkData.exists && !checkData.is_first_login) {
         // For super admin without TOTP, use a simplified login
         const authUser: AuthUser = {
+          id: checkData.employee_id,
           name: 'Super Admin',
           email,
-          role: 'Global Access',
+          role: checkData.role || 'super_admin',
           initials: 'SA',
         };
         setUser(authUser);

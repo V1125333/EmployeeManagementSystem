@@ -1,51 +1,57 @@
-import { Users, CheckCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import {
-  BarChart, Bar, LineChart, Line, XAxis, YAxis,
-  Tooltip, ResponsiveContainer, Cell,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  AreaChart, Area, CartesianGrid,
 } from 'recharts';
-import { Card, CardHeader, Button } from '@/components/ui';
-import { departmentData, attendanceData, deptChartColors } from '@/data/mockData';
+import { Card, CardHeader } from '@/components/ui';
 
-// Shared custom tooltip
-function ChartTooltip({ active, payload, label }: any) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="bg-warm-card border border-[#E5E7EB] rounded-[10px] px-3.5 py-2 shadow-card-md text-xs">
-      <div className="text-gray-500 mb-0.5">{label}</div>
-      <div className="text-[#2F3437] font-semibold">{payload[0].value}</div>
-    </div>
-  );
-}
+const API_BASE = 'http://localhost:8000/api/v1';
+
+const deptChartColors = [
+  '#66785F', '#A3B18A', '#7E9BB7', '#D6A85F',
+  '#D97C7C', '#7BAE7F', '#8B9F82', '#B8C4A8',
+];
 
 export function DeptChart() {
+  const [data, setData] = useState<{ dept: string; count: number }[]>([]);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/dashboard/department-chart`)
+      .then((res) => res.json())
+      .then((d) => setData(d.departments || []))
+      .catch(() => setData([]));
+  }, []);
+
   return (
-    <Card className="h-full">
-      <CardHeader
-        title="Department Headcount"
-        icon={<Users size={16} />}
-        action={<Button variant="ghost" size="sm">View All</Button>}
-      />
-      <div className="px-4 pt-4 pb-2">
-        <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={departmentData} barSize={28}>
-            <XAxis
-              dataKey="dept"
-              tick={{ fontSize: 11, fill: '#6B7280' }}
-              axisLine={false}
-              tickLine={false}
+    <Card className="flex-1">
+      <CardHeader title="Department Headcount" />
+      <div className="px-5 pb-5 h-[200px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} barSize={28}>
+            <XAxis dataKey="dept" tick={{ fontSize: 11, fill: '#9CA3AF' }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 11, fill: '#9CA3AF' }} axisLine={false} tickLine={false} allowDecimals={false} />
+            <Tooltip
+              contentStyle={{
+                background: '#FEFEFC', border: '1px solid #E5E7EB',
+                borderRadius: 12, fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,0.06)',
+              }}
             />
-            <YAxis
-              tick={{ fontSize: 11, fill: '#9CA3AF' }}
-              axisLine={false}
-              tickLine={false}
-              width={35}
+            <Bar
+              dataKey="count"
+              radius={[6, 6, 0, 0]}
+              fill="#66785F"
+              // Color each bar differently
+              shape={(props: any) => {
+                const { x, y, width, height, index } = props;
+                return (
+                  <rect
+                    x={x} y={y} width={width} height={height}
+                    fill={deptChartColors[index % deptChartColors.length]}
+                    rx={6} ry={6}
+                  />
+                );
+              }}
             />
-            <Tooltip content={<ChartTooltip />} />
-            <Bar dataKey="count" radius={[6, 6, 0, 0]}>
-              {departmentData.map((_, i) => (
-                <Cell key={i} fill={deptChartColors[i % deptChartColors.length]} />
-              ))}
-            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -54,39 +60,42 @@ export function DeptChart() {
 }
 
 export function AttendanceTrend() {
+  const [data, setData] = useState<{ day: string; rate: number }[]>([]);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/dashboard/attendance-trend`)
+      .then((res) => res.json())
+      .then((d) => setData(d.trend || []))
+      .catch(() => setData([]));
+  }, []);
+
   return (
-    <Card className="h-full">
-      <CardHeader
-        title="Attendance Trend"
-        icon={<CheckCircle size={16} />}
-        action={<Button variant="ghost" size="sm">Last 2 Weeks</Button>}
-      />
-      <div className="px-4 pt-4 pb-2">
-        <ResponsiveContainer width="100%" height={220}>
-          <LineChart data={attendanceData}>
-            <XAxis
-              dataKey="day"
-              tick={{ fontSize: 11, fill: '#6B7280' }}
-              axisLine={false}
-              tickLine={false}
+    <Card className="flex-1">
+      <CardHeader title="Attendance Trend" badge="10 days" />
+      <div className="px-5 pb-5 h-[200px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data}>
+            <defs>
+              <linearGradient id="attendanceGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#66785F" stopOpacity={0.15} />
+                <stop offset="100%" stopColor="#66785F" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
+            <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#9CA3AF' }} axisLine={false} tickLine={false} />
+            <YAxis domain={[60, 100]} tick={{ fontSize: 11, fill: '#9CA3AF' }} axisLine={false} tickLine={false} />
+            <Tooltip
+              contentStyle={{
+                background: '#FEFEFC', border: '1px solid #E5E7EB',
+                borderRadius: 12, fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,0.06)',
+              }}
+              formatter={(value: number) => [`${value}%`, 'Attendance']}
             />
-            <YAxis
-              domain={[80, 100]}
-              tick={{ fontSize: 11, fill: '#9CA3AF' }}
-              axisLine={false}
-              tickLine={false}
-              width={35}
+            <Area
+              type="monotone" dataKey="rate" stroke="#66785F" strokeWidth={2}
+              fill="url(#attendanceGrad)" dot={{ fill: '#66785F', r: 3 }}
             />
-            <Tooltip content={<ChartTooltip />} />
-            <Line
-              type="monotone"
-              dataKey="rate"
-              stroke="#66785F"
-              strokeWidth={2.5}
-              dot={{ r: 3.5, fill: '#FEFEFC', stroke: '#66785F', strokeWidth: 2 }}
-              activeDot={{ r: 5, fill: '#66785F' }}
-            />
-          </LineChart>
+          </AreaChart>
         </ResponsiveContainer>
       </div>
     </Card>

@@ -20,7 +20,7 @@ from app.models import (
     Project, Allocation, Announcement, Notification, ActivityLog,
 )
 from app.services.auth_service import hash_password
-
+from app.api.dashboard import router as dashboard_router
 from app.api.employees import router as employees_router
 from app.api.auth import router as auth_router
 
@@ -185,6 +185,8 @@ app.add_middleware(
 
 app.include_router(employees_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
+app.include_router(dashboard_router, prefix="/api/v1")
+
 
 
 @app.get("/")

@@ -102,12 +102,14 @@ def check_email(db: Session, email: str) -> dict:
         return {"exists": False, "is_first_login": False, "message": "Account not found"}
 
     if not employee.is_active:
-        return {"exists": True, "is_first_login": False, "message": "Account is deactivated"}
+        return {"exists": True, "is_first_login": False, "message": "Account is deactivated", "employee_id": None, "role": None}
 
     return {
         "exists": True,
         "is_first_login": employee.is_first_login,
         "message": "First time setup required" if employee.is_first_login else "Enter your password",
+        "employee_id": employee.id,
+        "role": employee.role,
     }
 
 
