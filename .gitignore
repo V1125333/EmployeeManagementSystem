@@ -1,0 +1,10 @@
+node_modules/ 
+.env 
+backend/.env 
+backend/venv/ 
+backend/*.db 
+dist/ 
+__pycache__/ 
+*.pyc 
+.DS_Store 
+Thumbs.db
