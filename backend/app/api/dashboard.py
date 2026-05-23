@@ -9,9 +9,20 @@ from sqlalchemy import func
 from app.core.database import get_db
 from app.models.employee import Employee
 from app.models.leave_attendance import LeaveRequest, Attendance, AttendanceCorrection
+from app.models.operations import Announcement
 from app.models.training import TrainingEnrollment
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
+
+
+def active_announcement_status(announcement: Announcement, now: datetime) -> bool:
+    if announcement.status != "published":
+        return False
+    if announcement.publish_at and announcement.publish_at > now:
+        return False
+    if announcement.expires_at and announcement.expires_at <= now:
+        return False
+    return True
 
 
 @router.get("/kpis")
@@ -36,7 +47,7 @@ async def get_kpis(db: Session = Depends(get_db)):
         Attendance.status.in_(["present", "wfh", "late"])
     ).count()
     rate = round((today_present / active * 100)) if active > 0 else 0
-    attendance_rate = f"{rate}%" if rate == int(rate) else f"{rate}%"
+    attendance_rate = rate
 
     # Upcoming birthdays (next 7 days)
     upcoming_bdays = 0
@@ -59,7 +70,7 @@ async def get_kpis(db: Session = Depends(get_db)):
             {"label": "Active Employees", "value": str(active), "icon": "UserCheck", "color": "#7BAE7F"},
             {"label": "Inactive", "value": str(inactive), "icon": "UserX", "color": "#9CA3AF"},
             {"label": "Pending Leave", "value": str(pending_leave), "icon": "Calendar", "color": "#D6A85F"},
-            {"label": "Today's Attendance", "value": f"{attendance_rate}%", "icon": "CheckCircle", "color": "#7E9BB7"},
+            {"label": "Today's Attendance", "value": attendance_rate, "icon": "CheckCircle", "color": "#7E9BB7"},
             {"label": "Upcoming Birthdays", "value": str(upcoming_bdays), "trend": "this week", "icon": "Cake", "color": "#D97C7C"},
             {"label": "Work Anniversaries", "value": str(anniversaries), "trend": "this month", "icon": "Award", "color": "#A3B18A"},
         ]
@@ -97,6 +108,38 @@ async def get_pending_tasks(db: Session = Depends(get_db)):
             {"label": "Profile Updates", "count": missing_profiles, "urgent": 0, "color": "#A3B18A"},
         ]
     }
+
+
+@router.get("/announcements")
+async def get_dashboard_announcements(db: Session = Depends(get_db)):
+    """Get active announcements for the compact dashboard widget."""
+
+    now = datetime.utcnow()
+    records = db.query(Announcement).filter(
+        Announcement.status == "published",
+    ).order_by(
+        Announcement.is_pinned.desc(),
+        Announcement.publish_at.desc().nullslast(),
+        Announcement.created_at.desc(),
+    ).limit(20).all()
+
+    announcements = []
+    for item in records:
+        if not active_announcement_status(item, now):
+            continue
+        item_type = item.announcement_type or item.type or "general"
+        if item.priority == "critical" or item_type == "emergency":
+            item_type = "urgent"
+        announcements.append({
+            "id": item.id,
+            "title": item.title,
+            "description": item.message or item.description,
+            "type": item_type,
+            "publish_date": item.publish_at.isoformat() if item.publish_at else item.created_at.isoformat() if item.created_at else None,
+            "is_pinned": bool(item.is_pinned),
+        })
+
+    return {"announcements": announcements}
 
 
 @router.get("/department-chart")

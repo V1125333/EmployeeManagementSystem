@@ -3,6 +3,7 @@ import { UserPlus, CheckCircle, Megaphone } from 'lucide-react';
 import { Button } from '@/components/ui';
 import {
   KpiCards,
+  AnnouncementsPanel,
   PendingTasks,
   DeptChart,
   AttendanceTrend,
@@ -13,6 +14,7 @@ import { AddEmployeeDrawer } from '@/components/dashboard/AddEmployeeDrawer';
 
 export function DashboardPage() {
   const [showAddEmployee, setShowAddEmployee] = useState(false);
+  const [showAnnouncement, setShowAnnouncement] = useState(false);
 
   return (
     <div>
@@ -34,13 +36,22 @@ export function DashboardPage() {
             Add Employee
           </Button>
           <Button icon={<CheckCircle size={14} />}>Approve Leave</Button>
-          <Button icon={<Megaphone size={14} />}>Create Announcement</Button>
+          <Button icon={<Megaphone size={14} />} onClick={() => setShowAnnouncement(true)}>Create Announcement</Button>
         </div>
       </div>
 
       {/* KPI Cards */}
       <div className="mb-6">
         <KpiCards />
+      </div>
+
+      {/* Announcements */}
+      <div className="mb-6 animate-fade-up" style={{ animationDelay: '75ms' }}>
+        <AnnouncementsPanel
+          createOpen={showAnnouncement}
+          onCreateOpen={() => setShowAnnouncement(true)}
+          onCreateClose={() => setShowAnnouncement(false)}
+        />
       </div>
 
       {/* Pending Tasks */}

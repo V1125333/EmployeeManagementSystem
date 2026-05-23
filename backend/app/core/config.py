@@ -23,7 +23,7 @@ class Settings:
     APP_NAME: str = os.getenv("APP_NAME", "Reknew Orbit")
     APP_ENV: str = os.getenv("APP_ENV", "development")
     CORS_ORIGINS: list[str] = os.getenv(
-        "CORS_ORIGINS", "http://localhost:5173"
+        "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
     ).split(",")
 
 

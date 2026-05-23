@@ -13,10 +13,32 @@ const iconMap: Record<string, React.ElementType> = {
 
 interface KpiMetric {
   label: string;
-  value: string;
+  value: string | number | null | undefined;
   trend?: string;
   icon: string;
   color: string;
+}
+
+function formatKpiValue(kpi: KpiMetric) {
+  if (kpi.label !== "Today's Attendance") {
+    return kpi.value ?? '0';
+  }
+
+  if (kpi.value === null || kpi.value === undefined) {
+    return '0%';
+  }
+
+  const rawValue = String(kpi.value).trim();
+  if (!rawValue) {
+    return '0%';
+  }
+
+  const numericValue = Number(rawValue.replace(/%/g, ''));
+  if (!Number.isFinite(numericValue)) {
+    return '0%';
+  }
+
+  return `${numericValue}%`;
 }
 
 export function KpiCards() {
@@ -60,7 +82,7 @@ export function KpiCards() {
               )}
             </div>
             <div className="text-2xl font-bold text-[#2F3437] tracking-tight mb-0.5">
-              {kpi.value}
+              {formatKpiValue(kpi)}
             </div>
             <div className="text-xs text-gray-500 font-medium">{kpi.label}</div>
           </Card>

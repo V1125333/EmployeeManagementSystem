@@ -51,6 +51,16 @@ class Announcement(Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     type: Mapped[str] = mapped_column(String(20), default="general")  # general, hr, policy, event, urgent
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    announcement_type: Mapped[str] = mapped_column(String(30), default="general")
+    priority: Mapped[str] = mapped_column(String(20), default="normal")
+    audience_type: Mapped[str] = mapped_column(String(30), default="everyone")
+    status: Mapped[str] = mapped_column(String(20), default="draft")
+    requires_acknowledgment: Mapped[bool] = mapped_column(Boolean, default=False)
+    publish_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     published_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("employees.id"), nullable=True)
     is_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -58,6 +68,34 @@ class Announcement(Base):
     expiry_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AnnouncementAudience(Base):
+    __tablename__ = "announcement_audiences"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    announcement_id: Mapped[str] = mapped_column(String(36), ForeignKey("announcements.id"), nullable=False)
+    target_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    target_value: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class AnnouncementAcknowledgment(Base):
+    __tablename__ = "announcement_acknowledgments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    announcement_id: Mapped[str] = mapped_column(String(36), ForeignKey("announcements.id"), nullable=False)
+    employee_id: Mapped[str] = mapped_column(String(36), ForeignKey("employees.id"), nullable=False)
+    acknowledged_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class AnnouncementRead(Base):
+    __tablename__ = "announcement_reads"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    announcement_id: Mapped[str] = mapped_column(String(36), ForeignKey("announcements.id"), nullable=False)
+    employee_id: Mapped[str] = mapped_column(String(36), ForeignKey("employees.id"), nullable=False)
+    read_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class Notification(Base):
@@ -68,9 +106,28 @@ class Notification(Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
     type: Mapped[str] = mapped_column(String(30), default="system")  # leave, attendance, training, announcement, chat, system
+    notification_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    related_entity_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    related_entity_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
     link_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ActionInboxItem(Base):
+    __tablename__ = "action_inbox_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    assigned_to_user_id: Mapped[str] = mapped_column(String(36), ForeignKey("employees.id"), nullable=False)
+    item_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    priority: Mapped[str] = mapped_column(String(20), default="normal")
+    related_entity_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    related_entity_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class ActivityLog(Base):

@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.core.database import create_tables, ensure_employee_audit_columns, SessionLocal
+from app.core.database import create_tables, ensure_employee_audit_columns, ensure_announcement_columns, ensure_notification_columns, SessionLocal
 
 # Import all models so SQLAlchemy registers them
 from app.models import (
@@ -17,12 +17,15 @@ from app.models import (
     LeaveType, LeaveBalance, LeaveRequest, Attendance, AttendanceCorrection,
     OnboardingTask, Training, TrainingEnrollment,
     Channel, ChannelMember, Message, MessageReaction,
-    Project, Allocation, Announcement, Notification, ActivityLog,
+    Project, Allocation, Announcement, AnnouncementAudience, AnnouncementAcknowledgment,
+    AnnouncementRead, Notification, ActionInboxItem, ActivityLog,
 )
 from app.services.auth_service import hash_password
 from app.api.dashboard import router as dashboard_router
 from app.api.employees import router as employees_router
 from app.api.auth import router as auth_router
+from app.api.announcements import router as announcements_router
+from app.api.inbox_notifications import router as inbox_notifications_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -153,6 +156,8 @@ async def lifespan(app: FastAPI):
     """Startup: create all tables and seed data."""
     create_tables()
     ensure_employee_audit_columns()
+    ensure_announcement_columns()
+    ensure_notification_columns()
     logger.info("All 19 database tables created")
 
     db = SessionLocal()
@@ -187,6 +192,8 @@ app.add_middleware(
 app.include_router(employees_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(dashboard_router, prefix="/api/v1")
+app.include_router(announcements_router, prefix="/api/v1")
+app.include_router(inbox_notifications_router, prefix="/api/v1")
 
 
 

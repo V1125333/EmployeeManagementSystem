@@ -28,6 +28,10 @@ from app.models.operations import (
     Project,
     Allocation,
     Announcement,
+    AnnouncementAudience,
+    AnnouncementAcknowledgment,
+    AnnouncementRead,
     Notification,
+    ActionInboxItem,
     ActivityLog,
 )
