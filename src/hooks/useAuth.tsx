@@ -10,6 +10,7 @@ export interface AuthUser {
   role: string;
   email: string;
   initials: string;
+  profileImageUrl?: string | null;
 }
 
 interface AuthContextType {
@@ -19,6 +20,7 @@ interface AuthContextType {
   loginAdmin: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
   setUserFromApi: (employee: any) => void;
+  updateUser: (updates: Partial<AuthUser>) => void;
 }
 
 // ─── Context ───
@@ -65,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: result.employee.email,
           role: result.employee.role || 'Employee',
           initials: makeInitials(result.employee.name),
+          profileImageUrl: result.employee.profile_image_url || null,
         };
         setUser(authUser);
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: authUser, token: result.token }));
@@ -96,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email,
           role: checkData.role || 'super_admin',
           initials: 'SA',
+          profileImageUrl: checkData.profile_image_url || null,
         };
         setUser(authUser);
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: authUser, token: 'admin-token' }));
@@ -110,8 +114,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const authUser: AuthUser = {
         name: 'Super Admin',
         email: 'superadmin@reknew.ai',
-        role: 'Global Access',
+        role: 'super_admin',
         initials: 'SA',
+        profileImageUrl: null,
       };
       setUser(authUser);
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: authUser, token: 'mock-token' }));
@@ -128,6 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email: employee.email || employee.work_email,
       role: employee.role || 'Employee',
       initials: makeInitials(employee.name || `${employee.first_name} ${employee.last_name}`),
+      profileImageUrl: employee.profile_image_url || null,
     };
     setUser(authUser);
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: authUser, token: 'session-token' }));
@@ -138,9 +144,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(STORAGE_KEY);
   };
 
+  const updateUser = (updates: Partial<AuthUser>) => {
+    setUser((current) => {
+      if (!current) return current;
+      const next = { ...current, ...updates };
+      const stored = localStorage.getItem(STORAGE_KEY);
+      const parsed = stored ? JSON.parse(stored) : {};
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...parsed, user: next }));
+      return next;
+    });
+  };
+
   return (
     <AuthContext.Provider
-      value={{ user, isAuthenticated: user !== null, loginWithApi, loginAdmin, logout, setUserFromApi }}
+      value={{ user, isAuthenticated: user !== null, loginWithApi, loginAdmin, logout, setUserFromApi, updateUser }}
     >
       {children}
     </AuthContext.Provider>

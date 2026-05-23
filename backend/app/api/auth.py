@@ -88,32 +88,9 @@ async def get_my_profile(email: str, db: Session = Depends(get_db)):
     if not emp:
         return {"success": False, "message": "Profile not found"}
 
+    from app.api.employees import serialize_employee
+
     return {
         "success": True,
-        "employee": {
-            "id": emp.id,
-            "first_name": emp.first_name,
-            "last_name": emp.last_name,
-            "work_email": emp.work_email,
-            "personal_email": emp.personal_email,
-            "phone": emp.phone,
-            "country_code": emp.country_code,
-            "date_of_birth": str(emp.date_of_birth) if emp.date_of_birth else None,
-            "gender": emp.gender,
-            "department": emp.department,
-            "designation": emp.designation,
-            "role": emp.role,
-            "workforce_type": emp.workforce_type,
-            "employment_status": emp.employment_status,
-            "work_location": emp.work_location,
-            "joining_date": str(emp.joining_date) if emp.joining_date else None,
-            "reporting_manager": emp.reporting_manager,
-            "profile_image_url": emp.profile_image_url,
-            "emergency_contact_name": emp.emergency_contact_name,
-            "emergency_contact_phone": emp.emergency_contact_phone,
-            "emergency_contact_relation": emp.emergency_contact_relation,
-            "current_address": emp.current_address,
-            "is_active": emp.is_active,
-            "created_at": str(emp.created_at),
-        },
+        "employee": serialize_employee(emp),
     }

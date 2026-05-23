@@ -51,6 +51,7 @@ interface AvatarProps {
   initials: string;
   size?: 'sm' | 'md' | 'lg';
   variant?: 'filled' | 'soft';
+  src?: string | null;
 }
 
 const avatarSizes = {
@@ -59,18 +60,22 @@ const avatarSizes = {
   lg: 'w-12 h-12 text-sm',
 };
 
-export function Avatar({ initials, size = 'md', variant = 'soft' }: AvatarProps) {
+export function Avatar({ initials, size = 'md', variant = 'soft', src }: AvatarProps) {
   return (
     <div
       className={cn(
-        'rounded-full flex items-center justify-center font-semibold shrink-0',
+        'rounded-full flex items-center justify-center font-semibold shrink-0 overflow-hidden',
         avatarSizes[size],
         variant === 'filled'
           ? 'bg-olive text-white'
           : 'bg-hover-bg text-olive'
       )}
     >
-      {initials}
+      {src ? (
+        <img src={src} alt="" className="w-full h-full object-cover" />
+      ) : (
+        initials
+      )}
     </div>
   );
 }

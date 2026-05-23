@@ -2,8 +2,8 @@
 All database models — importing here ensures SQLAlchemy registers them.
 """
 
-# Table 1: employees
-from app.models.employee import Employee
+# Table 1: employees + employee intelligence tables
+from app.models.employee import Employee, EmployeeAuditLog, EmployeePerformanceSnapshot
 
 # Tables 2-3: departments, designations
 from app.models.organization import Department, Designation

@@ -27,6 +27,7 @@ export function TopNav() {
     role: 'Employee',
     email: 'user@reknew.ai',
     initials: 'U',
+    profileImageUrl: null,
   };
 
   return (

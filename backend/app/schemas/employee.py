@@ -49,6 +49,7 @@ class UpdateEmployeeRequest(BaseModel):
     gender: Optional[str] = None
     designation: Optional[str] = None
     workforce_type: Optional[str] = None
+    workforce_status: Optional[str] = None
     employment_status: Optional[str] = None
     work_location: Optional[str] = None
     location: Optional[str] = None
@@ -60,6 +61,10 @@ class UpdateEmployeeRequest(BaseModel):
     emergency_contact_relation: Optional[str] = None
     current_address: Optional[str] = None
     permanent_address: Optional[str] = None
+    profile_image_url: Optional[str] = None
+    access_level: Optional[str] = None
+    mfa_enabled: Optional[bool] = None
+    device_assigned: Optional[bool] = None
     notes: Optional[str] = None
 
 
@@ -77,6 +82,7 @@ class CheckEmailResponse(BaseModel):
     message: str
     employee_id: str | None = None
     role: str | None = None
+    profile_image_url: str | None = None
 
 
 # ═══════════════════════════════════════

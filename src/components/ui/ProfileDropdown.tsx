@@ -9,6 +9,7 @@ interface ProfileUser {
   role: string;
   email: string;
   initials: string;
+  profileImageUrl?: string | null;
 }
 
 interface ProfileDropdownProps {
@@ -96,7 +97,7 @@ export function ProfileDropdown({
             : 'hover:bg-hover-bg'
         )}
       >
-        <Avatar initials={user.initials} size="sm" variant="filled" />
+        <Avatar initials={user.initials} size="sm" variant="filled" src={user.profileImageUrl} />
         <div className="text-left">
           <div className="text-[12.5px] font-semibold text-[#2F3437]">
             {user.name}
@@ -124,7 +125,7 @@ export function ProfileDropdown({
           {/* User Info Header */}
           <div className="px-5 py-4 border-b border-[#E5E7EB]">
             <div className="flex items-center gap-3">
-              <Avatar initials={user.initials} size="lg" variant="filled" />
+              <Avatar initials={user.initials} size="lg" variant="filled" src={user.profileImageUrl} />
               <div className="min-w-0">
                 <div className="text-[15px] font-semibold text-[#2F3437] truncate">
                   {user.name}

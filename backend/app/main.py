@@ -9,11 +9,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.core.database import create_tables, SessionLocal
+from app.core.database import create_tables, ensure_employee_audit_columns, SessionLocal
 
 # Import all models so SQLAlchemy registers them
 from app.models import (
-    Employee, Department, Designation,
+    Employee, EmployeeAuditLog, EmployeePerformanceSnapshot, Department, Designation,
     LeaveType, LeaveBalance, LeaveRequest, Attendance, AttendanceCorrection,
     OnboardingTask, Training, TrainingEnrollment,
     Channel, ChannelMember, Message, MessageReaction,
@@ -152,6 +152,7 @@ def seed_admin(db):
 async def lifespan(app: FastAPI):
     """Startup: create all tables and seed data."""
     create_tables()
+    ensure_employee_audit_columns()
     logger.info("All 19 database tables created")
 
     db = SessionLocal()
