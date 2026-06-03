@@ -167,7 +167,7 @@ export function TopNav() {
   };
 
   const handleViewProfile = () => navigate('/profile');
-  const handleAccountSettings = () => console.log('Navigate to account settings');
+  const handleSettings = () => navigate('/settings');
   const handleSignOut = () => {
     logout();
     navigate('/login');
@@ -377,7 +377,7 @@ export function TopNav() {
         <ProfileDropdown
           user={currentUser}
           onViewProfile={handleViewProfile}
-          onAccountSettings={handleAccountSettings}
+          onSettings={handleSettings}
           onSignOut={handleSignOut}
         />
       </div>

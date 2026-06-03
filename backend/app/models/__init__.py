@@ -35,3 +35,6 @@ from app.models.operations import (
     ActionInboxItem,
     ActivityLog,
 )
+
+# User preference and support tables
+from app.models.settings import UserSettings, SupportTicket

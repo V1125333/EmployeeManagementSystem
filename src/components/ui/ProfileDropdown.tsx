@@ -15,7 +15,7 @@ interface ProfileUser {
 interface ProfileDropdownProps {
   user: ProfileUser;
   onViewProfile?: () => void;
-  onAccountSettings?: () => void;
+  onSettings?: () => void;
   onSignOut?: () => void;
 }
 
@@ -53,7 +53,7 @@ function MenuItem({ icon, label, onClick, variant = 'default' }: MenuItemProps) 
 export function ProfileDropdown({
   user,
   onViewProfile,
-  onAccountSettings,
+  onSettings,
   onSignOut,
 }: ProfileDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -144,13 +144,13 @@ export function ProfileDropdown({
           <div className="px-2 py-2">
             <MenuItem
               icon={<User size={16} />}
-              label="View My Profile"
+              label="My Profile"
               onClick={() => handleAction(onViewProfile)}
             />
             <MenuItem
               icon={<Settings size={16} />}
-              label="Account Settings"
-              onClick={() => handleAction(onAccountSettings)}
+              label="Settings"
+              onClick={() => handleAction(onSettings)}
             />
           </div>
 

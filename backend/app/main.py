@@ -19,6 +19,7 @@ from app.models import (
     Channel, ChannelMember, Message, MessageReaction,
     Project, Allocation, Announcement, AnnouncementAudience, AnnouncementAcknowledgment,
     AnnouncementRead, Notification, ActionInboxItem, ActivityLog,
+    UserSettings, SupportTicket,
 )
 from app.services.auth_service import hash_password
 from app.api.dashboard import router as dashboard_router
@@ -28,6 +29,8 @@ from app.api.announcements import router as announcements_router
 from app.api.inbox_notifications import router as inbox_notifications_router
 from app.api.certificates import router as certificates_router
 from app.api.hr_documents import router as hr_documents_router
+from app.api.settings import router as settings_router
+from app.api.support_tickets import router as support_tickets_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -198,6 +201,8 @@ app.include_router(announcements_router, prefix="/api/v1")
 app.include_router(inbox_notifications_router, prefix="/api/v1")
 app.include_router(certificates_router, prefix="/api/v1")
 app.include_router(hr_documents_router, prefix="/api/v1")
+app.include_router(settings_router, prefix="/api/v1")
+app.include_router(support_tickets_router, prefix="/api/v1")
 
 
 
