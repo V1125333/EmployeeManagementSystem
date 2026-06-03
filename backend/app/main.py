@@ -26,6 +26,8 @@ from app.api.employees import router as employees_router
 from app.api.auth import router as auth_router
 from app.api.announcements import router as announcements_router
 from app.api.inbox_notifications import router as inbox_notifications_router
+from app.api.certificates import router as certificates_router
+from app.api.hr_documents import router as hr_documents_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -194,6 +196,8 @@ app.include_router(auth_router, prefix="/api/v1")
 app.include_router(dashboard_router, prefix="/api/v1")
 app.include_router(announcements_router, prefix="/api/v1")
 app.include_router(inbox_notifications_router, prefix="/api/v1")
+app.include_router(certificates_router, prefix="/api/v1")
+app.include_router(hr_documents_router, prefix="/api/v1")
 
 
 

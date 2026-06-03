@@ -3,14 +3,14 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, UserPlus, Briefcase, CalendarDays,
   Network, Package, Settings, Shield, FileText,
-  PanelLeftClose, PanelLeftOpen,
+  PanelLeftClose, PanelLeftOpen, Award, Files,
 } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { mainNavItems, adminNavItems } from '@/data/mockData';
 
 const iconMap: Record<string, React.ElementType> = {
   LayoutDashboard, Users, UserPlus, Briefcase, CalendarDays,
-  Network, Package, Settings, Shield, FileText,
+  Network, Package, Settings, Shield, FileText, Award, Files,
 };
 
 interface SidebarProps {

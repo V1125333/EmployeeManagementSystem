@@ -7,6 +7,8 @@ import { LoginPage } from '@/pages/LoginPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { EmployeesPage } from '@/pages/EmployeesPage';
 import { ProfilePage } from '@/pages/ProfilePage';
+import { CertificateGeneratorPage } from '@/pages/CertificateGeneratorPage';
+import { HRDocumentsPage } from '@/pages/HRDocumentsPage';
 import {
   OnboardingPage,
   ClientOnboardingPage,
@@ -41,6 +43,8 @@ export default function App() {
                 <Route path="/admin/users" element={<UserManagementPage />} />
                 <Route path="/admin/roles" element={<RolesPage />} />
                 <Route path="/admin/policies" element={<PoliciesPage />} />
+                <Route path="/admin/certificates" element={<CertificateGeneratorPage />} />
+                <Route path="/admin/hr-documents" element={<HRDocumentsPage />} />
               </Route>
             </Route>
 
