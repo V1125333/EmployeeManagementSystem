@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.employee import Employee
-from app.models.leave_attendance import AttendanceCorrection, LeaveRequest
+from app.models.leave_attendance import AttendanceCorrection, LeaveBalance, LeaveRequest, LeaveType
 from app.models.operations import ActionInboxItem, Notification
 
 router = APIRouter(tags=["Inbox & Notifications"])
@@ -16,6 +16,10 @@ MANAGER_ROLES = {"super_admin", "admin", "hr_admin", "global_access", "manager"}
 
 def normalize_role(role: str | None) -> str:
     return (role or "").strip().lower().replace(" ", "_")
+
+
+def numeric(value) -> float:
+    return float(value or 0)
 
 
 def current_employee(db: Session, user_id: str | None, user_email: str | None) -> Employee | None:
@@ -210,6 +214,27 @@ async def decide_leave_request(
     leave.reviewed_by = reviewer.id if reviewer else current_user_id
     leave.reviewed_at = datetime.utcnow()
     leave.updated_at = datetime.utcnow()
+    if decision == "approve":
+        leave_type = db.query(LeaveType).filter(LeaveType.id == leave.leave_type_id).first()
+        balance = db.query(LeaveBalance).filter(
+            LeaveBalance.employee_id == leave.employee_id,
+            LeaveBalance.leave_type_id == leave.leave_type_id,
+            LeaveBalance.year == leave.start_date.year,
+        ).first()
+        if not balance and leave_type:
+            balance = LeaveBalance(
+                employee_id=leave.employee_id,
+                leave_type_id=leave.leave_type_id,
+                year=leave.start_date.year,
+                total_days=leave_type.default_days_per_year,
+                used_days=0,
+                carry_forward_days=0,
+            )
+            db.add(balance)
+            db.flush()
+        if balance:
+            balance.used_days = numeric(balance.used_days) + numeric(leave.total_days)
+            balance.updated_at = datetime.utcnow()
     create_notification(
         db,
         leave.employee_id,

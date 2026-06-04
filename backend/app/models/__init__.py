@@ -27,6 +27,7 @@ from app.models.chat import Channel, ChannelMember, Message, MessageReaction
 from app.models.operations import (
     Project,
     Allocation,
+    TimesheetEntry,
     Announcement,
     AnnouncementAudience,
     AnnouncementAcknowledgment,

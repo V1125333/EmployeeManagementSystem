@@ -7,8 +7,8 @@ Bonus: activity_log — System-wide audit trail
 """
 
 import uuid
-from datetime import datetime, date
-from sqlalchemy import String, Boolean, Date, DateTime, Text, Integer, ForeignKey
+from datetime import datetime, date, time
+from sqlalchemy import String, Boolean, Date, DateTime, Time, Text, Integer, Numeric, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
@@ -40,6 +40,33 @@ class Allocation(Base):
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class TimesheetEntry(Base):
+    __tablename__ = "timesheet_entries"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id: Mapped[str] = mapped_column(String(36), ForeignKey("employees.id"), nullable=False)
+    work_date: Mapped[date] = mapped_column(Date, nullable=False)
+    week_start: Mapped[date] = mapped_column(Date, nullable=False)
+    entry_code: Mapped[str] = mapped_column(String(10), nullable=False)
+    project_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("projects.id"), nullable=True)
+    project_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    start_time: Mapped[time | None] = mapped_column(Time, nullable=True)
+    end_time: Mapped[time | None] = mapped_column(Time, nullable=True)
+    hours: Mapped[float] = mapped_column(Numeric(4, 2), default=0)
+    overtime_hours: Mapped[float] = mapped_column(Numeric(4, 2), default=0)
+    overtime_requires_approval: Mapped[bool] = mapped_column(Boolean, default=False)
+    overtime_status: Mapped[str] = mapped_column(String(20), default="none")
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="draft")
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("employees.id"), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    reviewer_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    time_zone: Mapped[str] = mapped_column(String(80), default="UTC")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

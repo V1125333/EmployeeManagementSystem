@@ -3,15 +3,25 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, UserPlus, Briefcase, CalendarDays,
   Network, Package, Settings, Shield, FileText,
-  PanelLeftClose, PanelLeftOpen, Award, Files,
+  PanelLeftClose, PanelLeftOpen, Award, Files, CalendarPlus,
+  WalletCards, ClipboardCheck, Clock3, LogIn, Send, PartyPopper,
+  UserRound,
 } from 'lucide-react';
 import { cn } from '@/utils/cn';
-import { mainNavItems, adminNavItems } from '@/data/mockData';
+import { mainNavItems, adminNavItems, employeeNavItems } from '@/data/mockData';
+import { useAuth } from '@/hooks/useAuth';
 
 const iconMap: Record<string, React.ElementType> = {
   LayoutDashboard, Users, UserPlus, Briefcase, CalendarDays,
   Network, Package, Settings, Shield, FileText, Award, Files,
+  CalendarPlus, WalletCards, ClipboardCheck, Clock3, LogIn, Send,
+  PartyPopper, UserRound,
 };
+
+function isAdminRole(role?: string) {
+  const normalized = (role || '').toLowerCase().replace(/\s+/g, '_');
+  return ['super_admin', 'admin', 'hr_admin', 'global_access'].includes(normalized);
+}
 
 interface SidebarProps {
   collapsed: boolean;
@@ -21,6 +31,8 @@ interface SidebarProps {
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const showAdminNavigation = isAdminRole(user?.role);
 
   const NavButton = ({ item }: { item: typeof mainNavItems[0] }) => {
     const active = location.pathname === item.path;
@@ -55,10 +67,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       <div
         className={cn(
           'flex items-center border-b border-[#E5E7EB] shrink-0',
-          collapsed ? 'justify-center px-3 py-5' : 'justify-between px-5 py-5'
+          collapsed ? 'justify-center px-2 py-5' : 'justify-between px-5 py-5'
         )}
       >
-        <div className="flex items-center gap-2.5 overflow-hidden">
+        <div className={cn('flex items-center gap-2.5 overflow-hidden', collapsed && 'hidden')}>
           <div className="w-8 h-8 rounded-lg bg-olive flex items-center justify-center text-white font-extrabold text-sm shrink-0">
             R
           </div>
@@ -75,50 +87,49 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         </div>
 
         {/* Collapse button — only when expanded */}
-        {!collapsed && (
-          <button
-            onClick={onToggle}
-            title="Collapse sidebar"
-            className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:bg-hover-bg hover:text-olive transition-all duration-150"
-          >
-            <PanelLeftClose size={16} />
-          </button>
-        )}
+        <button
+          onClick={onToggle}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          className={cn(
+            'h-8 w-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-hover-bg hover:text-olive transition-all duration-150',
+            collapsed && 'border border-[#E5E7EB] bg-white'
+          )}
+        >
+          {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+        </button>
       </div>
 
       {/* Navigation */}
       <nav className={cn('flex-1 overflow-y-auto', collapsed ? 'px-2 py-3' : 'px-3 py-3')}>
-        {mainNavItems.map((item) => (
-          <NavButton key={item.key} item={item} />
-        ))}
+        {showAdminNavigation ? (
+          <>
+            {mainNavItems.map((item) => (
+              <NavButton key={item.key} item={item} />
+            ))}
 
-        {/* Admin section divider */}
-        <div className={cn('my-3', collapsed ? 'px-1' : 'px-3.5')}>
-          {!collapsed && (
-            <div className="text-[10px] font-bold text-gray-400 tracking-widest uppercase">
-              Admin Console
+            {/* Admin section divider */}
+            <div className={cn('my-3', collapsed ? 'px-1' : 'px-3.5')}>
+              {!collapsed && (
+                <div className="text-[10px] font-bold text-gray-400 tracking-widest uppercase">
+                  Admin Console
+                </div>
+              )}
+              {collapsed && <div className="h-px bg-[#E5E7EB]" />}
             </div>
-          )}
-          {collapsed && <div className="h-px bg-[#E5E7EB]" />}
-        </div>
 
-        {adminNavItems.map((item) => (
-          <NavButton key={item.key} item={item} />
-        ))}
+            {adminNavItems.map((item) => (
+              <NavButton key={item.key} item={item} />
+            ))}
+          </>
+        ) : (
+          employeeNavItems.map((item) => (
+            <NavButton key={item.key} item={item} />
+          ))
+        )}
       </nav>
 
       {/* Expand button — only when collapsed, sits at bottom */}
-      {collapsed && (
-        <div className="px-2 pb-4 pt-2 shrink-0 border-t border-[#E5E7EB]">
-          <button
-            onClick={onToggle}
-            title="Expand sidebar"
-            className="w-full flex items-center justify-center py-2.5 rounded-lg text-gray-400 border border-dashed border-[#E5E7EB] hover:bg-hover-bg hover:text-olive hover:border-olive/40 transition-all duration-150"
-          >
-            <PanelLeftOpen size={18} />
-          </button>
-        </div>
-      )}
     </aside>
   );
 }

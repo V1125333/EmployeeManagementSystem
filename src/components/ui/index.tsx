@@ -26,10 +26,14 @@ export function CardHeader({
   title,
   icon,
   action,
+  badge,
+  badgeColor = 'neutral',
 }: {
   title: string;
   icon?: React.ReactNode;
   action?: React.ReactNode;
+  badge?: string;
+  badgeColor?: BadgeVariant;
 }) {
   return (
     <div className="flex items-center justify-between px-5 py-4 border-b border-[#E5E7EB]">
@@ -39,7 +43,7 @@ export function CardHeader({
           {title}
         </span>
       </div>
-      {action}
+      {action || (badge ? <Badge variant={badgeColor}>{badge}</Badge> : null)}
     </div>
   );
 }

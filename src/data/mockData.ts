@@ -65,6 +65,25 @@ export const onLeaveToday: LeaveEntry[] = [
   { name: 'Lin Chen', type: 'Personal', duration: 'May 16–17', avatar: 'LC' },
 ];
 
+export const newJoiners = [
+  { name: 'Priya Rao', role: 'Product Designer', department: 'Design', startDate: 'Jun 10, 2026', avatar: 'PR' },
+  { name: 'Ethan Brooks', role: 'Backend Engineer', department: 'Engineering', startDate: 'Jun 17, 2026', avatar: 'EB' },
+  { name: 'Sara Khan', role: 'People Operations Associate', department: 'People', startDate: 'Jun 24, 2026', avatar: 'SK' },
+];
+
+export const activityFeed = [
+  { title: 'Asha Nair submitted a leave request', time: '10 minutes ago', type: 'leave' },
+  { title: 'Rahul Mehta updated his profile', time: '32 minutes ago', type: 'profile' },
+  { title: 'Nina Paul completed onboarding', time: '1 hour ago', type: 'onboarding' },
+  { title: 'May payroll documents were published', time: '2 hours ago', type: 'documents' },
+];
+
+export const announcements = [
+  { title: 'Quarterly town hall scheduled', body: 'Join the all-hands meeting this Friday at 4 PM.', date: 'Jun 3, 2026' },
+  { title: 'Updated leave policy published', body: 'The revised policy is now available in HR documents.', date: 'Jun 1, 2026' },
+  { title: 'Office maintenance notice', body: 'Facilities work is planned for the weekend.', date: 'May 29, 2026' },
+];
+
 // ─── Team Leave Calendar ───
 export const leaveCalendar: CalendarDay[] = Array.from({ length: 31 }, (_, i) => {
   const day = i + 1;
@@ -74,7 +93,7 @@ export const leaveCalendar: CalendarDay[] = Array.from({ length: 31 }, (_, i) =>
 
 // ─── Navigation ───
 export const mainNavItems: NavItem[] = [
-  { key: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard', path: '/' },
+  { key: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard', path: '/dashboard' },
   { key: 'employees', label: 'Employees', icon: 'Users', path: '/employees' },
   { key: 'onboarding', label: 'Onboarding Center', icon: 'UserPlus', path: '/onboarding' },
   { key: 'client', label: 'Client Onboarding', icon: 'Briefcase', path: '/client-onboarding' },
@@ -89,4 +108,17 @@ export const adminNavItems: NavItem[] = [
   { key: 'policies', label: 'Policies', icon: 'FileText', path: '/admin/policies' },
   { key: 'certificates', label: 'Certificates', icon: 'Award', path: '/admin/certificates' },
   { key: 'hr-documents', label: 'HR Documents', icon: 'Files', path: '/admin/hr-documents' },
+];
+
+export const employeeNavItems: NavItem[] = [
+  { key: 'employee-dashboard', label: 'My Dashboard', icon: 'LayoutDashboard', path: '/employee' },
+  { key: 'leave', label: 'Apply Leave', icon: 'CalendarPlus', path: '/employee/apply-leave' },
+  { key: 'leave-approvals', label: 'Approvals', icon: 'ClipboardCheck', path: '/employee/approvals' },
+  { key: 'timesheets', label: 'Timesheets', icon: 'Clock3', path: '/employee/timesheets' },
+  { key: 'check-in', label: 'Check In / Out', icon: 'LogIn', path: '/employee/check-in' },
+  { key: 'attendance-history', label: 'Attendance History', icon: 'CalendarDays', path: '/employee/attendance' },
+  { key: 'requests', label: 'Requests', icon: 'Send', path: '/employee/requests' },
+  { key: 'documents', label: 'Documents', icon: 'Files', path: '/employee/documents' },
+  { key: 'holidays', label: 'Holidays', icon: 'PartyPopper', path: '/employee/holidays' },
+  { key: 'my-profile', label: 'My Profile', icon: 'UserRound', path: '/profile' },
 ];

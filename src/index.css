@@ -48,4 +48,28 @@
       opacity: 1;
     }
   }
+  .animate-modal-backdrop {
+    animation: modalBackdrop 0.18s ease-out both;
+  }
+  .animate-modal-pop {
+    animation: modalPop 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  @keyframes modalBackdrop {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes modalPop {
+    from {
+      opacity: 0;
+      transform: translateY(12px) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
 }

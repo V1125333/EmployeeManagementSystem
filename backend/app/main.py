@@ -9,7 +9,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.core.database import create_tables, ensure_employee_audit_columns, ensure_announcement_columns, ensure_notification_columns, SessionLocal
+from app.core.database import (
+    create_tables,
+    ensure_employee_audit_columns,
+    ensure_announcement_columns,
+    ensure_notification_columns,
+    ensure_timesheet_columns,
+    SessionLocal,
+)
 
 # Import all models so SQLAlchemy registers them
 from app.models import (
@@ -31,6 +38,9 @@ from app.api.certificates import router as certificates_router
 from app.api.hr_documents import router as hr_documents_router
 from app.api.settings import router as settings_router
 from app.api.support_tickets import router as support_tickets_router
+from app.api.attendance import router as attendance_router
+from app.api.timesheets import router as timesheets_router
+from app.api.leaves import router as leaves_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -163,6 +173,7 @@ async def lifespan(app: FastAPI):
     ensure_employee_audit_columns()
     ensure_announcement_columns()
     ensure_notification_columns()
+    ensure_timesheet_columns()
     logger.info("All 19 database tables created")
 
     db = SessionLocal()
@@ -203,6 +214,9 @@ app.include_router(certificates_router, prefix="/api/v1")
 app.include_router(hr_documents_router, prefix="/api/v1")
 app.include_router(settings_router, prefix="/api/v1")
 app.include_router(support_tickets_router, prefix="/api/v1")
+app.include_router(attendance_router, prefix="/api/v1")
+app.include_router(timesheets_router, prefix="/api/v1")
+app.include_router(leaves_router, prefix="/api/v1")
 
 
 

@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from '@/hooks/useAuth';
 import { ToastProvider } from '@/components/ui/Toast';
-import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
+import { AdminRoute, EmployeeRoute, ProtectedRoute, RoleHomeRedirect } from '@/components/layout/ProtectedRoute';
 import { AppLayout } from '@/layouts/AppLayout';
 import { LoginPage } from '@/pages/LoginPage';
 import { DashboardPage } from '@/pages/DashboardPage';
@@ -20,6 +20,18 @@ import {
   RolesPage,
   PoliciesPage,
 } from '@/pages/PlaceholderPages';
+import {
+  ApplyLeavePage,
+  AttendanceHistoryPage,
+  CheckInOutPage,
+  EmployeeDashboardPage,
+  EmployeeDocumentsPage,
+  EmployeeNotificationsPage,
+  EmployeeRequestsPage,
+  HolidaysPage,
+  LeaveApprovalsPage,
+  TimesheetsPage,
+} from '@/pages/EmployeePortalPages';
 
 export default function App() {
   return (
@@ -33,20 +45,38 @@ export default function App() {
             {/* Protected routes */}
             <Route element={<ProtectedRoute />}>
               <Route element={<AppLayout />}>
-                <Route path="/" element={<DashboardPage />} />
-                <Route path="/employees" element={<EmployeesPage />} />
+                <Route path="/" element={<RoleHomeRedirect />} />
                 <Route path="/profile" element={<ProfilePage />} />
-                <Route path="/settings" element={<SettingsPage />} />
-                <Route path="/onboarding" element={<OnboardingPage />} />
-                <Route path="/client-onboarding" element={<ClientOnboardingPage />} />
-                <Route path="/time-off" element={<TimeOffPage />} />
-                <Route path="/team-allocation" element={<TeamAllocationPage />} />
-                <Route path="/assets" element={<AssetsPage />} />
-                <Route path="/admin/users" element={<UserManagementPage />} />
-                <Route path="/admin/roles" element={<RolesPage />} />
-                <Route path="/admin/policies" element={<PoliciesPage />} />
-                <Route path="/admin/certificates" element={<CertificateGeneratorPage />} />
-                <Route path="/admin/hr-documents" element={<HRDocumentsPage />} />
+
+                <Route element={<EmployeeRoute />}>
+                  <Route path="/employee" element={<EmployeeDashboardPage />} />
+                  <Route path="/employee/apply-leave" element={<ApplyLeavePage />} />
+                  <Route path="/employee/leave-balance" element={<Navigate to="/employee/apply-leave" replace />} />
+                  <Route path="/employee/approvals" element={<LeaveApprovalsPage />} />
+                  <Route path="/employee/timesheets" element={<TimesheetsPage />} />
+                  <Route path="/employee/check-in" element={<CheckInOutPage />} />
+                  <Route path="/employee/attendance" element={<AttendanceHistoryPage />} />
+                  <Route path="/employee/requests" element={<EmployeeRequestsPage />} />
+                  <Route path="/employee/documents" element={<EmployeeDocumentsPage />} />
+                  <Route path="/employee/holidays" element={<HolidaysPage />} />
+                  <Route path="/employee/notifications" element={<EmployeeNotificationsPage />} />
+                </Route>
+
+                <Route element={<AdminRoute />}>
+                  <Route path="/dashboard" element={<DashboardPage />} />
+                  <Route path="/employees" element={<EmployeesPage />} />
+                  <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/onboarding" element={<OnboardingPage />} />
+                  <Route path="/client-onboarding" element={<ClientOnboardingPage />} />
+                  <Route path="/time-off" element={<TimeOffPage />} />
+                  <Route path="/team-allocation" element={<TeamAllocationPage />} />
+                  <Route path="/assets" element={<AssetsPage />} />
+                  <Route path="/admin/users" element={<UserManagementPage />} />
+                  <Route path="/admin/roles" element={<RolesPage />} />
+                  <Route path="/admin/policies" element={<PoliciesPage />} />
+                  <Route path="/admin/certificates" element={<CertificateGeneratorPage />} />
+                  <Route path="/admin/hr-documents" element={<HRDocumentsPage />} />
+                </Route>
               </Route>
             </Route>
 

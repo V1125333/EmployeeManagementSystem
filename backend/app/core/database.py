@@ -138,3 +138,41 @@ def ensure_notification_columns():
     with engine.begin() as connection:
         for statement in statements:
             connection.execute(text(statement))
+
+
+def ensure_timesheet_columns():
+    """Safely add time-block and overtime columns to existing timesheet tables."""
+    inspector = inspect(engine)
+    if "timesheet_entries" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("timesheet_entries")}
+    dialect = engine.dialect.name
+    column_definitions = {
+        "start_time": "TIME",
+        "end_time": "TIME",
+        "overtime_hours": "NUMERIC(4, 2) DEFAULT 0",
+        "overtime_requires_approval": "BOOLEAN DEFAULT FALSE",
+        "overtime_status": "VARCHAR(20) DEFAULT 'none'",
+        "reviewed_by": "VARCHAR(36)",
+        "reviewed_at": "TIMESTAMP",
+        "reviewer_notes": "TEXT",
+    }
+
+    statements = []
+    for column_name, definition in column_definitions.items():
+        if column_name in existing_columns:
+            continue
+        if dialect == "postgresql":
+            statements.append(
+                f"ALTER TABLE timesheet_entries ADD COLUMN IF NOT EXISTS {column_name} {definition}"
+            )
+        else:
+            statements.append(f"ALTER TABLE timesheet_entries ADD COLUMN {column_name} {definition}")
+
+    if not statements:
+        return
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))

@@ -65,6 +65,11 @@ function durationFromDescription(description?: string | null) {
   return match?.[1] || null;
 }
 
+function canReviewApprovals(role?: string) {
+  const normalized = normalizeRole(role);
+  return ['manager', 'super_admin', 'admin', 'hr_admin'].includes(normalized);
+}
+
 export function TopNav() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
@@ -131,10 +136,52 @@ export function TopNav() {
       await fetch(`${API_BASE}/notifications/${notification.id}/read`, { method: 'PUT', headers }).catch(() => undefined);
       setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, is_read: true } : item));
     }
-    if (notification.related_entity_type === 'announcement' || notification.link_url?.includes('/announcements/')) {
-      navigate('/');
-      setOpenPanel(null);
+  };
+
+  const notificationTargetPath = (notification: NotificationItem) => {
+    const title = `${notification.title || ''} ${notification.message || ''}`.toLowerCase();
+    const type = `${notification.type || ''} ${notification.notification_type || ''} ${notification.related_entity_type || ''}`.toLowerCase();
+
+    if (type.includes('announcement') || notification.link_url?.includes('/announcements/')) {
+      return '/';
     }
+
+    if (type.includes('timesheet') || title.includes('timesheet')) {
+      return canReviewApprovals(user?.role) && (title.includes('submitted') || title.includes('recalled'))
+        ? '/employee/approvals'
+        : '/employee/timesheets';
+    }
+
+    if (type.includes('leave') || title.includes('leave')) {
+      return canReviewApprovals(user?.role) && (title.includes('request') || title.includes('submitted'))
+        ? '/employee/approvals'
+        : '/employee/apply-leave';
+    }
+
+    if (notification.link_url?.startsWith('/')) {
+      return notification.link_url;
+    }
+
+    return '/employee/notifications';
+  };
+
+  const viewNotification = async (notification: NotificationItem) => {
+    await markNotificationRead(notification);
+    navigate(notificationTargetPath(notification));
+    setOpenPanel(null);
+  };
+
+  const inboxTargetPath = (item: InboxItem) => {
+    if (item.item_type === 'leave_request' || item.related_entity_type === 'leave_request') return '/employee/approvals';
+    if (item.item_type === 'attendance_correction' || item.related_entity_type === 'attendance_correction') return '/employee/approvals';
+    if (item.item_type.includes('timesheet') || item.related_entity_type === 'timesheet') return '/employee/approvals';
+    if (item.item_type === 'announcement_acknowledgment' || item.related_entity_type === 'announcement') return '/';
+    return '/employee/notifications';
+  };
+
+  const viewInboxItem = (item: InboxItem) => {
+    navigate(inboxTargetPath(item));
+    setOpenPanel(null);
   };
 
   const markAllRead = async () => {
@@ -287,7 +334,7 @@ export function TopNav() {
                     <Badge variant={priorityVariant(item.priority)}>{titleCase(item.priority)}</Badge>
                   </div>
                   <div className="mt-3 flex justify-end gap-1.5">
-                      <Button size="sm" variant="ghost" onClick={() => navigate('/')}>View</Button>
+                      <Button size="sm" variant="ghost" onClick={() => viewInboxItem(item)}>View</Button>
                       {item.item_type === 'announcement_acknowledgment' ? (
                         <Button size="sm" onClick={() => completeInboxItem(item)}>Mark as Read</Button>
                       ) : item.item_type === 'leave_request' || item.item_type === 'attendance_correction' ? (
@@ -340,7 +387,7 @@ export function TopNav() {
                     </div>
                   </div>
                   <div className="mt-3 flex justify-end gap-1.5">
-                    <Button size="sm" variant="ghost" onClick={() => markNotificationRead(notification)}>View</Button>
+                    <Button size="sm" variant="ghost" onClick={() => viewNotification(notification)}>View</Button>
                     {!notification.is_read && (
                       <Button size="sm" variant="soft" onClick={() => markNotificationRead(notification)}>Mark as Read</Button>
                     )}
