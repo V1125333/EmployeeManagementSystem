@@ -147,6 +147,7 @@ async def list_employees(
     """List employees with search, filters, and pagination."""
     require_admin_employee(db, current_user_id, current_user_email)
     query = db.query(Employee).filter(Employee.work_email != "superadmin@reknew.ai")
+    organization_total = query.count()
 
     # Search
     if search:
@@ -226,6 +227,7 @@ async def list_employees(
             for emp in employees
         ],
         "total": total,
+        "organization_total": organization_total,
         "page": page,
         "per_page": per_page,
         "total_pages": (total + per_page - 1) // per_page,

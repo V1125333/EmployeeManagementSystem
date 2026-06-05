@@ -119,5 +119,6 @@ export const employeeNavItems: NavItem[] = [
   { key: 'attendance-history', label: 'Attendance History', icon: 'CalendarDays', path: '/employee/attendance' },
   { key: 'requests', label: 'Requests', icon: 'Send', path: '/employee/requests' },
   { key: 'documents', label: 'Documents', icon: 'Files', path: '/employee/documents' },
+  { key: 'company-handbook', label: 'Company Handbook', icon: 'BookOpen', path: '/employee/company-handbook' },
   { key: 'holidays', label: 'Holidays', icon: 'PartyPopper', path: '/employee/holidays' },
 ];

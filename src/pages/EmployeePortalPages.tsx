@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Bell,
+  BookOpen,
   CalendarCheck, CalendarClock, CalendarPlus, CheckCircle2, ClipboardCheck,
   Clock3, Download, FileText, LogIn, Pencil, Plus,
   RefreshCw, Send, Trash2, Upload, WalletCards, X,
@@ -2299,6 +2300,24 @@ export function EmployeeDocumentsPage() {
           ['ID Proof', 'Personal', 'Apr 26, 2026', <Button size="sm" variant="soft" icon={<Upload size={14} />}>Update</Button>],
         ]}
       />
+    </PageShell>
+  );
+}
+
+export function CompanyHandbookPage() {
+  return (
+    <PageShell title="Company Handbook" description="View company policies, guidelines, and employee resources.">
+      <Card className="flex min-h-[360px] items-center justify-center p-8">
+        <div className="max-w-md text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-olive/10 text-olive">
+            <BookOpen size={26} />
+          </div>
+          <h2 className="text-lg font-bold text-[#2F3437]">Company Handbook Coming Soon</h2>
+          <p className="mt-2 text-sm leading-6 text-gray-500">
+            Policies, guidelines, and employee resources will be available here.
+          </p>
+        </div>
+      </Card>
     </PageShell>
   );
 }

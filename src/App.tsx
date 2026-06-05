@@ -24,6 +24,7 @@ import {
   ApplyLeavePage,
   AttendanceHistoryPage,
   CheckInOutPage,
+  CompanyHandbookPage,
   EmployeeDashboardPage,
   EmployeeDocumentsPage,
   EmployeeNotificationsPage,
@@ -59,6 +60,7 @@ export default function App() {
                   <Route path="/employee/attendance" element={<AttendanceHistoryPage />} />
                   <Route path="/employee/requests" element={<EmployeeRequestsPage />} />
                   <Route path="/employee/documents" element={<EmployeeDocumentsPage />} />
+                  <Route path="/employee/company-handbook" element={<CompanyHandbookPage />} />
                   <Route path="/employee/holidays" element={<HolidaysPage />} />
                   <Route path="/employee/notifications" element={<Navigate to="/notifications" replace />} />
                 </Route>

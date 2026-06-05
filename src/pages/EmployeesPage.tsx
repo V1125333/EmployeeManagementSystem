@@ -46,6 +46,7 @@ interface EmployeeRecord {
 interface EmployeeListResponse {
   employees: EmployeeRecord[];
   total: number;
+  organization_total?: number;
   page: number;
   per_page: number;
   total_pages: number;
@@ -737,6 +738,7 @@ export function EmployeesPage() {
   const initialSearch = searchParams.get('search') || '';
   const [employees, setEmployees] = useState<EmployeeRecord[]>([]);
   const [total, setTotal] = useState(0);
+  const [organizationTotal, setOrganizationTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -779,11 +781,13 @@ export function EmployeesPage() {
 
       setEmployees(data.employees);
       setTotal(data.total);
+      setOrganizationTotal(data.organization_total ?? data.total);
       setTotalPages(data.total_pages);
     } catch {
       console.log('Backend not available — showing empty state');
       setEmployees([]);
       setTotal(0);
+      setOrganizationTotal(0);
     } finally {
       setLoading(false);
     }
@@ -823,7 +827,11 @@ export function EmployeesPage() {
     setPage(1);
   };
 
-  const hasActiveFilters = deptFilter !== 'All' || statusFilter !== 'All' || roleFilter !== 'All' || locationFilter !== 'All' || search !== '';
+  const hasActiveFilters = deptFilter !== 'All' || statusFilter !== 'All' || roleFilter !== 'All' || locationFilter !== 'All' || search.trim() !== '' || searchInput.trim() !== '';
+  const organizationCount = organizationTotal || total;
+  const headerCountText = hasActiveFilters
+    ? `Showing ${total} of ${organizationCount} ${organizationCount === 1 ? 'employee' : 'employees'}`
+    : `${organizationCount} ${organizationCount === 1 ? 'employee' : 'employees'} in the organization`;
 
   const handleEmployeeSaved = () => {
     fetchEmployees();
@@ -897,7 +905,7 @@ export function EmployeesPage() {
         <div>
           <h1 className="text-2xl font-bold text-[#2F3437] tracking-tight mb-1">Employees</h1>
           <p className="text-sm text-gray-500">
-            {total} {total === 1 ? 'employee' : 'employees'} in the organization
+            {headerCountText}
           </p>
         </div>
         <div className="flex items-center gap-2">
