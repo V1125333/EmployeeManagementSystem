@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { AlertCircle, CalendarDays, ChevronDown, Search } from 'lucide-react';
 import { Drawer } from '@/components/ui/Drawer';
 import { useToast } from '@/components/ui/Toast';
+import { COUNTRY_CODES } from '@/data/countryCodes';
+import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/utils/cn';
 
 interface AddEmployeeDrawerProps {
@@ -15,14 +17,6 @@ const ROLES = ['HR', 'Admin', 'Manager', 'Employee', 'Intern', 'Trainee', 'Guest
 const DEPARTMENTS = ['Engineering', 'Product', 'Design', 'Marketing', 'Sales', 'Operations', 'People', 'Finance'];
 const LOCATIONS = ['Onshore', 'Offshore', 'Remote', 'Hybrid'];
 const MANAGERS = ['David Park', 'Sarah Chen', 'James Rivera', 'Priya Sharma', 'Marcus Chen'];
-const COUNTRY_CODES = [
-  { code: '+1', flag: '🇺🇸', label: 'US' },
-  { code: '+44', flag: '🇬🇧', label: 'UK' },
-  { code: '+91', flag: '🇮🇳', label: 'IN' },
-  { code: '+61', flag: '🇦🇺', label: 'AU' },
-  { code: '+49', flag: '🇩🇪', label: 'DE' },
-  { code: '+81', flag: '🇯🇵', label: 'JP' },
-];
 
 // ─── Reusable Form Components ───
 
@@ -178,7 +172,14 @@ function PhoneInput({
   onPhoneChange: (v: string) => void;
 }) {
   const [showCodes, setShowCodes] = useState(false);
+  const [codeSearch, setCodeSearch] = useState('');
   const selected = COUNTRY_CODES.find((c) => c.code === countryCode) || COUNTRY_CODES[0];
+  const filteredCodes = codeSearch
+    ? COUNTRY_CODES.filter((country) => {
+        const term = codeSearch.toLowerCase();
+        return country.name.toLowerCase().includes(term) || country.iso.toLowerCase().includes(term) || country.code.includes(codeSearch);
+      })
+    : COUNTRY_CODES;
 
   return (
     <div className="relative flex gap-2">
@@ -188,29 +189,46 @@ function PhoneInput({
           onClick={() => setShowCodes(!showCodes)}
           className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-warm-bg border border-[#E5E7EB] text-[13px] font-medium text-[#2F3437] hover:border-olive/30 transition-colors"
         >
-          <span>{selected.flag}</span>
+          <span className="text-[11px] font-bold">{selected.iso}</span>
           <span>{selected.code}</span>
           <ChevronDown size={12} className="text-gray-400" />
         </button>
         {showCodes && (
           <>
             <div className="fixed inset-0 z-10" onClick={() => setShowCodes(false)} />
-            <div className="absolute top-full left-0 mt-1 z-20 bg-warm-card border border-[#E5E7EB] rounded-xl shadow-card-md w-[140px] py-1">
-              {COUNTRY_CODES.map((c) => (
-                <button
-                  key={c.code}
-                  type="button"
-                  onClick={() => { onCountryChange(c.code); setShowCodes(false); }}
-                  className={cn(
-                    'w-full flex items-center gap-2 px-3 py-1.5 text-[13px] font-medium transition-colors',
-                    c.code === countryCode ? 'bg-hover-bg text-olive' : 'text-[#2F3437] hover:bg-hover-bg'
-                  )}
-                >
-                  <span>{c.flag}</span>
-                  <span>{c.code}</span>
-                  <span className="text-gray-400 ml-auto">{c.label}</span>
-                </button>
-              ))}
+            <div className="absolute top-full left-0 mt-1 z-20 flex max-h-[300px] w-[280px] flex-col overflow-hidden rounded-xl border border-[#E5E7EB] bg-warm-card shadow-card-md">
+              <div className="border-b border-[#E5E7EB] p-2">
+                <div className="flex items-center gap-2 rounded-lg border border-[#E5E7EB] bg-warm-bg px-2.5 py-1.5">
+                  <Search size={13} className="text-gray-400" />
+                  <input
+                    value={codeSearch}
+                    onChange={(event) => setCodeSearch(event.target.value)}
+                    placeholder="Search country or code..."
+                    className="w-full bg-transparent text-[13px] text-[#2F3437] outline-none placeholder:text-gray-400"
+                    autoFocus
+                  />
+                </div>
+              </div>
+              <div className="overflow-y-auto py-1">
+                {filteredCodes.map((c) => (
+                  <button
+                    key={`${c.iso}-${c.code}`}
+                    type="button"
+                    onClick={() => { onCountryChange(c.code); setShowCodes(false); setCodeSearch(''); }}
+                    className={cn(
+                      'flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] font-medium transition-colors',
+                      c.code === countryCode ? 'bg-hover-bg text-olive' : 'text-[#2F3437] hover:bg-hover-bg'
+                    )}
+                  >
+                    <span className="w-7 text-[11px] font-bold text-gray-400">{c.iso}</span>
+                    <span className="w-12">{c.code}</span>
+                    <span className="min-w-0 flex-1 truncate text-gray-500">{c.name}</span>
+                  </button>
+                ))}
+                {filteredCodes.length === 0 && (
+                  <div className="px-3 py-4 text-center text-[13px] text-gray-400">No country codes found</div>
+                )}
+              </div>
             </div>
           </>
         )}
@@ -269,6 +287,7 @@ const INITIAL_FORM: FormState = {
 };
 
 export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
+  const { user } = useAuth();
   const { showToast } = useToast();
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
@@ -328,15 +347,20 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
     };
 
     try {
-      // Try real API first
       const response = await fetch('http://localhost:8000/api/v1/employees/', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user?.id || '',
+          'x-user-email': user?.email || '',
+          'x-user-name': user?.name || '',
+        },
         body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+        const error = await response.json().catch(() => null);
+        throw new Error(error?.detail || `API error: ${response.status}`);
       }
 
       const result = await response.json();
@@ -362,21 +386,10 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
         });
       }
 
-    } catch {
-      // Fallback to mock if backend is not running
+    } catch (error) {
       console.log('Backend not available — using mock mode');
-      console.log('Payload:', payload);
-
-      setForm(INITIAL_FORM);
-      setErrors({});
-      onClose();
-
       showToast({
-        message: 'Employee added successfully (demo mode)',
-        action: {
-          label: 'View employee',
-          onClick: () => console.log('Navigate to employee profile'),
-        },
+        message: error instanceof Error ? error.message : 'Unable to add employee',
         duration: 6000,
       });
     } finally {

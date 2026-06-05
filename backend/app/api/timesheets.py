@@ -9,7 +9,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import or_
+from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -113,6 +113,21 @@ class TimesheetWeekResponse(BaseModel):
     leave_days: list[LeaveDayResponse]
 
 
+class TimesheetSummaryResponse(BaseModel):
+    week_start: date
+    week_end: date
+    status: str
+    submitted_at: datetime | None = None
+    submitted_to: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    reviewer_notes: str | None = None
+    total_hours: float = 0
+    working_hours: float = 0
+    break_hours: float = 0
+    leave_hours: float = 0
+
+
 def get_employee(db: Session, user_id: str | None, user_email: str | None):
     return get_current_employee(db, user_id, user_email)
 
@@ -179,6 +194,28 @@ def serialize_employee_week(
         leave_days_for_week(db, employee.id, week_start),
         submitted_to=employee.reporting_manager,
         reviewed_by_name=reviewer_name_for_entries(db, entries),
+    )
+
+
+def serialize_timesheet_summary(db: Session, employee: Employee, week_start: date, entries: list[TimesheetEntry]) -> TimesheetSummaryResponse:
+    week = serialize_employee_week(db, employee, week_start, entries)
+    submitted_at = None
+    if entries:
+        submitted_values = [entry.submitted_at for entry in entries if entry.submitted_at]
+        submitted_at = max(submitted_values) if submitted_values else None
+    return TimesheetSummaryResponse(
+        week_start=week.week_start,
+        week_end=week.week_end,
+        status=week.status,
+        submitted_at=submitted_at,
+        submitted_to=week.submitted_to,
+        reviewed_by=week.reviewed_by,
+        reviewed_at=week.reviewed_at,
+        reviewer_notes=week.reviewer_notes,
+        total_hours=week.total_hours,
+        working_hours=week.working_hours,
+        break_hours=week.break_hours,
+        leave_hours=week.leave_hours,
     )
 
 
@@ -686,6 +723,45 @@ async def delete_my_timesheet_week(
     return serialize_employee_week(db, employee, week_start, [], time_zone)
 
 
+@router.get("/me/summary", response_model=TimesheetSummaryResponse)
+async def my_timesheet_summary(
+    db: Session = Depends(get_db),
+    x_user_id: str | None = Header(default=None),
+    x_user_email: str | None = Header(default=None),
+):
+    employee = get_employee(db, x_user_id, x_user_email)
+    latest_week = db.query(
+        TimesheetEntry.week_start,
+        func.max(TimesheetEntry.updated_at).label("latest_updated_at"),
+    ).filter(
+        TimesheetEntry.employee_id == employee.id,
+    ).group_by(
+        TimesheetEntry.week_start,
+    ).order_by(
+        # week_end is week_start + 6 days, so week_start DESC gives the same deterministic ordering.
+        TimesheetEntry.week_start.desc(),
+        desc("latest_updated_at"),
+    ).first()
+
+    if not latest_week:
+        today = date.today()
+        current_week_start = today - timedelta(days=(today.weekday() + 1) % 7)
+        return TimesheetSummaryResponse(
+            week_start=current_week_start,
+            week_end=week_end(current_week_start),
+            status="not_submitted",
+            submitted_to=employee.reporting_manager,
+        )
+
+    target_week_start = latest_week[0]
+    return serialize_timesheet_summary(
+        db,
+        employee,
+        target_week_start,
+        load_week_entries(db, employee.id, target_week_start),
+    )
+
+
 def serialize_timesheet_approval(db: Session, employee: Employee, week_start: date) -> dict:
     entries = load_week_entries(db, employee.id, week_start)
     week = serialize_employee_week(
@@ -755,6 +831,8 @@ async def decide_timesheet(
     employee = db.query(Employee).filter(Employee.id == employee_id).first()
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found.")
+    if employee.id == reviewer.id:
+        raise HTTPException(status_code=403, detail="You cannot review your own timesheet.")
     if not is_admin(reviewer.role) and employee.reporting_manager != employee_name(reviewer):
         raise HTTPException(status_code=403, detail="Not authorized to review this timesheet.")
 
@@ -793,9 +871,17 @@ async def my_timesheet_history(
     x_user_email: str | None = Header(default=None),
 ):
     employee = get_employee(db, x_user_id, x_user_email)
-    week_rows = db.query(TimesheetEntry.week_start).filter(
+    week_rows = db.query(
+        TimesheetEntry.week_start,
+        func.max(TimesheetEntry.updated_at).label("latest_updated_at"),
+    ).filter(
         TimesheetEntry.employee_id == employee.id,
-    ).group_by(TimesheetEntry.week_start).order_by(TimesheetEntry.week_start.desc()).limit(12).all()
+    ).group_by(
+        TimesheetEntry.week_start,
+    ).order_by(
+        TimesheetEntry.week_start.desc(),
+        desc("latest_updated_at"),
+    ).limit(12).all()
     weeks = []
     for row in week_rows:
         target_week_start = row[0]

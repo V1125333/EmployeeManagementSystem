@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Search, Filter, UserPlus, Download, ChevronDown, ChevronLeft, ChevronRight,
   Mail, Phone, MapPin, Calendar, Briefcase, Building2, User, Shield, X,
@@ -7,6 +8,7 @@ import {
 import { Card, CardHeader, Badge, Button, Avatar } from '@/components/ui';
 import { Drawer } from '@/components/ui/Drawer';
 import { AddEmployeeDrawer } from '@/components/dashboard/AddEmployeeDrawer';
+import { countriesForDialCode } from '@/data/countryCodes';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/utils/cn';
 
@@ -121,6 +123,20 @@ const DEPARTMENTS = ['All', 'Engineering', 'Product', 'Design', 'Marketing', 'Sa
 const STATUSES = ['All', 'active', 'inactive', 'onboarding', 'offboarding'];
 const ROLES = ['All', 'super_admin', 'hr_admin', 'manager', 'employee', 'trainee'];
 const LOCATIONS = ['All', 'Onshore', 'Offshore', 'Remote', 'Hybrid'];
+const WORKFORCE_TYPES = ['Full-Time Employee', 'Paid Intern', 'Unpaid Intern', 'Trainee', 'Guest'];
+const DESIGNATIONS = [
+  'AI Developer',
+  'Backend Engineer',
+  'Frontend Engineer',
+  'Full Stack Engineer',
+  'Data Engineer',
+  'Data Analyst',
+  'ML Engineer',
+  'Product Manager',
+  'Product Designer',
+  'People Operations Associate',
+  'Sales Executive',
+];
 
 // ─── Status Badge ───
 const statusVariant: Record<string, 'olive' | 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
@@ -337,16 +353,8 @@ function ExecutiveEmployeeDetail({
     return [countryCode?.trim(), phone.trim()].filter(Boolean).join(' ');
   };
   const countryName = (countryCode?: string | null) => {
-    const normalizedCode = countryCode?.trim();
-    const countries: Record<string, string> = {
-      '+1': 'United States / Canada',
-      '+44': 'United Kingdom',
-      '+49': 'Germany',
-      '+61': 'Australia',
-      '+81': 'Japan',
-      '+91': 'India',
-    };
-    return normalizedCode ? countries[normalizedCode] || normalizedCode : 'Not recorded';
+    const country = countriesForDialCode(countryCode);
+    return country || 'Not recorded';
   };
   const mfaLabel = (status?: string | null, enabled?: boolean | null) => {
     if (enabled === true || status === 'enabled') return 'Enabled';
@@ -540,11 +548,13 @@ interface EditFormState {
 
 function EditEmployeeDrawer({
   employee,
+  employees,
   open,
   onClose,
   onSaved,
 }: {
   employee: EmployeeRecord | null;
+  employees: EmployeeRecord[];
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
@@ -564,6 +574,16 @@ function EditEmployeeDrawer({
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  const uniqueOptions = (values: Array<string | null | undefined>) => Array.from(new Set(values.filter((value): value is string => !!value?.trim())));
+  const optionWithCurrent = (options: string[], current: string) => current && !options.includes(current) ? [current, ...options] : options;
+  const managerOptions = optionWithCurrent(
+    uniqueOptions(employees
+      .filter((item) => item.id !== employee?.id && ['super_admin', 'hr_admin', 'manager'].includes(item.role))
+      .map((item) => `${item.first_name} ${item.last_name}`)),
+    form.reporting_manager
+  );
+  const designationOptions = optionWithCurrent(uniqueOptions([...DESIGNATIONS, ...employees.map((item) => item.designation)]), form.designation);
 
   useEffect(() => {
     if (!employee) return;
@@ -700,24 +720,27 @@ function EditEmployeeDrawer({
         <Field label="Last Name" value={form.last_name} onChange={(v) => update('last_name', v)} />
         <Field label="Phone" value={form.phone} onChange={(v) => update('phone', v)} />
         <Field label="Department" value={form.department} onChange={(v) => update('department', v)} options={DEPARTMENTS.slice(1)} />
-        <Field label="Designation" value={form.designation} onChange={(v) => update('designation', v)} />
+        <Field label="Designation" value={form.designation} onChange={(v) => update('designation', v)} options={designationOptions} />
         <Field label="Role" value={form.role} onChange={(v) => update('role', v)} options={ROLES.slice(1)} />
-        <Field label="Workforce Type" value={form.workforce_type} onChange={(v) => update('workforce_type', v)} />
+        <Field label="Workforce Type" value={form.workforce_type} onChange={(v) => update('workforce_type', v)} options={optionWithCurrent(WORKFORCE_TYPES, form.workforce_type)} />
         <Field label="Status" value={form.employment_status} onChange={(v) => update('employment_status', v)} options={STATUSES.slice(1)} />
         <Field label="Work Location" value={form.work_location} onChange={(v) => update('work_location', v)} options={LOCATIONS.slice(1)} />
-        <Field label="Reporting Manager" value={form.reporting_manager} onChange={(v) => update('reporting_manager', v)} />
+        <Field label="Reporting Manager" value={form.reporting_manager} onChange={(v) => update('reporting_manager', v)} options={managerOptions} />
       </div>
     </Drawer>
   );
 }
 
 export function EmployeesPage() {
+  const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialSearch = searchParams.get('search') || '';
   const [employees, setEmployees] = useState<EmployeeRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(initialSearch);
   const [deptFilter, setDeptFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
   const [roleFilter, setRoleFilter] = useState('All');
@@ -726,8 +749,19 @@ export function EmployeesPage() {
   const [editingEmployee, setEditingEmployee] = useState<EmployeeRecord | null>(null);
   const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
   const [showAddEmployee, setShowAddEmployee] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const authHeaders = useMemo(() => ({
+    'Content-Type': 'application/json',
+    'x-user-id': user?.id || '',
+    'x-user-email': user?.email || '',
+    'x-user-name': user?.name || '',
+  }), [user]);
 
   const fetchEmployees = useCallback(async () => {
+    if (!user?.email && !user?.id) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -739,7 +773,8 @@ export function EmployeesPage() {
       if (roleFilter !== 'All') params.set('role', roleFilter);
       if (locationFilter !== 'All') params.set('location', locationFilter);
 
-      const res = await fetch(`${API_BASE}/employees/?${params.toString()}`);
+      const res = await fetch(`${API_BASE}/employees/?${params.toString()}`, { headers: authHeaders });
+      if (!res.ok) throw new Error(`Unable to load employees (${res.status})`);
       const data: EmployeeListResponse = await res.json();
 
       setEmployees(data.employees);
@@ -752,14 +787,23 @@ export function EmployeesPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, deptFilter, statusFilter, roleFilter, locationFilter]);
+  }, [authHeaders, page, search, deptFilter, statusFilter, roleFilter, locationFilter, user?.email, user?.id]);
 
   useEffect(() => {
     fetchEmployees();
   }, [fetchEmployees]);
 
   // Debounced search
-  const [searchInput, setSearchInput] = useState('');
+  const [searchInput, setSearchInput] = useState(initialSearch);
+  useEffect(() => {
+    const urlSearch = searchParams.get('search') || '';
+    if (urlSearch !== searchInput) {
+      setSearchInput(urlSearch);
+      setSearch(urlSearch);
+      setPage(1);
+    }
+  }, [searchParams]);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setSearch(searchInput);
@@ -775,6 +819,7 @@ export function EmployeesPage() {
     setLocationFilter('All');
     setSearchInput('');
     setSearch('');
+    setSearchParams({}, { replace: true });
     setPage(1);
   };
 
@@ -783,6 +828,66 @@ export function EmployeesPage() {
   const handleEmployeeSaved = () => {
     fetchEmployees();
     setPreviewRefreshKey((key) => key + 1);
+  };
+
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      const params = new URLSearchParams();
+      params.set('page', '1');
+      params.set('per_page', '100');
+      if (search) params.set('search', search);
+      if (deptFilter !== 'All') params.set('department', deptFilter);
+      if (statusFilter !== 'All') params.set('status', statusFilter);
+      if (roleFilter !== 'All') params.set('role', roleFilter);
+      if (locationFilter !== 'All') params.set('location', locationFilter);
+
+      const res = await fetch(`${API_BASE}/employees/?${params.toString()}`, { headers: authHeaders });
+      if (!res.ok) throw new Error(`Unable to export employees (${res.status})`);
+      const data: EmployeeListResponse = await res.json();
+      const rows = data.employees || [];
+      const columns: Array<[string, (employee: EmployeeRecord, index: number) => string | number | boolean | null | undefined]> = [
+        ['Employee Code', (_employee, index) => `EMP-${String(index + 1).padStart(4, '0')}`],
+        ['First Name', (employee) => employee.first_name],
+        ['Last Name', (employee) => employee.last_name],
+        ['Work Email', (employee) => employee.work_email],
+        ['Country Code', (employee) => employee.country_code],
+        ['Phone', (employee) => employee.phone],
+        ['Full Phone', (employee) => [employee.country_code?.trim(), employee.phone?.trim()].filter(Boolean).join(' ')],
+        ['Country / Region', (employee) => countriesForDialCode(employee.country_code)],
+        ['Department', (employee) => employee.department],
+        ['Designation', (employee) => employee.designation],
+        ['Role', (employee) => roleLabels[employee.role] || employee.role],
+        ['Workforce Type', (employee) => employee.workforce_type],
+        ['Status', (employee) => employee.employment_status],
+        ['Work Location', (employee) => employee.work_location],
+        ['Reporting Manager', (employee) => employee.reporting_manager],
+        ['Joining Date', (employee) => employee.joining_date],
+        ['Active', (employee) => employee.is_active ? 'Yes' : 'No'],
+      ];
+      const escapeCsv = (value: string | number | boolean | null | undefined) => {
+        const text = value === null || value === undefined ? '' : String(value);
+        return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+      };
+      const csv = [
+        columns.map(([label]) => escapeCsv(label)).join(','),
+        ...rows.map((employee, index) => columns.map(([, getter]) => escapeCsv(getter(employee, index))).join(',')),
+      ].join('\r\n');
+      const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const date = new Date().toISOString().slice(0, 10);
+      link.href = url;
+      link.download = `reknew-employees-${date}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Unable to export employees.');
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -796,7 +901,9 @@ export function EmployeesPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="ghost" icon={<Download size={14} />}>Export CSV</Button>
+          <Button variant="ghost" icon={<Download size={14} />} disabled={exporting} onClick={exportCsv}>
+            {exporting ? 'Exporting' : 'Export CSV'}
+          </Button>
           <Button icon={<UserPlus size={14} />} onClick={() => setShowAddEmployee(true)}>Add Employee</Button>
         </div>
       </div>
@@ -986,6 +1093,7 @@ export function EmployeesPage() {
 
       <EditEmployeeDrawer
         employee={editingEmployee}
+        employees={employees}
         open={!!editingEmployee}
         onClose={() => setEditingEmployee(null)}
         onSaved={handleEmployeeSaved}

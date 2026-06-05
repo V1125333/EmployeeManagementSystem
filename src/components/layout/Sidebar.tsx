@@ -5,7 +5,6 @@ import {
   Network, Package, Settings, Shield, FileText,
   PanelLeftClose, PanelLeftOpen, Award, Files, CalendarPlus,
   WalletCards, ClipboardCheck, Clock3, LogIn, Send, PartyPopper,
-  UserRound,
 } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { mainNavItems, adminNavItems, employeeNavItems } from '@/data/mockData';
@@ -15,7 +14,7 @@ const iconMap: Record<string, React.ElementType> = {
   LayoutDashboard, Users, UserPlus, Briefcase, CalendarDays,
   Network, Package, Settings, Shield, FileText, Award, Files,
   CalendarPlus, WalletCards, ClipboardCheck, Clock3, LogIn, Send,
-  PartyPopper, UserRound,
+  PartyPopper,
 };
 
 function isAdminRole(role?: string) {

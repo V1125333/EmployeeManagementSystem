@@ -15,6 +15,8 @@ from app.core.database import (
     ensure_announcement_columns,
     ensure_notification_columns,
     ensure_timesheet_columns,
+    ensure_time_off_columns,
+    ensure_leave_type_policy_columns,
     SessionLocal,
 )
 
@@ -41,6 +43,7 @@ from app.api.support_tickets import router as support_tickets_router
 from app.api.attendance import router as attendance_router
 from app.api.timesheets import router as timesheets_router
 from app.api.leaves import router as leaves_router
+from app.api.admin_time_off import router as admin_time_off_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -99,20 +102,23 @@ def seed_leave_types(db):
     if db.query(LeaveType).count() > 0:
         return
     leave_types = [
-        ("Casual Leave", "CL", 12, True, True, 5, 1),
-        ("Sick Leave", "SL", 10, True, False, 0, 2),
-        ("Earned Leave", "EL", 15, True, True, 10, 3),
-        ("Maternity Leave", "ML", 180, True, False, 0, 4),
-        ("Paternity Leave", "PL", 15, True, False, 0, 5),
-        ("Compensatory Off", "CO", 0, True, False, 0, 6),
-        ("Loss of Pay", "LOP", 0, False, False, 0, 7),
-        ("Bereavement Leave", "BL", 5, True, False, 0, 8),
+        ("Casual Leave", "CL", 12, True, True, 5, 1, True, None, None),
+        ("Sick Leave", "SL", 10, True, False, 0, 2, False, 30, None),
+        ("Earned Leave", "EL", 15, True, True, 10, 3, True, None, None),
+        ("Maternity Leave", "ML", 180, True, False, 0, 4, True, None, None),
+        ("Paternity Leave", "PL", 15, True, False, 0, 5, True, None, None),
+        ("Compensatory Off", "CO", 0, True, False, 0, 6, True, None, None),
+        ("Loss of Pay", "LOP", 0, False, False, 0, 7, True, None, None),
+        ("Bereavement Leave", "BL", 5, True, False, 0, 8, True, 30, "Future bereavement leave is unusual. Please confirm the dates before submitting."),
     ]
-    for name, code, days, paid, carry, max_carry, order in leave_types:
+    for name, code, days, paid, carry, max_carry, order, allow_future, past_limit, future_warning in leave_types:
         db.add(LeaveType(
             name=name, code=code, default_days_per_year=days,
             is_paid=paid, is_carry_forward=carry,
             max_carry_forward_days=max_carry, sort_order=order,
+            allow_future_dates=allow_future,
+            past_date_limit_days=past_limit,
+            future_date_warning=future_warning,
         ))
     db.commit()
     logger.info(f"Seeded {len(leave_types)} leave types")
@@ -174,6 +180,8 @@ async def lifespan(app: FastAPI):
     ensure_announcement_columns()
     ensure_notification_columns()
     ensure_timesheet_columns()
+    ensure_time_off_columns()
+    ensure_leave_type_policy_columns()
     logger.info("All 19 database tables created")
 
     db = SessionLocal()
@@ -217,6 +225,7 @@ app.include_router(support_tickets_router, prefix="/api/v1")
 app.include_router(attendance_router, prefix="/api/v1")
 app.include_router(timesheets_router, prefix="/api/v1")
 app.include_router(leaves_router, prefix="/api/v1")
+app.include_router(admin_time_off_router, prefix="/api/v1")
 
 
 

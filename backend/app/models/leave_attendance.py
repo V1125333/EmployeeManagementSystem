@@ -24,6 +24,9 @@ class LeaveType(Base):
     is_paid: Mapped[bool] = mapped_column(Boolean, default=True)
     is_carry_forward: Mapped[bool] = mapped_column(Boolean, default=False)
     max_carry_forward_days: Mapped[float] = mapped_column(Numeric(4, 1), default=0)
+    allow_future_dates: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    past_date_limit_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    future_date_warning: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -40,6 +43,7 @@ class LeaveBalance(Base):
     total_days: Mapped[float] = mapped_column(Numeric(5, 1), default=0)
     used_days: Mapped[float] = mapped_column(Numeric(5, 1), default=0)
     carry_forward_days: Mapped[float] = mapped_column(Numeric(4, 1), default=0)
+    updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

@@ -25,6 +25,10 @@ def active_announcement_status(announcement: Announcement, now: datetime) -> boo
     return True
 
 
+def employee_name(employee: Employee) -> str:
+    return f"{employee.first_name} {employee.last_name}".strip()
+
+
 @router.get("/kpis")
 async def get_kpis(db: Session = Depends(get_db)):
     """Get all dashboard KPI metrics from real data."""
@@ -50,19 +54,35 @@ async def get_kpis(db: Session = Depends(get_db)):
     attendance_rate = rate
 
     # Upcoming birthdays (next 7 days)
-    upcoming_bdays = 0
+    upcoming_birthdays = []
     employees = base.filter(Employee.date_of_birth.isnot(None), Employee.employment_status == "active").all()
     for emp in employees:
         bday_this_year = emp.date_of_birth.replace(year=today.year)
+        if bday_this_year < today:
+            bday_this_year = emp.date_of_birth.replace(year=today.year + 1)
         days_until = (bday_this_year - today).days
         if 0 <= days_until <= 7:
-            upcoming_bdays += 1
+            upcoming_birthdays.append({
+                "employee_id": emp.id,
+                "name": employee_name(emp),
+                "date": bday_this_year.isoformat(),
+                "subtitle": f"{days_until} day{'s' if days_until != 1 else ''} away" if days_until else "Today",
+            })
+    upcoming_birthdays.sort(key=lambda item: item["date"])
 
     # Work anniversaries this month
-    anniversaries = 0
+    anniversaries = []
     for emp in base.filter(Employee.employment_status == "active").all():
         if emp.joining_date and emp.joining_date.month == today.month and emp.joining_date.year < today.year:
-            anniversaries += 1
+            years = today.year - emp.joining_date.year
+            anniversary_date = emp.joining_date.replace(year=today.year)
+            anniversaries.append({
+                "employee_id": emp.id,
+                "name": employee_name(emp),
+                "date": anniversary_date.isoformat(),
+                "subtitle": f"{years} year{'s' if years != 1 else ''}",
+            })
+    anniversaries.sort(key=lambda item: item["date"])
 
     return {
         "kpis": [
@@ -71,8 +91,8 @@ async def get_kpis(db: Session = Depends(get_db)):
             {"label": "Inactive", "value": str(inactive), "icon": "UserX", "color": "#9CA3AF"},
             {"label": "Pending Leave", "value": str(pending_leave), "icon": "Calendar", "color": "#D6A85F"},
             {"label": "Today's Attendance", "value": attendance_rate, "icon": "CheckCircle", "color": "#7E9BB7"},
-            {"label": "Upcoming Birthdays", "value": str(upcoming_bdays), "trend": "this week", "icon": "Cake", "color": "#D97C7C"},
-            {"label": "Work Anniversaries", "value": str(anniversaries), "trend": "this month", "icon": "Award", "color": "#A3B18A"},
+            {"label": "Upcoming Birthdays", "value": str(len(upcoming_birthdays)), "trend": "this week", "icon": "Cake", "color": "#D97C7C", "details": upcoming_birthdays},
+            {"label": "Work Anniversaries", "value": str(len(anniversaries)), "trend": "this month", "icon": "Award", "color": "#A3B18A", "details": anniversaries},
         ]
     }
 

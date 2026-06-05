@@ -3,12 +3,13 @@ Action inbox and notification APIs.
 """
 
 from datetime import datetime
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.employee import Employee
 from app.models.leave_attendance import AttendanceCorrection, LeaveBalance, LeaveRequest, LeaveType
 from app.models.operations import ActionInboxItem, Notification
+from app.services.settings_service import get_current_employee, is_manager_or_admin_role, is_admin_role
 
 router = APIRouter(tags=["Inbox & Notifications"])
 MANAGER_ROLES = {"super_admin", "admin", "hr_admin", "global_access", "manager"}
@@ -31,10 +32,9 @@ def current_employee(db: Session, user_id: str | None, user_email: str | None) -
     return employee
 
 
-def actor_context(db: Session, user_id: str | None, user_email: str | None, role: str | None):
-    employee = current_employee(db, user_id, user_email)
-    actor_role = normalize_role(role) or normalize_role(employee.role if employee else None)
-    return employee, actor_role
+def actor_context(db: Session, user_id: str | None, user_email: str | None):
+    employee = get_current_employee(db, user_id, user_email)
+    return employee, normalize_role(employee.role)
 
 
 def serialize_notification(item: Notification) -> dict:
@@ -95,9 +95,14 @@ def create_notification(
     ))
 
 
-def manager_action_items(db: Session) -> list[dict]:
+def manager_action_items(db: Session, actor: Employee) -> list[dict]:
     items: list[dict] = []
-    pending_leaves = db.query(LeaveRequest).filter(LeaveRequest.status == "pending").order_by(LeaveRequest.created_at.desc()).limit(10).all()
+    pending_leave_query = db.query(LeaveRequest).filter(LeaveRequest.status == "pending")
+    if not is_admin_role(actor.role):
+        pending_leave_query = pending_leave_query.join(Employee, Employee.id == LeaveRequest.employee_id).filter(
+            Employee.reporting_manager == f"{actor.first_name} {actor.last_name}".strip(),
+        )
+    pending_leaves = pending_leave_query.order_by(LeaveRequest.created_at.desc()).limit(10).all()
     for leave in pending_leaves:
         items.append({
             "id": f"leave:{leave.id}",
@@ -113,7 +118,12 @@ def manager_action_items(db: Session) -> list[dict]:
             "created_at": leave.created_at.isoformat() if leave.created_at else None,
         })
 
-    corrections = db.query(AttendanceCorrection).filter(AttendanceCorrection.status == "pending").order_by(AttendanceCorrection.created_at.desc()).limit(10).all()
+    corrections_query = db.query(AttendanceCorrection).filter(AttendanceCorrection.status == "pending")
+    if not is_admin_role(actor.role):
+        corrections_query = corrections_query.join(Employee, Employee.id == AttendanceCorrection.employee_id).filter(
+            Employee.reporting_manager == f"{actor.first_name} {actor.last_name}".strip(),
+        )
+    corrections = corrections_query.order_by(AttendanceCorrection.created_at.desc()).limit(10).all()
     for correction in corrections:
         items.append({
             "id": f"attendance:{correction.id}",
@@ -134,11 +144,10 @@ def manager_action_items(db: Session) -> list[dict]:
 @router.get("/inbox")
 async def get_inbox(
     current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_role: str = Header(None, alias="x-user-role"),
     current_user_email: str = Header(None, alias="x-user-email"),
     db: Session = Depends(get_db),
 ):
-    employee, role = actor_context(db, current_user_id, current_user_email, current_user_role)
+    employee, role = actor_context(db, current_user_id, current_user_email)
     items: list[dict] = []
 
     if employee:
@@ -149,7 +158,7 @@ async def get_inbox(
         items.extend(serialize_action_item(item) for item in stored_items)
 
     if role in MANAGER_ROLES:
-        items.extend(manager_action_items(db))
+        items.extend(manager_action_items(db, employee))
 
     items.sort(key=lambda item: item.get("created_at") or "", reverse=True)
     return {"items": items[:20]}
@@ -158,11 +167,10 @@ async def get_inbox(
 @router.get("/inbox/count")
 async def get_inbox_count(
     current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_role: str = Header(None, alias="x-user-role"),
     current_user_email: str = Header(None, alias="x-user-email"),
     db: Session = Depends(get_db),
 ):
-    data = await get_inbox(current_user_id, current_user_role, current_user_email, db)
+    data = await get_inbox(current_user_id, current_user_email, db)
     return {"count": len(data["items"])}
 
 
@@ -193,12 +201,11 @@ async def decide_leave_request(
     request_id: str,
     decision: str,
     current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_role: str = Header(None, alias="x-user-role"),
     current_user_email: str = Header(None, alias="x-user-email"),
     db: Session = Depends(get_db),
 ):
-    reviewer, role = actor_context(db, current_user_id, current_user_email, current_user_role)
-    if role not in MANAGER_ROLES:
+    reviewer, role = actor_context(db, current_user_id, current_user_email)
+    if not is_manager_or_admin_role(reviewer.role):
         raise HTTPException(status_code=403, detail="Not authorized to review leave requests")
     if decision not in {"approve", "reject"}:
         raise HTTPException(status_code=400, detail="Decision must be approve or reject")
@@ -208,6 +215,13 @@ async def decide_leave_request(
         raise HTTPException(status_code=404, detail="Leave request not found")
     if leave.status != "pending":
         raise HTTPException(status_code=400, detail="Leave request is no longer pending")
+    employee = db.query(Employee).filter(Employee.id == leave.employee_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    if leave.employee_id == reviewer.id:
+        raise HTTPException(status_code=403, detail="You cannot review your own leave request")
+    if not is_admin_role(reviewer.role) and employee.reporting_manager != f"{reviewer.first_name} {reviewer.last_name}".strip():
+        raise HTTPException(status_code=403, detail="Not authorized to review this employee's leave request")
 
     new_status = "approved" if decision == "approve" else "rejected"
     leave.status = new_status
@@ -253,12 +267,11 @@ async def decide_attendance_correction(
     correction_id: str,
     decision: str,
     current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_role: str = Header(None, alias="x-user-role"),
     current_user_email: str = Header(None, alias="x-user-email"),
     db: Session = Depends(get_db),
 ):
-    reviewer, role = actor_context(db, current_user_id, current_user_email, current_user_role)
-    if role not in MANAGER_ROLES:
+    reviewer, role = actor_context(db, current_user_id, current_user_email)
+    if not is_manager_or_admin_role(reviewer.role):
         raise HTTPException(status_code=403, detail="Not authorized to review attendance corrections")
     if decision not in {"approve", "reject"}:
         raise HTTPException(status_code=400, detail="Decision must be approve or reject")
@@ -268,6 +281,13 @@ async def decide_attendance_correction(
         raise HTTPException(status_code=404, detail="Attendance correction not found")
     if correction.status != "pending":
         raise HTTPException(status_code=400, detail="Attendance correction is no longer pending")
+    employee = db.query(Employee).filter(Employee.id == correction.employee_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    if correction.employee_id == reviewer.id:
+        raise HTTPException(status_code=403, detail="You cannot review your own attendance correction")
+    if not is_admin_role(reviewer.role) and employee.reporting_manager != f"{reviewer.first_name} {reviewer.last_name}".strip():
+        raise HTTPException(status_code=403, detail="Not authorized to review this employee's attendance correction")
 
     new_status = "approved" if decision == "approve" else "rejected"
     correction.status = new_status
@@ -291,14 +311,17 @@ async def decide_attendance_correction(
 async def get_notifications(
     current_user_id: str = Header(None, alias="x-user-id"),
     current_user_email: str = Header(None, alias="x-user-email"),
+    unread_only: bool = Query(False),
+    limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
     employee = current_employee(db, current_user_id, current_user_email)
     if not employee:
         return {"notifications": []}
-    notifications = db.query(Notification).filter(
-        Notification.user_id == employee.id,
-    ).order_by(Notification.created_at.desc()).limit(20).all()
+    query = db.query(Notification).filter(Notification.user_id == employee.id)
+    if unread_only:
+        query = query.filter(Notification.is_read == False)
+    notifications = query.order_by(Notification.created_at.desc()).limit(limit).all()
     return {"notifications": [serialize_notification(item) for item in notifications]}
 
 

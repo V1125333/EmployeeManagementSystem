@@ -29,11 +29,11 @@ export function PendingTasks() {
         badge={totalUrgent > 0 ? `${totalUrgent} urgent` : undefined}
         badgeColor="warning"
       />
-      <div className="px-5 pb-4 grid grid-cols-4 gap-3">
+      <div className="grid gap-4 px-5 pb-5 pt-4 sm:grid-cols-2 xl:grid-cols-4">
         {tasks.map((task) => (
           <div
             key={task.label}
-            className="flex flex-col items-center py-4 px-3 rounded-xl bg-warm-bg border border-[#E5E7EB] hover:border-olive/20 transition-colors cursor-pointer"
+            className="flex min-h-[112px] flex-col items-center justify-center rounded-xl border border-[#E5E7EB] bg-warm-bg px-3 py-4 transition-colors hover:border-olive/20"
           >
             <div
               className="text-2xl font-bold mb-1"

@@ -47,6 +47,7 @@ export default function App() {
               <Route element={<AppLayout />}>
                 <Route path="/" element={<RoleHomeRedirect />} />
                 <Route path="/profile" element={<ProfilePage />} />
+                <Route path="/notifications" element={<EmployeeNotificationsPage />} />
 
                 <Route element={<EmployeeRoute />}>
                   <Route path="/employee" element={<EmployeeDashboardPage />} />
@@ -59,7 +60,7 @@ export default function App() {
                   <Route path="/employee/requests" element={<EmployeeRequestsPage />} />
                   <Route path="/employee/documents" element={<EmployeeDocumentsPage />} />
                   <Route path="/employee/holidays" element={<HolidaysPage />} />
-                  <Route path="/employee/notifications" element={<EmployeeNotificationsPage />} />
+                  <Route path="/employee/notifications" element={<Navigate to="/notifications" replace />} />
                 </Route>
 
                 <Route element={<AdminRoute />}>

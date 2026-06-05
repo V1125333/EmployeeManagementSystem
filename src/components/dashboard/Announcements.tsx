@@ -291,11 +291,11 @@ function CreateAnnouncementDrawer({
 
   useEffect(() => {
     if (!open || form.audience_type !== 'employee') return;
-    fetch(`${API_BASE}/employees/`)
+    fetch(`${API_BASE}/employees/`, { headers: authHeaders(user) })
       .then((res) => res.json())
       .then((data) => setEmployees(data.employees || []))
       .catch(() => setEmployees([]));
-  }, [form.audience_type, open]);
+  }, [form.audience_type, open, user]);
 
   const filteredEmployees = useMemo(() => {
     const term = employeeSearch.trim().toLowerCase();

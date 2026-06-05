@@ -1,8 +1,9 @@
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
+  Bell,
   CalendarCheck, CalendarClock, CalendarPlus, CheckCircle2, ClipboardCheck,
   Clock3, Download, FileText, LogIn, Pencil, Plus,
   RefreshCw, Send, Trash2, Upload, WalletCards, X,
@@ -20,7 +21,8 @@ const attendanceCache: Record<string, {
 
 const dashboardCache: Record<string, {
   leaveSummary: LeaveSummary | null;
-  timesheetWeek: TimesheetWeek | null;
+  timesheetSummary: TimesheetSummary | null;
+  timesheetHistory: TimesheetWeek[];
   leaveApprovalRows: LeaveRequestItem[];
   timesheetApprovalRows: TimesheetApprovalItem[];
 }> = {};
@@ -91,6 +93,21 @@ interface TimesheetWeek {
   leave_days: TimesheetLeaveDay[];
 }
 
+interface TimesheetSummary {
+  week_start: string;
+  week_end: string;
+  status: string;
+  submitted_at?: string | null;
+  submitted_to?: string | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  reviewer_notes?: string | null;
+  total_hours: number;
+  working_hours: number;
+  break_hours: number;
+  leave_hours: number;
+}
+
 interface TimesheetRow {
   id: string;
   workDate: string;
@@ -106,6 +123,11 @@ interface LeaveBalanceItem {
   leave_type_id: string;
   type: string;
   code: string;
+  date_policy?: {
+    allow_future_dates: boolean;
+    past_date_limit_days?: number | null;
+    future_date_warning?: string | null;
+  };
   total: number;
   available: number | string;
   used: number;
@@ -136,6 +158,19 @@ interface LeaveSummary {
   reporting_manager?: string | null;
   balances: LeaveBalanceItem[];
   requests: LeaveRequestItem[];
+}
+
+interface NotificationHistoryItem {
+  id: string;
+  title: string;
+  message?: string | null;
+  type: string;
+  notification_type?: string | null;
+  related_entity_type?: string | null;
+  related_entity_id?: string | null;
+  is_read: boolean;
+  link_url?: string | null;
+  created_at?: string | null;
 }
 
 interface TimesheetApprovalItem {
@@ -392,13 +427,26 @@ function MetricCard({
   label,
   value,
   icon,
+  onClick,
 }: {
   label: string;
   value: string;
   icon: React.ReactNode;
+  onClick?: () => void;
 }) {
   return (
-    <Card className="p-5">
+    <Card
+      className={cn('p-5', onClick && 'cursor-pointer transition-all hover:-translate-y-0.5 hover:border-olive/30 hover:shadow-card-lg')}
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={(event) => {
+        if (onClick && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          onClick();
+        }
+      }}
+    >
       <div className="flex items-center justify-between">
         <div>
           <div className="text-[12px] font-semibold text-gray-500">{label}</div>
@@ -406,6 +454,88 @@ function MetricCard({
         </div>
         <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-olive/10 text-olive">
           {icon}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function statusLabel(status?: string | null) {
+  if (!status || status === 'not_started' || status === 'not_submitted') return 'Not Submitted';
+  return status.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function TimesheetSummaryCard({
+  summary,
+  loading,
+  onClick,
+}: {
+  summary: TimesheetSummary | null;
+  loading: boolean;
+  onClick: () => void;
+}) {
+  const status = summary ? statusLabel(summary.status) : loading ? 'Loading...' : 'Not Submitted';
+  const statusVariantName: 'success' | 'error' | 'warning' | 'neutral' = summary?.status === 'approved'
+    ? 'success'
+    : summary?.status === 'rejected'
+      ? 'error'
+      : summary?.status === 'submitted'
+        ? 'warning'
+        : 'neutral';
+  const weekText = summary ? weekLabel(summary.week_start) : weekLabel(toDateInput(startOfLocalWeek()));
+  const detailRows = summary?.status === 'approved'
+    ? [
+        ['Week', weekText],
+        ['Approved By', summary.reviewed_by || 'Manager'],
+        ['Approved On', summary.reviewed_at ? formatDate(summary.reviewed_at.slice(0, 10)) : '-'],
+      ]
+    : summary?.status === 'submitted'
+      ? [
+          ['Week', weekText],
+          ['Submitted On', summary.submitted_at ? formatDate(summary.submitted_at.slice(0, 10)) : '-'],
+          ['Awaiting', summary.submitted_to ? `${summary.submitted_to} Approval` : 'Manager Approval'],
+        ]
+      : summary?.status === 'rejected'
+        ? [
+            ['Week', weekText],
+            ['Rejected By', summary.reviewed_by || 'Manager'],
+            ['Rejected On', summary.reviewed_at ? formatDate(summary.reviewed_at.slice(0, 10)) : '-'],
+          ]
+        : [
+            ['Week', weekText],
+            ['Action', 'Submit Timesheet'],
+          ];
+
+  return (
+    <Card
+      className="cursor-pointer p-5 transition-all hover:-translate-y-0.5 hover:border-olive/30 hover:shadow-card-lg"
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClick();
+        }
+      }}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-[12px] font-semibold text-gray-500">Timesheet</div>
+          <div className="mt-2">
+            <Badge variant={statusVariantName}>{status}</Badge>
+          </div>
+          <div className="mt-2 space-y-0.5 text-xs text-gray-500">
+            {detailRows.map(([label, value]) => (
+              <div key={label} className="flex gap-1.5">
+                <span className="font-semibold text-gray-500">{label}:</span>
+                <span className="truncate text-[#2F3437]">{value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-olive/10 text-olive">
+          <Clock3 size={21} />
         </div>
       </div>
     </Card>
@@ -451,10 +581,10 @@ export function EmployeeDashboardPage() {
   const dashboardCacheKey = user?.id || user?.email || '';
   const cachedDashboard = dashboardCacheKey ? dashboardCache[dashboardCacheKey] : undefined;
   const [leaveSummary, setLeaveSummary] = useState<LeaveSummary | null>(cachedDashboard?.leaveSummary ?? null);
-  const [timesheetWeek, setTimesheetWeek] = useState<TimesheetWeek | null>(cachedDashboard?.timesheetWeek ?? null);
+  const [timesheetSummary, setTimesheetSummary] = useState<TimesheetSummary | null>(cachedDashboard?.timesheetSummary ?? null);
+  const [timesheetHistory, setTimesheetHistory] = useState<TimesheetWeek[]>(cachedDashboard?.timesheetHistory ?? []);
   const [approvalRows, setApprovalRows] = useState<LeaveRequestItem[]>(cachedDashboard?.leaveApprovalRows ?? []);
   const [timesheetApprovalRows, setTimesheetApprovalRows] = useState<TimesheetApprovalItem[]>(cachedDashboard?.timesheetApprovalRows ?? []);
-  const dashboardWeekStart = useMemo(() => toDateInput(startOfLocalWeek()), []);
 
   const headers = useMemo(() => ({
     'Content-Type': 'application/json',
@@ -466,23 +596,27 @@ export function EmployeeDashboardPage() {
     if (!user) return;
     Promise.all([
       fetch(`${API_BASE}/leaves/me/summary`, { headers }).then((res) => res.ok ? res.json() : null),
-      fetch(`${API_BASE}/timesheets/me/week?week_start=${dashboardWeekStart}`, { headers }).then((res) => res.ok ? res.json() : null),
+      fetch(`${API_BASE}/timesheets/me/summary`, { headers }).then((res) => res.ok ? res.json() : null),
+      fetch(`${API_BASE}/timesheets/me/history`, { headers }).then((res) => res.ok ? res.json() : null),
       fetch(`${API_BASE}/leaves/approvals`, { headers }).then((res) => res.ok ? res.json() : null),
       fetch(`${API_BASE}/timesheets/approvals`, { headers }).then((res) => res.ok ? res.json() : null),
-    ]).then(([leaveData, timesheetData, approvalsData, timesheetApprovalsData]) => {
+    ]).then(([leaveData, timesheetSummaryData, timesheetHistoryData, approvalsData, timesheetApprovalsData]) => {
       const existingCache = dashboardCacheKey ? dashboardCache[dashboardCacheKey] : undefined;
       const nextLeaveSummary = leaveData || existingCache?.leaveSummary || null;
-      const nextTimesheetWeek = timesheetData || existingCache?.timesheetWeek || null;
+      const nextTimesheetSummary = timesheetSummaryData || existingCache?.timesheetSummary || null;
+      const nextTimesheetHistory = timesheetHistoryData || existingCache?.timesheetHistory || [];
       const nextApprovalRows = approvalsData?.approvals || existingCache?.leaveApprovalRows || [];
       const nextTimesheetApprovalRows = timesheetApprovalsData?.approvals || existingCache?.timesheetApprovalRows || [];
       if (leaveData) setLeaveSummary(leaveData);
-      if (timesheetData) setTimesheetWeek(timesheetData);
+      if (timesheetSummaryData) setTimesheetSummary(timesheetSummaryData);
+      if (timesheetHistoryData) setTimesheetHistory(timesheetHistoryData);
       if (approvalsData?.approvals) setApprovalRows(approvalsData.approvals);
       if (timesheetApprovalsData?.approvals) setTimesheetApprovalRows(timesheetApprovalsData.approvals);
       if (dashboardCacheKey) {
         dashboardCache[dashboardCacheKey] = {
           leaveSummary: nextLeaveSummary,
-          timesheetWeek: nextTimesheetWeek,
+          timesheetSummary: nextTimesheetSummary,
+          timesheetHistory: nextTimesheetHistory,
           leaveApprovalRows: nextApprovalRows,
           timesheetApprovalRows: nextTimesheetApprovalRows,
         };
@@ -490,7 +624,7 @@ export function EmployeeDashboardPage() {
     }).catch(() => {
       // Keep dashboard usable even if one summary endpoint is temporarily unavailable.
     });
-  }, [dashboardCacheKey, dashboardWeekStart, headers, user]);
+  }, [dashboardCacheKey, headers, user]);
 
   const availableLeaveDays = useMemo(() => {
     const total = (leaveSummary?.balances || []).reduce((sum, leave) => (
@@ -500,19 +634,26 @@ export function EmployeeDashboardPage() {
   }, [leaveSummary?.balances]);
 
   const pendingOwnRequests = (leaveSummary?.requests || []).filter((request) => request.status === 'pending').length;
-  const pendingTimesheet = timesheetWeek?.status === 'submitted' ? 0 : 1;
+  const pendingTimesheet = timesheetSummary?.status === 'submitted' || timesheetSummary?.status === 'approved' ? 0 : 1;
   const pendingActions = pendingOwnRequests + pendingTimesheet + approvalRows.length + timesheetApprovalRows.length;
-  const timesheetValue = timesheetWeek
-    ? timesheetWeek.status === 'submitted'
-      ? 'Submitted'
-      : timesheetWeek.status === 'approved'
-        ? 'Approved'
-        : timesheetWeek.status === 'rejected'
-          ? 'Rejected'
-          : timesheetWeek.total_hours > 0
-            ? 'Draft'
-            : 'Not started'
-    : 'Loading...';
+  const timesheetCardWeekStart = timesheetSummary?.week_start || toDateInput(startOfLocalWeek());
+  const openTimesheetSummary = () => navigate(`/employee/timesheets?week_start=${encodeURIComponent(timesheetCardWeekStart)}`);
+  const timesheetActivityRows = timesheetHistory
+    .filter((week) => week.status && week.status !== 'not_started')
+    .sort((a, b) => {
+      const weekEndCompare = new Date(`${b.week_end}T00:00:00`).getTime() - new Date(`${a.week_end}T00:00:00`).getTime();
+      if (weekEndCompare !== 0) return weekEndCompare;
+      const bUpdated = b.reviewed_at || b.entries.map((entry) => entry.id).join('');
+      const aUpdated = a.reviewed_at || a.entries.map((entry) => entry.id).join('');
+      return bUpdated.localeCompare(aUpdated);
+    })
+    .slice(0, 3)
+    .map((week) => ({
+      title: `Timesheet ${statusLabel(week.status)}`,
+      meta: `Week: ${weekLabel(week.week_start)}`,
+      status: week.status,
+      key: `timesheet-${week.week_start}-${week.status}`,
+    }));
   const dashboardActivity = [
     ...(leaveSummary?.requests || []).slice(0, 3).map((request) => ({
       title: `${request.leave_type} ${request.status}`,
@@ -520,12 +661,9 @@ export function EmployeeDashboardPage() {
         ? `Pending with ${request.pending_with || request.reporting_manager || 'manager'}`
         : `${formatDate(request.start_date)} - ${formatDate(request.end_date)}`,
       status: request.status,
+      key: `leave-${request.id}`,
     })),
-    ...(timesheetWeek && timesheetWeek.status !== 'not_started' ? [{
-      title: `Timesheet ${timesheetWeek.status}`,
-      meta: `Week of ${weekLabel(timesheetWeek.week_start)}`,
-      status: timesheetWeek.status,
-    }] : []),
+    ...timesheetActivityRows,
   ].slice(0, 4);
 
   return (
@@ -538,22 +676,25 @@ export function EmployeeDashboardPage() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Today" value={loading ? 'Loading...' : attendanceLabel(today)} icon={<LogIn size={21} />} />
         <MetricCard label="Available Leave" value={leaveSummary ? `${availableLeaveDays} days` : 'Loading...'} icon={<WalletCards size={21} />} />
-        <MetricCard label="Timesheet" value={timesheetValue} icon={<Clock3 size={21} />} />
+        <TimesheetSummaryCard summary={timesheetSummary} loading={!timesheetSummary} onClick={openTimesheetSummary} />
         <MetricCard label="Pending Actions" value={`${pendingActions}`} icon={<ClipboardCheck size={21} />} />
       </div>
       <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-2">
         <Card>
           <CardHeader title="Recent Activity" icon={<CalendarClock size={17} />} />
           <div className="divide-y divide-[#E5E7EB]">
-            {(dashboardActivity.length ? dashboardActivity : recentActivity).map((item) => (
-              <div key={item.title} className="flex items-center justify-between px-5 py-4">
-                <div>
-                  <div className="text-sm font-semibold text-[#2F3437]">{item.title}</div>
-                  <div className="text-xs text-gray-500">{item.meta}</div>
+            {(dashboardActivity.length ? dashboardActivity : recentActivity).map((item) => {
+              const rowKey = (item as { key?: string }).key || item.title;
+              return (
+                <div key={rowKey} className="flex items-center justify-between px-5 py-4">
+                  <div>
+                    <div className="text-sm font-semibold text-[#2F3437]">{item.title}</div>
+                    <div className="text-xs text-gray-500">{item.meta}</div>
+                  </div>
+                  <Badge variant={item.status === 'approved' || item.status === 'Approved' || item.status === 'submitted' ? 'success' : item.status === 'rejected' ? 'error' : 'warning'}>{item.status}</Badge>
                 </div>
-                <Badge variant={item.status === 'approved' || item.status === 'Approved' || item.status === 'submitted' ? 'success' : item.status === 'rejected' ? 'error' : 'warning'}>{item.status}</Badge>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
         <Card className="p-5">
@@ -563,6 +704,7 @@ export function EmployeeDashboardPage() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Button onClick={() => navigate('/employee/apply-leave')} icon={<CalendarPlus size={15} />}>Apply Leave</Button>
             <Button onClick={() => navigate('/employee/timesheets')} variant="soft" icon={<Clock3 size={15} />}>Submit Timesheet</Button>
+            <Button onClick={() => navigate('/employee/apply-leave?quick=sick-today')} variant="ghost" icon={<CalendarPlus size={15} />}>Report Sick Today</Button>
             {isCheckedIn ? (
               <Button onClick={checkOut} disabled={!!actionLoading} variant="ghost" icon={<LogIn size={15} />}>
                 {actionLoading === 'check-out' ? 'Checking Out' : 'Check Out'}
@@ -582,6 +724,7 @@ export function EmployeeDashboardPage() {
 
 export function ApplyLeavePage() {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const [leaveSummary, setLeaveSummary] = useState<LeaveSummary | null>(null);
   const [reportingManager, setReportingManager] = useState('Not assigned');
   const [leaveForm, setLeaveForm] = useState({
@@ -595,6 +738,7 @@ export function ApplyLeavePage() {
   const [savingLeave, setSavingLeave] = useState<'draft' | 'submit' | null>(null);
   const [leaveError, setLeaveError] = useState<string | null>(null);
   const [leaveSuccess, setLeaveSuccess] = useState<string | null>(null);
+  const [quickLeaveApplied, setQuickLeaveApplied] = useState(false);
 
   const headers = useMemo(() => ({
     'Content-Type': 'application/json',
@@ -639,6 +783,12 @@ export function ApplyLeavePage() {
       if (!leaveForm.leaveTypeId || !leaveForm.fromDate || !leaveForm.toDate || !leaveForm.reason.trim()) {
         throw new Error('Select leave type, dates, and enter a reason before saving.');
       }
+      if (leavePolicyMessage && selectedPolicy?.allow_future_dates === false) {
+        throw new Error(leavePolicyMessage);
+      }
+      if (minAllowedDate && leaveForm.fromDate < minAllowedDate) {
+        throw new Error(`${selectedLeaveType?.type || 'This leave type'} can only be applied up to ${selectedPolicy?.past_date_limit_days} days in the past.`);
+      }
       const res = await fetch(`${API_BASE}/leaves/me/requests${editingLeaveId ? `/${editingLeaveId}` : ''}`, {
         method: editingLeaveId ? 'PUT' : 'POST',
         headers,
@@ -671,6 +821,38 @@ export function ApplyLeavePage() {
 
   const leaveBalances = leaveSummary?.balances || [];
   const leaveRequests = leaveSummary?.requests || [];
+  const selectedLeaveType = leaveBalances.find((leave) => leave.leave_type_id === leaveForm.leaveTypeId);
+  const selectedPolicy = selectedLeaveType?.date_policy;
+  const todayInput = toDateInput(new Date());
+  const minAllowedDate = selectedPolicy?.past_date_limit_days != null
+    ? toDateInput(addDays(new Date(`${todayInput}T00:00:00`), -selectedPolicy.past_date_limit_days))
+    : undefined;
+  const maxAllowedDate = selectedPolicy?.allow_future_dates === false ? todayInput : undefined;
+  const selectedHasFutureDate = [leaveForm.fromDate, leaveForm.toDate].some((value) => value && value > todayInput);
+  const leavePolicyMessage = selectedLeaveType && selectedPolicy?.allow_future_dates === false && selectedHasFutureDate
+    ? `${selectedLeaveType.type} cannot be applied for future dates.`
+    : selectedLeaveType && selectedPolicy?.future_date_warning && selectedHasFutureDate
+      ? selectedPolicy.future_date_warning
+      : null;
+
+  useEffect(() => {
+    if (quickLeaveApplied || loadingLeave || leaveBalances.length === 0) return;
+    if (searchParams.get('quick') !== 'sick-today') return;
+    const sickLeave = leaveBalances.find((leave) => leave.code?.toUpperCase() === 'SL' || leave.type.toLowerCase() === 'sick leave');
+    if (!sickLeave) {
+      setLeaveError('Sick Leave is not available for your profile.');
+      setQuickLeaveApplied(true);
+      return;
+    }
+    setLeaveForm({
+      leaveTypeId: sickLeave.leave_type_id,
+      fromDate: todayInput,
+      toDate: todayInput,
+      reason: 'Reporting sick leave for today.',
+    });
+    setLeaveSuccess('Sick Leave for today is ready. Review and submit the request.');
+    setQuickLeaveApplied(true);
+  }, [leaveBalances, loadingLeave, quickLeaveApplied, searchParams, todayInput]);
 
   const cancelLeaveEdit = () => {
     setEditingLeaveId(null);
@@ -753,7 +935,10 @@ export function ApplyLeavePage() {
             <span className="mb-1.5 block text-[13px] font-semibold text-[#2F3437]">Leave Type</span>
             <select
               value={leaveForm.leaveTypeId}
-              onChange={(event) => updateLeaveForm('leaveTypeId', event.target.value)}
+              onChange={(event) => {
+                updateLeaveForm('leaveTypeId', event.target.value);
+                setLeaveError(null);
+              }}
               className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#2F3437] outline-none focus:border-olive"
             >
               {leaveBalances.map((leave) => (
@@ -766,6 +951,8 @@ export function ApplyLeavePage() {
             <input
               type="date"
               value={leaveForm.fromDate}
+              min={minAllowedDate}
+              max={maxAllowedDate}
               onChange={(event) => updateLeaveForm('fromDate', event.target.value)}
               className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#2F3437] outline-none focus:border-olive"
             />
@@ -775,7 +962,8 @@ export function ApplyLeavePage() {
             <input
               type="date"
               value={leaveForm.toDate}
-              min={leaveForm.fromDate || undefined}
+              min={leaveForm.fromDate || minAllowedDate}
+              max={maxAllowedDate}
               onChange={(event) => updateLeaveForm('toDate', event.target.value)}
               className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#2F3437] outline-none focus:border-olive"
             />
@@ -802,6 +990,19 @@ export function ApplyLeavePage() {
               maxLength={200}
               className="w-full resize-none rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#2F3437] outline-none focus:border-olive"
             />
+            {leavePolicyMessage && (
+              <div className={cn(
+                'mt-1 text-xs font-semibold',
+                selectedPolicy?.allow_future_dates === false ? 'text-status-error' : 'text-status-warning'
+              )}>
+                {leavePolicyMessage}
+              </div>
+            )}
+            {selectedLeaveType?.code?.toUpperCase() === 'SL' && minAllowedDate && (
+              <div className="mt-1 text-xs text-gray-500">
+                Sick Leave can be reported for today or up to {selectedPolicy?.past_date_limit_days} days in the past.
+              </div>
+            )}
           </label>
           <div className="flex items-end justify-end gap-2">
             <Button variant="ghost" disabled={!!savingLeave || loadingLeave} onClick={() => saveLeaveRequest('draft')}>
@@ -1191,8 +1392,10 @@ export function LeaveApprovalsPage() {
 
 export function TimesheetsPage() {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-  const [weekStart, setWeekStart] = useState(toDateInput(startOfLocalWeek()));
+  const initialWeekStart = searchParams.get('week_start') || toDateInput(startOfLocalWeek());
+  const [weekStart, setWeekStart] = useState(initialWeekStart);
   const [codes, setCodes] = useState<TimesheetCode[]>([]);
   const [projects, setProjects] = useState<TimesheetProject[]>([]);
   const [requiresTimesheet, setRequiresTimesheet] = useState(true);
@@ -1292,6 +1495,13 @@ export function TimesheetsPage() {
   useEffect(() => {
     loadTimesheet();
   }, [loadTimesheet]);
+
+  useEffect(() => {
+    const requestedWeek = searchParams.get('week_start');
+    if (requestedWeek && requestedWeek !== weekStart) {
+      setWeekStart(requestedWeek);
+    }
+  }, [searchParams, weekStart]);
 
   const selectedProject = activeCell
     ? projects.find((project) => project.id === activeCell.projectKey || project.code === activeCell.projectKey)
@@ -2117,18 +2327,94 @@ export function HolidaysPage() {
 }
 
 export function EmployeeNotificationsPage() {
+  const { user } = useAuth();
+  const [items, setItems] = useState<NotificationHistoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const headers = useMemo(() => ({
+    'Content-Type': 'application/json',
+    'x-user-id': user?.id || '',
+    'x-user-email': user?.email || '',
+  }), [user]);
+
+  const loadNotifications = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/notifications?limit=100`, { headers });
+      const data = await res.json().catch(() => null);
+      setItems(data?.notifications || []);
+    } catch {
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [headers, user]);
+
+  useEffect(() => {
+    loadNotifications();
+  }, [loadNotifications]);
+
+  const markRead = async (id: string) => {
+    await fetch(`${API_BASE}/notifications/${id}/read`, { method: 'PUT', headers }).catch(() => undefined);
+    setItems((current) => current.map((item) => item.id === id ? { ...item, is_read: true } : item));
+  };
+
+  const markAllRead = async () => {
+    await fetch(`${API_BASE}/notifications/mark-all-read`, { method: 'PUT', headers }).catch(() => undefined);
+    setItems((current) => current.map((item) => ({ ...item, is_read: true })));
+  };
+
+  const unreadCount = items.filter((item) => !item.is_read).length;
+
   return (
     <PageShell title="Notifications" description="See HR alerts, approval updates, and reminders.">
-      <Card>
-        <CardHeader title="Latest Updates" icon={<FileText size={17} />} />
-        <div className="divide-y divide-[#E5E7EB]">
-          {['Leave request approved', 'Timesheet reminder', 'New HR policy published'].map((item) => (
-            <div key={item} className="px-5 py-4">
-              <div className="text-sm font-semibold text-[#2F3437]">{item}</div>
-              <div className="text-xs text-gray-500">Dummy notification</div>
+      <Card className="overflow-hidden">
+        <CardHeader
+          title="Latest Updates"
+          icon={<Bell size={17} />}
+          badge={`${unreadCount} unread`}
+          badgeColor={unreadCount > 0 ? 'olive' : 'neutral'}
+          action={unreadCount > 0 ? (
+            <Button size="sm" variant="soft" onClick={markAllRead}>Mark all as read</Button>
+          ) : undefined}
+        />
+        {loading ? (
+          <div className="px-5 py-8 text-center text-sm text-gray-500">Loading notifications...</div>
+        ) : items.length === 0 ? (
+          <div className="px-5 py-10 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-olive/10 text-olive">
+              <Bell size={22} />
             </div>
-          ))}
-        </div>
+            <div className="text-sm font-bold text-[#2F3437]">No notifications yet</div>
+            <div className="mt-1 text-xs text-gray-500">Approval updates and HR alerts will appear here.</div>
+          </div>
+        ) : (
+          <div className="divide-y divide-[#E5E7EB]">
+            {items.map((item) => (
+              <div key={item.id} className={cn('grid gap-3 px-5 py-4 md:grid-cols-[1fr_150px_120px]', !item.is_read && 'bg-olive/5')}>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <div className="truncate text-sm font-bold text-[#2F3437]">{item.title}</div>
+                    {!item.is_read && <span className="h-2 w-2 shrink-0 rounded-full bg-olive" />}
+                  </div>
+                  <div className="mt-1 text-sm text-gray-500">{item.message || 'New update'}</div>
+                  <div className="mt-1 text-xs text-gray-400">{formatDateTime(item.created_at)}</div>
+                </div>
+                <div className="flex items-center md:justify-center">
+                  <Badge variant={item.is_read ? 'neutral' : 'olive'}>{item.is_read ? 'read' : 'unread'}</Badge>
+                </div>
+                <div className="flex items-center md:justify-end">
+                  {!item.is_read ? (
+                    <Button size="sm" variant="ghost" onClick={() => markRead(item.id)}>Mark read</Button>
+                  ) : (
+                    <span className="text-xs font-semibold text-gray-400">No action</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
     </PageShell>
   );

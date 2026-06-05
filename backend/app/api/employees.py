@@ -7,7 +7,7 @@ from typing import Optional
 from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Header, UploadFile, File
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, literal, or_
 from app.core.database import get_db
 from app.models.employee import Employee, EmployeeAuditLog, EmployeePerformanceSnapshot
 from app.models.leave_attendance import LeaveBalance, LeaveRequest
@@ -15,11 +15,29 @@ from app.models.operations import Allocation, Project
 from app.models.training import TrainingEnrollment
 from app.schemas.employee import AddEmployeeRequest, AddEmployeeResponse, UpdateEmployeeRequest
 from app.services.employee_service import create_employee
+from app.services.settings_service import get_current_employee, is_admin_role, require_admin_employee
 import base64
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/employees", tags=["Employees"])
+
+
+SELF_PROFILE_FIELDS = {
+    "first_name",
+    "last_name",
+    "personal_email",
+    "phone",
+    "country_code",
+    "date_of_birth",
+    "gender",
+    "emergency_contact_name",
+    "emergency_contact_phone",
+    "emergency_contact_relation",
+    "current_address",
+    "permanent_address",
+    "profile_image_url",
+}
 
 
 def serialize_employee(emp: Employee) -> dict:
@@ -123,30 +141,56 @@ async def list_employees(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
+    current_user_id: str | None = Header(None, alias="x-user-id"),
+    current_user_email: str | None = Header(None, alias="x-user-email"),
 ):
     """List employees with search, filters, and pagination."""
+    require_admin_employee(db, current_user_id, current_user_email)
     query = db.query(Employee).filter(Employee.work_email != "superadmin@reknew.ai")
 
     # Search
     if search:
-        search_term = f"%{search}%"
-        query = query.filter(
-            or_(
-                Employee.first_name.ilike(search_term),
-                Employee.last_name.ilike(search_term),
-                Employee.work_email.ilike(search_term),
+        normalized_search = " ".join(search.strip().split())
+        if normalized_search:
+            full_name = func.concat(
+                func.coalesce(Employee.first_name, ""),
+                literal(" "),
+                func.coalesce(Employee.last_name, ""),
             )
-        )
+            searchable_fields = [
+                Employee.first_name,
+                Employee.last_name,
+                Employee.work_email,
+                Employee.department,
+                Employee.designation,
+                Employee.role,
+                Employee.work_location,
+                Employee.location,
+                full_name,
+            ]
+            token_filters = []
+            for token in normalized_search.split(" "):
+                token_term = f"%{token}%"
+                token_filters.append(or_(*[field.ilike(token_term) for field in searchable_fields]))
+
+            phrase_term = f"%{normalized_search}%"
+            query = query.filter(or_(
+                full_name.ilike(phrase_term),
+                Employee.work_email.ilike(phrase_term),
+                and_(*token_filters),
+            ))
 
     # Filters
     if department:
-        query = query.filter(Employee.department == department)
+        query = query.filter(Employee.department.ilike(department))
     if status:
-        query = query.filter(Employee.employment_status == status)
+        query = query.filter(Employee.employment_status.ilike(status))
     if role:
-        query = query.filter(Employee.role == role)
+        normalized_role = role.strip().lower().replace(" ", "_").replace("-", "_")
+        role_value = func.lower(func.replace(func.replace(Employee.role, " ", "_"), "-", "_"))
+        query = query.filter(role_value == normalized_role)
     if location:
-        query = query.filter(Employee.work_location == location)
+        query = query.filter(Employee.work_location.ilike(location))
 
     # Count total before pagination
     total = query.count()
@@ -189,8 +233,16 @@ async def list_employees(
 
 
 @router.get("/{employee_id}")
-async def get_employee(employee_id: str, db: Session = Depends(get_db)):
+async def get_employee(
+    employee_id: str,
+    db: Session = Depends(get_db),
+    current_user_id: str | None = Header(None, alias="x-user-id"),
+    current_user_email: str | None = Header(None, alias="x-user-email"),
+):
     """Get single employee details."""
+    actor = get_current_employee(db, current_user_id, current_user_email)
+    if actor.id != employee_id and not is_admin_role(actor.role):
+        raise HTTPException(status_code=403, detail="Not authorized to view this employee.")
     emp = db.query(Employee).filter(Employee.id == employee_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -199,8 +251,14 @@ async def get_employee(employee_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/{employee_id}/preview")
-async def get_employee_preview(employee_id: str, db: Session = Depends(get_db)):
+async def get_employee_preview(
+    employee_id: str,
+    db: Session = Depends(get_db),
+    current_user_id: str | None = Header(None, alias="x-user-id"),
+    current_user_email: str | None = Header(None, alias="x-user-email"),
+):
     """Executive employee preview drawer data."""
+    require_admin_employee(db, current_user_id, current_user_email)
     emp = db.query(Employee).filter(Employee.id == employee_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -329,8 +387,14 @@ async def get_employee_preview(employee_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/", response_model=AddEmployeeResponse)
-async def add_employee(data: AddEmployeeRequest, db: Session = Depends(get_db)):
+async def add_employee(
+    data: AddEmployeeRequest,
+    db: Session = Depends(get_db),
+    current_user_id: str | None = Header(None, alias="x-user-id"),
+    current_user_email: str | None = Header(None, alias="x-user-email"),
+):
     """Add a new employee with setup code for first-time login."""
+    require_admin_employee(db, current_user_id, current_user_email)
     try:
         result = create_employee(db, data)
         return result
@@ -343,36 +407,31 @@ async def add_employee(data: AddEmployeeRequest, db: Session = Depends(get_db)):
 async def update_employee(
     employee_id: str,
     data: UpdateEmployeeRequest,
-    current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_role: str = Header(None, alias="x-user-role"),
-    current_user_email: str = Header(None, alias="x-user-email"),
-    current_user_name: str = Header(None, alias="x-user-name"),
+    current_user_id: str | None = Header(None, alias="x-user-id"),
+    current_user_email: str | None = Header(None, alias="x-user-email"),
+    current_user_name: str | None = Header(None, alias="x-user-name"),
     db: Session = Depends(get_db),
 ):
-    """Update employee details. Current user must be the employee or super_admin."""
+    """Update employee details. Current user must be the employee or an admin."""
+    actor = get_current_employee(db, current_user_id, current_user_email)
     emp = db.query(Employee).filter(Employee.id == employee_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
 
-    # Authorization: user can only update their own profile OR super_admin can update anyone
-    is_self = current_user_id == employee_id
-    is_super_admin = current_user_role == "super_admin"
+    is_self = actor.id == employee_id
+    is_admin = is_admin_role(actor.role)
 
-    if not (is_self or is_super_admin):
+    if not (is_self or is_admin):
         raise HTTPException(status_code=403, detail="Not authorized to update this employee")
 
-    # Fields that only super_admin can edit
-    restricted_fields = {"employment_status", "date_of_exit", "inactive_reason"}
-
-    # Check if user is trying to edit restricted fields without being super_admin
     updates = data.dict(exclude_unset=True)
-    if not is_super_admin:
-        for field in restricted_fields:
-            if field in updates:
-                raise HTTPException(
-                    status_code=403,
-                    detail=f"Only super admin can modify {field.replace('_', ' ')}",
-                )
+    if is_self and not is_admin:
+        blocked_fields = sorted(set(updates) - SELF_PROFILE_FIELDS)
+        if blocked_fields:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Employees cannot modify restricted profile fields: {', '.join(blocked_fields)}.",
+            )
 
     old_values = {field: getattr(emp, field) for field in updates.keys() if hasattr(emp, field)}
 
@@ -382,7 +441,7 @@ async def update_employee(
             setattr(emp, field, value)
 
     emp.last_updated_at = datetime.utcnow()
-    emp.updated_by = changed_by_value(current_user_email, current_user_name, current_user_id)
+    emp.updated_by = changed_by_value(actor.work_email, current_user_name, actor.id)
     log_employee_changes(db, employee_id, old_values, updates, emp.updated_by)
 
     db.commit()
@@ -400,22 +459,18 @@ async def update_employee(
 async def upload_profile_picture(
     employee_id: str,
     file: UploadFile = File(...),
-    current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_role: str = Header(None, alias="x-user-role"),
-    current_user_email: str = Header(None, alias="x-user-email"),
-    current_user_name: str = Header(None, alias="x-user-name"),
+    current_user_id: str | None = Header(None, alias="x-user-id"),
+    current_user_email: str | None = Header(None, alias="x-user-email"),
+    current_user_name: str | None = Header(None, alias="x-user-name"),
     db: Session = Depends(get_db),
 ):
     """Upload profile picture for an employee. User can only upload for their own profile or super_admin can upload for anyone."""
+    actor = get_current_employee(db, current_user_id, current_user_email)
     emp = db.query(Employee).filter(Employee.id == employee_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
 
-    # Authorization: user can only update their own profile OR super_admin can update anyone
-    is_self = current_user_id == employee_id
-    is_super_admin = current_user_role == "super_admin"
-
-    if not (is_self or is_super_admin):
+    if actor.id != employee_id and not is_admin_role(actor.role):
         raise HTTPException(status_code=403, detail="Not authorized to upload profile picture for this employee")
 
     # Validate file type
@@ -438,7 +493,7 @@ async def upload_profile_picture(
     # Update employee profile picture
     emp.profile_image_url = data_uri
     emp.last_updated_at = datetime.utcnow()
-    emp.updated_by = current_user_email or current_user_name or current_user_id or "unknown"
+    emp.updated_by = actor.work_email or current_user_name or actor.id or "unknown"
     db.commit()
     db.refresh(emp)
 

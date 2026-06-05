@@ -120,5 +120,4 @@ export const employeeNavItems: NavItem[] = [
   { key: 'requests', label: 'Requests', icon: 'Send', path: '/employee/requests' },
   { key: 'documents', label: 'Documents', icon: 'Files', path: '/employee/documents' },
   { key: 'holidays', label: 'Holidays', icon: 'PartyPopper', path: '/employee/holidays' },
-  { key: 'my-profile', label: 'My Profile', icon: 'UserRound', path: '/profile' },
 ];

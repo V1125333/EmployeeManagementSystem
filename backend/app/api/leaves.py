@@ -19,6 +19,57 @@ from app.services.settings_service import get_current_employee
 router = APIRouter(prefix="/leaves", tags=["Leaves"])
 
 
+DEFAULT_LEAVE_DATE_POLICIES = {
+    "SL": {
+        "allow_future_dates": False,
+        "past_date_limit_days": 30,
+        "future_date_warning": None,
+    },
+    "BL": {
+        "allow_future_dates": True,
+        "past_date_limit_days": 30,
+        "future_date_warning": "Future bereavement leave is unusual. Please confirm the dates before submitting.",
+    },
+}
+
+
+def leave_date_policy(leave_type: LeaveType) -> dict:
+    code = (leave_type.code or "").upper()
+    defaults = DEFAULT_LEAVE_DATE_POLICIES.get(code, {
+        "allow_future_dates": True,
+        "past_date_limit_days": None,
+        "future_date_warning": None,
+    })
+    allow_future = leave_type.allow_future_dates
+    return {
+        "allow_future_dates": defaults["allow_future_dates"] if allow_future is None else bool(allow_future),
+        "past_date_limit_days": leave_type.past_date_limit_days
+        if leave_type.past_date_limit_days is not None
+        else defaults["past_date_limit_days"],
+        "future_date_warning": leave_type.future_date_warning
+        if leave_type.future_date_warning is not None
+        else defaults["future_date_warning"],
+    }
+
+
+def validate_leave_date_policy(leave_type: LeaveType, start_date: date, end_date: date):
+    policy = leave_date_policy(leave_type)
+    today = date.today()
+    if not policy["allow_future_dates"] and (start_date > today or end_date > today):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{leave_type.name} cannot be applied for future dates.",
+        )
+    past_limit = policy["past_date_limit_days"]
+    if past_limit is not None:
+        earliest_allowed = today - timedelta(days=int(past_limit))
+        if start_date < earliest_allowed:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{leave_type.name} can only be applied up to {past_limit} days in the past.",
+            )
+
+
 class LeaveRequestPayload(BaseModel):
     leave_type_id: str
     start_date: date
@@ -147,6 +198,7 @@ def summary_for_employee(db: Session, employee: Employee) -> dict:
             "leave_type_id": leave_type.id,
             "type": leave_type.name,
             "code": leave_type.code,
+            "date_policy": leave_date_policy(leave_type),
             "total": total,
             "available": "On request" if total <= 0 and not leave_type.is_paid else round(max(total - used, 0), 1),
             "used": round(used, 1),
@@ -200,6 +252,7 @@ async def create_my_leave_request(
         raise HTTPException(status_code=400, detail="This leave type is not applicable to your profile.")
 
     total_days = leave_days(payload.start_date, payload.end_date)
+    validate_leave_date_policy(leave_type, payload.start_date, payload.end_date)
     if payload.action == "submit":
         balance = ensure_balance(db, employee.id, leave_type, payload.start_date.year)
         available = decimal_to_float(balance.total_days) + decimal_to_float(balance.carry_forward_days) - decimal_to_float(balance.used_days)
@@ -249,6 +302,7 @@ async def update_my_leave_request(
         raise HTTPException(status_code=400, detail="This leave type is not applicable to your profile.")
 
     total_days = leave_days(payload.start_date, payload.end_date)
+    validate_leave_date_policy(leave_type, payload.start_date, payload.end_date)
     if payload.action == "submit":
         balance = ensure_balance(db, employee.id, leave_type, payload.start_date.year)
         available = decimal_to_float(balance.total_days) + decimal_to_float(balance.carry_forward_days) - decimal_to_float(balance.used_days)
@@ -332,6 +386,8 @@ async def decide_leave_request(
     employee = db.query(Employee).filter(Employee.id == request.employee_id).first()
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found.")
+    if employee.id == reviewer.id:
+        raise HTTPException(status_code=403, detail="You cannot review your own leave request.")
     if not is_admin(reviewer.role) and employee.reporting_manager != employee_name(reviewer):
         raise HTTPException(status_code=403, detail="Not authorized to review this leave request.")
 

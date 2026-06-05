@@ -55,6 +55,8 @@ def current_actor(
         employee = db.query(Employee).filter(Employee.id == user_id).first()
     if not employee and user_email:
         employee = db.query(Employee).filter(Employee.work_email == user_email).first()
+    if employee and user_email and employee.work_email.lower() != user_email.lower():
+        raise HTTPException(status_code=401, detail="Authenticated user headers do not match.")
 
     actor_id = employee.id if employee else user_id
     actor_role = normalize_role(employee.role if employee else None)
@@ -300,14 +302,12 @@ def create_notifications_for_published(announcement: Announcement, db: Session):
 async def create_announcement(
     payload: AnnouncementPayload,
     current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_role: str = Header(None, alias="x-user-role"),
     current_user_email: str = Header(None, alias="x-user-email"),
     current_user_name: str = Header(None, alias="x-user-name"),
     db: Session = Depends(get_db),
 ):
     _, actor_id, actor_role, actor_name = current_actor(db, current_user_id, current_user_email, current_user_name)
-    role = normalize_role(current_user_role) or actor_role
-    ensure_can_manage(role)
+    ensure_can_manage(actor_role)
     title, message, status, audience_type, publish_at, expires_at = validate_payload(payload)
 
     announcement = Announcement(
@@ -364,13 +364,11 @@ async def my_announcements(
 @router.get("")
 async def list_announcements(
     current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_role: str = Header(None, alias="x-user-role"),
     current_user_email: str = Header(None, alias="x-user-email"),
     db: Session = Depends(get_db),
 ):
     _, _, actor_role, _ = current_actor(db, current_user_id, current_user_email, None)
-    role = normalize_role(current_user_role) or actor_role
-    ensure_can_manage(role)
+    ensure_can_manage(actor_role)
 
     announcements = db.query(Announcement).order_by(
         Announcement.is_pinned.desc(),
@@ -384,14 +382,12 @@ async def update_announcement(
     announcement_id: str,
     payload: AnnouncementPayload,
     current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_role: str = Header(None, alias="x-user-role"),
     current_user_email: str = Header(None, alias="x-user-email"),
     current_user_name: str = Header(None, alias="x-user-name"),
     db: Session = Depends(get_db),
 ):
     _, actor_id, actor_role, actor_name = current_actor(db, current_user_id, current_user_email, current_user_name)
-    role = normalize_role(current_user_role) or actor_role
-    ensure_can_manage(role)
+    ensure_can_manage(actor_role)
 
     announcement = db.query(Announcement).filter(Announcement.id == announcement_id).first()
     if not announcement:
@@ -427,13 +423,11 @@ async def update_announcement(
 async def delete_announcement(
     announcement_id: str,
     current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_role: str = Header(None, alias="x-user-role"),
     current_user_email: str = Header(None, alias="x-user-email"),
     db: Session = Depends(get_db),
 ):
     _, _, actor_role, _ = current_actor(db, current_user_id, current_user_email, None)
-    role = normalize_role(current_user_role) or actor_role
-    ensure_can_manage(role)
+    ensure_can_manage(actor_role)
     announcement = db.query(Announcement).filter(Announcement.id == announcement_id).first()
     if not announcement:
         raise HTTPException(status_code=404, detail="Announcement not found")
@@ -543,13 +537,11 @@ async def unread_count(
 async def get_announcement_stats(
     announcement_id: str,
     current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_role: str = Header(None, alias="x-user-role"),
     current_user_email: str = Header(None, alias="x-user-email"),
     db: Session = Depends(get_db),
 ):
     _, _, actor_role, _ = current_actor(db, current_user_id, current_user_email, None)
-    role = normalize_role(current_user_role) or actor_role
-    ensure_can_manage(role)
+    ensure_can_manage(actor_role)
     announcement = db.query(Announcement).filter(Announcement.id == announcement_id).first()
     if not announcement:
         raise HTTPException(status_code=404, detail="Announcement not found")

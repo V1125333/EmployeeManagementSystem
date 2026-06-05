@@ -176,3 +176,56 @@ def ensure_timesheet_columns():
     with engine.begin() as connection:
         for statement in statements:
             connection.execute(text(statement))
+
+
+def ensure_time_off_columns():
+    """Safely add admin time-off audit fields to existing databases."""
+    inspector = inspect(engine)
+    if "leave_balances" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("leave_balances")}
+    if "updated_by" in existing_columns:
+        return
+
+    dialect = engine.dialect.name
+    statement = (
+        "ALTER TABLE leave_balances ADD COLUMN IF NOT EXISTS updated_by VARCHAR(255)"
+        if dialect == "postgresql"
+        else "ALTER TABLE leave_balances ADD COLUMN updated_by VARCHAR(255)"
+    )
+    with engine.begin() as connection:
+        connection.execute(text(statement))
+
+
+def ensure_leave_type_policy_columns():
+    """Safely add configurable leave date policy fields to leave types."""
+    inspector = inspect(engine)
+    if "leave_types" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("leave_types")}
+    dialect = engine.dialect.name
+    column_definitions = {
+        "allow_future_dates": "BOOLEAN",
+        "past_date_limit_days": "INTEGER",
+        "future_date_warning": "TEXT",
+    }
+
+    statements = []
+    for column_name, definition in column_definitions.items():
+        if column_name in existing_columns:
+            continue
+        if dialect == "postgresql":
+            statements.append(
+                f"ALTER TABLE leave_types ADD COLUMN IF NOT EXISTS {column_name} {definition}"
+            )
+        else:
+            statements.append(f"ALTER TABLE leave_types ADD COLUMN {column_name} {definition}")
+
+    if not statements:
+        return
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))

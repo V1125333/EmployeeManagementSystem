@@ -29,10 +29,31 @@ def get_current_employee(db: Session, user_id: str | None, user_email: str | Non
     employee = None
     if user_id:
         employee = db.query(Employee).filter(Employee.id == user_id).first()
+    if employee and user_email and employee.work_email.lower() != user_email.lower():
+        raise HTTPException(status_code=401, detail="Authenticated user headers do not match.")
     if not employee and user_email:
         employee = db.query(Employee).filter(Employee.work_email == user_email).first()
     if not employee:
         raise HTTPException(status_code=401, detail="Authenticated user not found.")
+    return employee
+
+
+def normalize_role(role: str | None) -> str:
+    return (role or "").strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def is_admin_role(role: str | None) -> bool:
+    return normalize_role(role) in {"super_admin", "admin", "hr_admin", "global_access"}
+
+
+def is_manager_or_admin_role(role: str | None) -> bool:
+    return normalize_role(role) in {"manager", "super_admin", "admin", "hr_admin", "global_access"}
+
+
+def require_admin_employee(db: Session, user_id: str | None, user_email: str | None) -> Employee:
+    employee = get_current_employee(db, user_id, user_email)
+    if not is_admin_role(employee.role):
+        raise HTTPException(status_code=403, detail="Admin access is required.")
     return employee
 
 
