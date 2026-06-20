@@ -6,11 +6,13 @@ import {
   FileArchive,
   FileBadge,
   Hash,
+  Link2,
   Loader2,
   RefreshCw,
   Upload,
 } from 'lucide-react';
 import { Badge, Button, Card, CardHeader } from '@/components/ui';
+import { useAuth } from '@/hooks/useAuth';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
@@ -29,6 +31,16 @@ interface CertificateMeta {
 interface NextSerial {
   certificate_id: string;
   next_serial: number;
+}
+
+interface CertificateRecord {
+  certificate_code: string;
+  learner_name: string;
+  course_name: string;
+  issue_date: string;
+  status: string;
+  verification_url: string;
+  pdf_url?: string | null;
 }
 
 interface BulkRow {
@@ -141,7 +153,9 @@ function parseBulkCsv(text: string, certificateTypes: string[]) {
 }
 
 export function CertificateGeneratorPage() {
+  const { user } = useAuth();
   const [meta, setMeta] = useState<CertificateMeta | null>(null);
+  const [certificates, setCertificates] = useState<CertificateRecord[]>([]);
   const [nextSerial, setNextSerial] = useState<NextSerial | null>(null);
   const [firstName, setFirstName] = useState('');
   const [surname, setSurname] = useState('');
@@ -160,6 +174,11 @@ export function CertificateGeneratorPage() {
   const [bulkErrors, setBulkErrors] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const authHeaders = useMemo(() => ({
+    'Content-Type': 'application/json',
+    'x-user-id': user?.id || '',
+    'x-user-email': user?.email || '',
+  }), [user]);
 
   const relevantCounters = useMemo(() => {
     const normalizedCohort = cohortCode.trim().toUpperCase();
@@ -191,6 +210,11 @@ export function CertificateGeneratorPage() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    refreshCertificates();
+  }, [user]);
 
   useEffect(() => {
     if (!includeCertificateNumber || !certificateType || !cohortCode || !year) {
@@ -234,6 +258,14 @@ export function CertificateGeneratorPage() {
     if (res.ok) setMeta(await res.json());
   }
 
+  async function refreshCertificates() {
+    const res = await fetch(`${API_BASE}/certificates`, { headers: authHeaders });
+    if (res.ok) {
+      const body = await res.json();
+      setCertificates(body.certificates || []);
+    }
+  }
+
   async function refreshNextSerial() {
     if (!includeCertificateNumber || !certificateType || !cohortCode || !year) return;
     const params = new URLSearchParams({
@@ -254,7 +286,7 @@ export function CertificateGeneratorPage() {
     try {
       const res = await fetch(`${API_BASE}/certificates/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({
           first_name: firstName.trim(),
           surname: surname.trim(),
@@ -277,6 +309,7 @@ export function CertificateGeneratorPage() {
       const certId = res.headers.get('X-Certificate-Id');
       setSuccess(certId ? `Certificate generated: ${certId}` : 'Certificate generated without certificate number.');
       await refreshMeta();
+      await refreshCertificates();
       await refreshNextSerial();
       setFirstName('');
       setSurname('');
@@ -317,7 +350,7 @@ export function CertificateGeneratorPage() {
     try {
       const res = await fetch(`${API_BASE}/certificates/bulk-generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({
           records: bulkRows.map((row) => ({
             ...row,
@@ -335,11 +368,23 @@ export function CertificateGeneratorPage() {
       downloadBlob(await res.blob(), readDownloadFilename(res.headers.get('Content-Disposition'), 'ReKnew_Certificates.zip'));
       setSuccess(`${bulkRows.length} certificate${bulkRows.length === 1 ? '' : 's'} generated.`);
       await refreshMeta();
+      await refreshCertificates();
       await refreshNextSerial();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not generate bulk certificates.');
     } finally {
       setBulkGenerating(false);
+    }
+  }
+
+  async function downloadIssuedCertificate(record: CertificateRecord) {
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/certificates/${encodeURIComponent(record.certificate_code)}/download`, { headers: authHeaders });
+      if (!res.ok) throw new Error('Could not download certificate PDF.');
+      downloadBlob(await res.blob(), readDownloadFilename(res.headers.get('Content-Disposition'), `${record.certificate_code}.pdf`));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not download certificate PDF.');
     }
   }
 
@@ -627,12 +672,53 @@ export function CertificateGeneratorPage() {
           <Card>
             <CardHeader title="Verification" icon={<Award size={17} />} />
             <div className="p-4 text-sm leading-6 text-gray-500">
-              When certificate numbering is enabled, each PDF includes a centered QR code above the certificate ID.
-              Scanning it opens the ReKnew verification endpoint for that certificate.
+              When certificate numbering is enabled, each PDF includes a QR code, certificate ID, and human-readable
+              verification link. The QR code stores only the verification URL.
             </div>
           </Card>
         </div>
       </div>
+      <Card className="mt-5 overflow-hidden">
+        <CardHeader title="Issued Certificates" icon={<FileBadge size={17} />} />
+        {certificates.length === 0 ? (
+          <div className="px-5 py-10 text-center text-sm text-gray-500">No issued certificates found.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[980px] text-sm">
+              <thead className="bg-hover-bg text-[11px] uppercase tracking-wide text-gray-400">
+                <tr>
+                  <th className="px-5 py-3 text-left">Certificate ID</th>
+                  <th className="px-5 py-3 text-left">Learner</th>
+                  <th className="px-5 py-3 text-left">Course</th>
+                  <th className="px-5 py-3 text-left">Issue Date</th>
+                  <th className="px-5 py-3 text-left">Status</th>
+                  <th className="px-5 py-3 text-left">Verify Link</th>
+                  <th className="px-5 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E5E7EB]">
+                {certificates.map((record) => (
+                  <tr key={record.certificate_code}>
+                    <td className="px-5 py-3 font-bold text-[#2F3437]">{record.certificate_code}</td>
+                    <td className="px-5 py-3">{record.learner_name}</td>
+                    <td className="px-5 py-3">{record.course_name}</td>
+                    <td className="px-5 py-3">{record.issue_date}</td>
+                    <td className="px-5 py-3"><Badge variant={record.status === 'valid' ? 'success' : 'error'}>{record.status}</Badge></td>
+                    <td className="max-w-[260px] truncate px-5 py-3 text-olive">{record.verification_url}</td>
+                    <td className="px-5 py-3">
+                      <div className="flex justify-end gap-2">
+                        <Button size="sm" variant="ghost" icon={<Link2 size={13} />} onClick={() => navigator.clipboard.writeText(record.verification_url)}>Copy Link</Button>
+                        <a href={record.verification_url} target="_blank" rel="noreferrer"><Button size="sm" variant="soft">Verify</Button></a>
+                        {record.pdf_url && <Button size="sm" variant="ghost" icon={<Download size={13} />} onClick={() => downloadIssuedCertificate(record)}>Download PDF</Button>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

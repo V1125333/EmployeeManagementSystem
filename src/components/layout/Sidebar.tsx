@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, UserPlus, Briefcase, CalendarDays,
@@ -10,6 +9,7 @@ import {
 import { cn } from '@/utils/cn';
 import { mainNavItems, adminNavItems, employeeNavItems } from '@/data/mockData';
 import { useAuth } from '@/hooks/useAuth';
+import { ProfileDropdown } from '@/components/ui/ProfileDropdown';
 
 const iconMap: Record<string, React.ElementType> = {
   LayoutDashboard, Users, UserPlus, Briefcase, CalendarDays,
@@ -31,8 +31,22 @@ interface SidebarProps {
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const showAdminNavigation = isAdminRole(user?.role);
+  const currentUser = user || {
+    name: 'User',
+    role: 'Employee',
+    email: 'user@reknew.ai',
+    initials: 'U',
+    profileImageUrl: null,
+  };
+
+  const handleViewProfile = () => navigate('/profile');
+  const handleSettings = () => navigate('/settings');
+  const handleSignOut = () => {
+    logout();
+    navigate('/login');
+  };
 
   const NavButton = ({ item }: { item: typeof mainNavItems[0] }) => {
     const active = location.pathname === item.path;
@@ -129,7 +143,16 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         )}
       </nav>
 
-      {/* Expand button — only when collapsed, sits at bottom */}
+      <div className="shrink-0 border-t border-[#E5E7EB] px-3 py-3">
+        <ProfileDropdown
+          user={currentUser}
+          variant={collapsed ? 'collapsed' : 'sidebar'}
+          placement="top-left"
+          onViewProfile={handleViewProfile}
+          onSettings={handleSettings}
+          onSignOut={handleSignOut}
+        />
+      </div>
     </aside>
   );
 }

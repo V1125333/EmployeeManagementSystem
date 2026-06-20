@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.employee import Employee
 from app.models.leave_attendance import LeaveBalance, LeaveRequest, LeaveType
+from app.services.audit_service import log_audit, log_authorization_failure
 from app.services.settings_service import get_current_employee
 
 router = APIRouter(prefix="/leaves", tags=["Leaves"])
@@ -272,6 +273,23 @@ async def create_my_leave_request(
         updated_at=now,
     )
     db.add(request)
+    db.flush()
+    log_audit(
+        db,
+        employee,
+        action="leave.draft_saved" if payload.action == "draft" else "leave.submitted",
+        entity_type="leave_request",
+        entity_id=request.id,
+        new_values={
+            "employee_id": employee.id,
+            "leave_type": leave_type.name,
+            "start_date": payload.start_date,
+            "end_date": payload.end_date,
+            "total_days": total_days,
+            "status": request.status,
+        },
+        reason=payload.reason.strip(),
+    )
     db.commit()
     db.refresh(request)
     return summary_for_employee(db, employee)
@@ -309,6 +327,14 @@ async def update_my_leave_request(
         if leave_type.is_paid and total_days > available:
             raise HTTPException(status_code=400, detail="Selected leave days exceed your available balance.")
 
+    old_values = {
+        "leave_type_id": request.leave_type_id,
+        "start_date": request.start_date,
+        "end_date": request.end_date,
+        "total_days": request.total_days,
+        "reason": request.reason,
+        "status": request.status,
+    }
     request.leave_type_id = leave_type.id
     request.start_date = payload.start_date
     request.end_date = payload.end_date
@@ -316,6 +342,23 @@ async def update_my_leave_request(
     request.reason = payload.reason.strip()
     request.status = "draft" if payload.action == "draft" else "pending"
     request.updated_at = datetime.utcnow()
+    log_audit(
+        db,
+        employee,
+        action="leave.updated" if payload.action == "draft" else "leave.submitted",
+        entity_type="leave_request",
+        entity_id=request.id,
+        old_values=old_values,
+        new_values={
+            "leave_type_id": request.leave_type_id,
+            "start_date": request.start_date,
+            "end_date": request.end_date,
+            "total_days": request.total_days,
+            "reason": request.reason,
+            "status": request.status,
+        },
+        reason=payload.reason.strip(),
+    )
     db.commit()
     return summary_for_employee(db, employee)
 
@@ -336,6 +379,16 @@ async def delete_my_leave_request(
         raise HTTPException(status_code=404, detail="Leave request not found.")
     if request.status != "draft":
         raise HTTPException(status_code=400, detail="Only draft leave requests can be deleted.")
+    old_values = serialize_request(db, request, employee=employee)
+    log_audit(
+        db,
+        employee,
+        action="leave.cancelled",
+        entity_type="leave_request",
+        entity_id=request.id,
+        old_values=old_values,
+        reason="Employee deleted draft leave request.",
+    )
     db.delete(request)
     db.commit()
     return summary_for_employee(db, employee)
@@ -387,11 +440,30 @@ async def decide_leave_request(
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found.")
     if employee.id == reviewer.id:
+        log_authorization_failure(
+            db,
+            reviewer,
+            action="leave.approval",
+            entity_type="leave_request",
+            entity_id=request.id,
+            reason="Reviewer attempted to approve their own leave request.",
+        )
+        db.commit()
         raise HTTPException(status_code=403, detail="You cannot review your own leave request.")
     if not is_admin(reviewer.role) and employee.reporting_manager != employee_name(reviewer):
+        log_authorization_failure(
+            db,
+            reviewer,
+            action="leave.approval",
+            entity_type="leave_request",
+            entity_id=request.id,
+            reason="Reviewer is not the employee manager or admin.",
+        )
+        db.commit()
         raise HTTPException(status_code=403, detail="Not authorized to review this leave request.")
 
     now = datetime.utcnow()
+    old_values = {"status": request.status, "reviewed_by": request.reviewed_by, "reviewed_at": request.reviewed_at}
     request.status = "approved" if payload.decision == "approve" else "rejected"
     request.reviewed_by = reviewer.id
     request.reviewed_at = now
@@ -405,5 +477,21 @@ async def decide_leave_request(
             balance.used_days = decimal_to_float(balance.used_days) + decimal_to_float(request.total_days)
             balance.updated_at = now
 
+    log_audit(
+        db,
+        reviewer,
+        action="leave.approved" if payload.decision == "approve" else "leave.rejected",
+        entity_type="leave_request",
+        entity_id=request.id,
+        old_values=old_values,
+        new_values={
+            "status": request.status,
+            "reviewed_by": request.reviewed_by,
+            "reviewed_at": request.reviewed_at,
+            "reviewer_notes": request.reviewer_notes,
+        },
+        reason=payload.reviewer_notes,
+        metadata={"employee_id": employee.id, "employee_name": employee_name(employee)},
+    )
     db.commit()
     return await leave_approvals(db, x_user_id, x_user_email)

@@ -49,7 +49,6 @@ interface ProfileForm {
   emergency_contact_name: string;
   emergency_contact_phone: string;
   emergency_contact_relation: string;
-  work_location: string;
 }
 
 const roleLabels: Record<string, string> = {
@@ -75,8 +74,6 @@ const GENDER_OPTIONS = [
   { value: 'prefer_not_to_say', label: 'Prefer not to say' },
 ];
 
-const LOCATION_OPTIONS = ['Onshore', 'Offshore', 'Remote', 'Hybrid'];
-
 function makeInitials(name: string) {
   return name.split(' ').filter(Boolean).map((part) => part[0]).join('').toUpperCase().slice(0, 2);
 }
@@ -101,7 +98,6 @@ function profileToForm(profile: ProfileData): ProfileForm {
     emergency_contact_name: profile.emergency_contact_name || '',
     emergency_contact_phone: profile.emergency_contact_phone || '',
     emergency_contact_relation: profile.emergency_contact_relation || '',
-    work_location: profile.work_location || '',
   };
 }
 
@@ -130,7 +126,6 @@ function validateForm(form: ProfileForm) {
   if (form.personal_email && !emailPattern.test(form.personal_email)) nextErrors.personal_email = 'Enter a valid email';
   if (!form.phone.trim()) nextErrors.phone = 'Phone number is required';
   if (form.phone && (!phonePattern.test(form.phone) || phoneDigits.length < 7)) nextErrors.phone = 'Enter a valid phone number';
-  if (!form.work_location.trim()) nextErrors.work_location = 'Work location is required';
   if (form.emergency_contact_phone && (!phonePattern.test(form.emergency_contact_phone) || emergencyDigits.length < 7)) {
     nextErrors.emergency_contact_phone = 'Enter a valid emergency phone';
   }
@@ -342,7 +337,6 @@ export function ProfilePage() {
         emergency_contact_name: form.emergency_contact_name || null,
         emergency_contact_phone: form.emergency_contact_phone || null,
         emergency_contact_relation: form.emergency_contact_relation || null,
-        work_location: form.work_location,
         ...(removeImage ? { profile_image_url: null } : {}),
       };
 
@@ -544,13 +538,7 @@ export function ProfilePage() {
             <InfoRow icon={<Briefcase size={15} />} label="Designation" value={profile.designation} />
             <InfoRow icon={<Shield size={15} />} label="Role" value={roleLabels[profile.role] || profile.role} />
             <InfoRow icon={<User size={15} />} label="Reporting Manager" value={profile.reporting_manager} />
-            {editMode ? (
-              <div className="py-3 border-b border-[#E5E7EB]">
-                <Field label="Work Location" value={form.work_location} onChange={(v) => updateForm('work_location', v)} error={errors.work_location} options={LOCATION_OPTIONS} />
-              </div>
-            ) : (
-              <InfoRow icon={<MapPin size={15} />} label="Work Location" value={profile.work_location} />
-            )}
+            <InfoRow icon={<MapPin size={15} />} label="Work Location" value={profile.work_location} />
             <InfoRow icon={<Calendar size={15} />} label="Joining Date" value={formatDate(profile.joining_date)} />
           </div>
         </Card>

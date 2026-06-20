@@ -16,6 +16,7 @@ from app.core.database import get_db
 from app.models.employee import Employee
 from app.models.leave_attendance import LeaveRequest, LeaveType
 from app.models.operations import Allocation, Notification, Project, TimesheetEntry
+from app.services.audit_service import log_audit, log_authorization_failure
 from app.services.settings_service import get_current_employee
 
 router = APIRouter(prefix="/timesheets", tags=["Timesheets"])
@@ -519,6 +520,22 @@ async def save_my_timesheet_week(
     existing = load_week_entries(db, employee.id, payload.week_start)
     if any(entry.status in {"submitted", "approved"} for entry in existing):
         raise HTTPException(status_code=400, detail="Submitted or approved timesheets cannot be edited.")
+    old_values = {
+        "week_start": payload.week_start,
+        "entry_count": len(existing),
+        "status": existing[0].status if existing else "not_started",
+        "entries": [
+            {
+                "date": entry.work_date,
+                "code": entry.entry_code,
+                "project": entry.project_name,
+                "hours": entry.hours,
+                "start_time": entry.start_time,
+                "end_time": entry.end_time,
+            }
+            for entry in existing
+        ],
+    }
 
     for entry in payload.entries:
         validate_code(entry)
@@ -558,6 +575,21 @@ async def save_my_timesheet_week(
             created_at=now,
             updated_at=now,
         ))
+    log_audit(
+        db,
+        employee,
+        action="timesheet.saved",
+        entity_type="timesheet",
+        entity_id=f"{employee.id}:{payload.week_start}",
+        old_values=old_values,
+        new_values={
+            "week_start": payload.week_start,
+            "entry_count": len(payload.entries),
+            "status": "draft",
+            "time_zone": payload.time_zone,
+        },
+        metadata={"working_hours": sum(entry_hours(entry) for entry in payload.entries if entry.entry_code.upper() != "BRK")},
+    )
     db.commit()
     return serialize_employee_week(db, employee, payload.week_start, load_week_entries(db, employee.id, payload.week_start), payload.time_zone)
 
@@ -596,6 +628,16 @@ async def submit_my_timesheet_week(
             f"{employee_name(employee)} submitted a timesheet for {payload.week_start} to {week_end(payload.week_start)}.",
             entries[0].id,
         )
+    log_audit(
+        db,
+        employee,
+        action="timesheet.submitted",
+        entity_type="timesheet",
+        entity_id=f"{employee.id}:{payload.week_start}",
+        old_values={"status": "draft"},
+        new_values={"status": "submitted", "submitted_at": now, "submitted_to": employee.reporting_manager},
+        metadata={"entry_count": len(entries), "week_end": week_end(payload.week_start)},
+    )
     db.commit()
     return serialize_employee_week(db, employee, payload.week_start, load_week_entries(db, employee.id, payload.week_start), payload.time_zone)
 
@@ -616,6 +658,7 @@ async def recall_my_timesheet_week(
         raise HTTPException(status_code=400, detail="Only submitted timesheets can be recalled.")
 
     now = datetime.utcnow()
+    old_statuses = sorted({entry.status for entry in entries})
     for entry in entries:
         entry.status = "draft"
         entry.submitted_at = None
@@ -632,6 +675,17 @@ async def recall_my_timesheet_week(
             f"{employee_name(employee)} recalled the timesheet for {week_start} to {week_end(week_start)}.",
             entries[0].id,
         )
+    log_audit(
+        db,
+        employee,
+        action="timesheet.recalled",
+        entity_type="timesheet",
+        entity_id=f"{employee.id}:{week_start}",
+        old_values={"status": ",".join(old_statuses)},
+        new_values={"status": "draft"},
+        reason="Employee recalled submitted timesheet.",
+        metadata={"entry_count": len(entries), "week_end": week_end(week_start)},
+    )
     db.commit()
     return serialize_employee_week(db, employee, week_start, load_week_entries(db, employee.id, week_start), time_zone)
 
@@ -699,6 +753,19 @@ async def copy_my_timesheet_week(
             created_at=now,
             updated_at=now,
         ))
+    log_audit(
+        db,
+        employee,
+        action="timesheet.copied",
+        entity_type="timesheet",
+        entity_id=f"{employee.id}:{payload.target_week_start}",
+        old_values={"target_entry_count": len(target_existing)},
+        new_values={
+            "source_week_start": payload.source_week_start,
+            "target_week_start": payload.target_week_start,
+            "entry_count": len(copied_payloads),
+        },
+    )
     db.commit()
     return serialize_employee_week(db, employee, payload.target_week_start, load_week_entries(db, employee.id, payload.target_week_start), payload.time_zone)
 
@@ -715,6 +782,15 @@ async def delete_my_timesheet_week(
     existing = load_week_entries(db, employee.id, week_start)
     if any(entry.status in {"submitted", "approved"} for entry in existing):
         raise HTTPException(status_code=400, detail="Submitted or approved timesheets cannot be deleted.")
+    log_audit(
+        db,
+        employee,
+        action="timesheet.deleted",
+        entity_type="timesheet",
+        entity_id=f"{employee.id}:{week_start}",
+        old_values={"week_start": week_start, "entry_count": len(existing), "status": existing[0].status if existing else "not_started"},
+        reason="Employee deleted draft/rejected timesheet.",
+    )
     db.query(TimesheetEntry).filter(
         TimesheetEntry.employee_id == employee.id,
         TimesheetEntry.week_start == week_start,
@@ -832,8 +908,26 @@ async def decide_timesheet(
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found.")
     if employee.id == reviewer.id:
+        log_authorization_failure(
+            db,
+            reviewer,
+            action="timesheet.approval",
+            entity_type="timesheet",
+            entity_id=f"{employee_id}:{week_start}",
+            reason="Reviewer attempted to approve their own timesheet.",
+        )
+        db.commit()
         raise HTTPException(status_code=403, detail="You cannot review your own timesheet.")
     if not is_admin(reviewer.role) and employee.reporting_manager != employee_name(reviewer):
+        log_authorization_failure(
+            db,
+            reviewer,
+            action="timesheet.approval",
+            entity_type="timesheet",
+            entity_id=f"{employee_id}:{week_start}",
+            reason="Reviewer is not the employee manager or admin.",
+        )
+        db.commit()
         raise HTTPException(status_code=403, detail="Not authorized to review this timesheet.")
 
     entries = load_week_entries(db, employee.id, week_start)
@@ -859,6 +953,17 @@ async def decide_timesheet(
         f"Your timesheet for {week_start} to {week_end(week_start)} was {next_status} by {employee_name(reviewer)}."
         + (f" Note: {payload.reviewer_notes}" if payload.reviewer_notes else ""),
         entries[0].id,
+    )
+    log_audit(
+        db,
+        reviewer,
+        action="timesheet.approved" if payload.decision == "approve" else "timesheet.rejected",
+        entity_type="timesheet",
+        entity_id=f"{employee.id}:{week_start}",
+        old_values={"status": "submitted"},
+        new_values={"status": next_status, "reviewed_by": reviewer.id, "reviewed_at": now, "reviewer_notes": payload.reviewer_notes},
+        reason=payload.reviewer_notes,
+        metadata={"employee_id": employee.id, "employee_name": employee_name(employee), "week_end": week_end(week_start), "entry_count": len(entries)},
     )
     db.commit()
     return await timesheet_approvals(db, x_user_id, x_user_email)

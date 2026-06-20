@@ -6,7 +6,6 @@ import {
   Megaphone, Search, ShieldQuestion, UserCog, X,
 } from 'lucide-react';
 import { Badge, Button } from '@/components/ui';
-import { ProfileDropdown } from '@/components/ui/ProfileDropdown';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/utils/cn';
 
@@ -111,7 +110,7 @@ function isAdminRole(role?: string) {
 
 export function TopNav() {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const [openPanel, setOpenPanel] = useState<'inbox' | 'notifications' | 'help' | null>(null);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -273,6 +272,7 @@ export function TopNav() {
     if (item.item_type === 'attendance_correction' || item.related_entity_type === 'attendance_correction') return '/employee/approvals';
     if (item.item_type.includes('timesheet') || item.related_entity_type === 'timesheet') return '/employee/approvals';
     if (item.item_type === 'announcement_acknowledgment' || item.related_entity_type === 'announcement') return '/';
+    if (item.item_type === 'profile_update') return '/profile';
     return '/notifications';
   };
 
@@ -311,13 +311,6 @@ export function TopNav() {
     loadNotifications();
   };
 
-  const handleViewProfile = () => navigate('/profile');
-  const handleSettings = () => navigate('/settings');
-  const handleSignOut = () => {
-    logout();
-    navigate('/login');
-  };
-
   const closeSearch = () => {
     setSearchOpen(false);
     setSearchQuery('');
@@ -352,13 +345,6 @@ export function TopNav() {
     }
   };
 
-  const currentUser = user || {
-    name: 'User',
-    role: 'Employee',
-    email: 'user@reknew.ai',
-    initials: 'U',
-    profileImageUrl: null,
-  };
   const inboxCount = inboxItems.length;
   const notificationCount = unreadNotificationCount;
   const notificationPreview = notifications.slice(0, 5);
@@ -642,13 +628,6 @@ export function TopNav() {
           </div>
         </div>
 
-        <div className="w-px h-6 bg-[#E5E7EB] mx-2" />
-        <ProfileDropdown
-          user={currentUser}
-          onViewProfile={handleViewProfile}
-          onSettings={handleSettings}
-          onSignOut={handleSignOut}
-        />
       </div>
     </header>
   );

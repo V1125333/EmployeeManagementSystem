@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, BarChart3, CalendarCheck, CalendarClock, CheckCircle2, Clock3,
-  ChevronLeft, ChevronRight, Download, FileText, Pencil, RefreshCw, Search, ShieldCheck,
-  UserCheck, UserX, X,
+  AlertTriangle, BarChart3, BriefcaseBusiness, Building2, CalendarCheck, CalendarClock, CheckCircle2, Clock3,
+  ChevronLeft, ChevronRight, Download, FileText, Pencil, Plus, RefreshCw, Search, ShieldCheck,
+  Trash2, UserCheck, Users, UserX, X,
 } from 'lucide-react';
-import { Badge, Button, Card, CardHeader } from '@/components/ui';
+import { Avatar, Badge, Button, Card, CardHeader } from '@/components/ui';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/utils/cn';
@@ -562,12 +562,296 @@ export function OnboardingPage() {
   );
 }
 
-export function ClientOnboardingPage() {
+interface ClientRow { id: string; client_name: string; industry?: string | null; website?: string | null; status: string; primary_contact_name?: string | null; contact_email?: string | null; onboarding_stage: string; progress_percent: number; target_go_live_date?: string | null; owner_id?: string | null; owner_name: string }
+interface ClientActivityRow { id: string; action: string; details?: string | null; performed_by_name: string; created_at?: string | null }
+interface ClientDetail {
+  client: ClientRow & { contact_phone?: string | null; contract_start_date?: string | null; contract_end_date?: string | null; notes?: string | null; created_at?: string | null; updated_at?: string | null };
+  onboarding: { id?: string; stage: string; progress_percent: number; target_go_live_date?: string | null; actual_go_live_date?: string | null; owner_id?: string | null };
+  checklist: Array<{ id: string; title: string; is_complete: boolean; owner_id?: string | null; owner_name?: string | null; due_date?: string | null; notes?: string | null }>;
+  tasks: Array<{ id: string; title: string; description?: string | null; assigned_to_id?: string | null; assigned_to_name?: string | null; priority: string; status: string; due_date?: string | null }>;
+  team: Array<{ id: string; employee_id: string; employee_name: string; role: string; notes?: string | null }>;
+  documents: Array<{ id: string; document_type: string; file_name: string; file_url?: string | null; notes?: string | null; uploaded_by_name?: string | null; created_at?: string | null }>;
+  milestones: Array<{ id: string; milestone_name: string; target_date?: string | null; actual_date?: string | null; status: string }>;
+  activity: ClientActivityRow[];
+}
+interface ClientData { clients: ClientRow[]; total_count: number; employees: AdminEmployeeOption[]; stages: string[] }
+
+const clientStatuses = ['Prospect', 'Contract Signed', 'Onboarding', 'Active', 'Paused', 'Completed', 'At Risk'];
+const clientTabs = ['Overview', 'Checklist', 'Tasks', 'Team', 'Documents', 'Milestones', 'Activity'];
+const teamRoles = ['Client Manager', 'Project Manager', 'Technical Lead', 'Developer', 'QA', 'Support'];
+const documentTypes = ['NDA', 'MSA', 'SOW', 'Requirements', 'Architecture', 'Training Material', 'Other'];
+
+function apiValue(value: string) {
+  return value.toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_');
+}
+
+function labelize(value?: string | null) {
+  return (value || '-').replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function clientInitials(name: string) {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'CL';
+}
+
+function clientStatusVariant(status?: string): 'success' | 'warning' | 'error' | 'info' | 'neutral' | 'olive' {
+  if (status === 'active' || status === 'completed') return 'success';
+  if (status === 'at_risk') return 'error';
+  if (status === 'paused') return 'warning';
+  if (status === 'onboarding' || status === 'contract_signed') return 'info';
+  return 'neutral';
+}
+
+function ClientField({ label, value, onChange, type = 'text', options, required, error }: { label: string; value: string; onChange: (value: string) => void; type?: string; options?: Array<{ value: string; label: string }>; required?: boolean; error?: string }) {
   return (
-    <PlaceholderPage
-      title="Client Onboarding"
-      description="Manage client onboarding processes and milestones."
-    />
+    <label className="block text-sm font-semibold text-[#2F3437]">
+      {label}{required && <span className="text-status-error"> *</span>}
+      {options ? (
+        <select value={value} onChange={(event) => onChange(event.target.value)} className={cn('mt-1 w-full rounded-lg border bg-warm-bg px-3 py-2 outline-none focus:border-olive', error ? 'border-status-error' : 'border-[#E5E7EB]')}>
+          {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+      ) : (
+        <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className={cn('mt-1 w-full rounded-lg border bg-warm-bg px-3 py-2 outline-none focus:border-olive', error ? 'border-status-error' : 'border-[#E5E7EB]')} />
+      )}
+      {error && <span className="mt-1 block text-xs font-medium text-status-error">{error}</span>}
+    </label>
+  );
+}
+
+function ClientFormDrawer({ client, employees, stages, currentUserId, onClose, onSave, saving }: { client?: ClientDetail | null; employees: AdminEmployeeOption[]; stages: string[]; currentUserId?: string; onClose: () => void; onSave: (payload: Record<string, unknown>, id?: string) => void; saving: boolean }) {
+  const [form, setForm] = useState({
+    client_name: client?.client.client_name || '',
+    industry: client?.client.industry || '',
+    website: client?.client.website || '',
+    primary_contact_name: client?.client.primary_contact_name || '',
+    contact_email: client?.client.contact_email || '',
+    contact_phone: client?.client.contact_phone || '',
+    contract_start_date: client?.client.contract_start_date || '',
+    contract_end_date: client?.client.contract_end_date || '',
+    status: client?.client.status || 'prospect',
+    owner_id: client?.client.owner_id || currentUserId || '',
+    notes: client?.client.notes || '',
+    onboarding_stage: client?.onboarding.stage || 'Contract Signed',
+    target_go_live_date: client?.onboarding.target_go_live_date || '',
+  });
+  const update = (key: keyof typeof form, value: string) => setForm({ ...form, [key]: value });
+  const employeeOptions = [{ value: '', label: 'Unassigned' }, ...employees.map((employee) => ({ value: employee.id, label: employee.name }))];
+  const stageOptions = stages.map((stage) => ({ value: stage, label: stage }));
+  const errors = {
+    client_name: form.client_name.trim().length < 2 ? 'Client name is required.' : '',
+    industry: form.industry.trim().length < 2 ? 'Industry is required.' : '',
+    primary_contact_name: form.primary_contact_name.trim().length < 2 ? 'Primary contact is required.' : '',
+    contact_email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.contact_email.trim()) ? '' : 'Enter a valid email address.',
+    contract_end_date: form.contract_start_date && form.contract_end_date && form.contract_end_date < form.contract_start_date ? 'End date cannot be before start date.' : '',
+    target_go_live_date: form.contract_start_date && form.target_go_live_date && form.target_go_live_date < form.contract_start_date ? 'Go-live cannot be before contract start.' : '',
+  };
+  const isValid = Object.values(errors).every((value) => !value);
+  return (
+    <div className="fixed inset-0 z-[110] bg-black/35">
+      <div className="ml-auto flex h-full w-full max-w-[640px] animate-fade-up flex-col border-l border-[#E5E7EB] bg-white shadow-[0_24px_90px_rgba(17,24,39,0.35)]">
+        <div className="sticky top-0 z-10 flex items-start justify-between border-b border-[#E5E7EB] bg-white px-6 py-5">
+          <div><div className="text-xl font-bold text-[#2F3437]">{client ? 'Edit Client' : 'Add Client'}</div><div className="text-sm text-gray-500">Create and manage client onboarding details.</div></div>
+          <button onClick={onClose} className="rounded-lg p-2 text-gray-400 hover:bg-hover-bg hover:text-gray-700"><X size={18} /></button>
+        </div>
+        <div className="flex-1 space-y-6 overflow-y-auto px-6 py-5">
+          <ClientFormSection title="Client Information">
+            <ClientField required label="Client Name" value={form.client_name} error={errors.client_name} onChange={(v) => update('client_name', v)} />
+            <ClientField required label="Industry" value={form.industry} error={errors.industry} onChange={(v) => update('industry', v)} />
+            <ClientField label="Website" value={form.website} onChange={(v) => update('website', v)} />
+          </ClientFormSection>
+          <ClientFormSection title="Contact Information">
+            <ClientField required label="Primary Contact Name" value={form.primary_contact_name} error={errors.primary_contact_name} onChange={(v) => update('primary_contact_name', v)} />
+            <ClientField required label="Contact Email" value={form.contact_email} error={errors.contact_email} onChange={(v) => update('contact_email', v)} />
+            <ClientField label="Contact Phone" value={form.contact_phone} onChange={(v) => update('contact_phone', v.replace(/[^\d+()\-\s]/g, ''))} />
+          </ClientFormSection>
+          <ClientFormSection title="Contract Information">
+            <ClientField label="Contract Start Date" type="date" value={form.contract_start_date} onChange={(v) => update('contract_start_date', v)} />
+            <ClientField label="Contract End Date" type="date" value={form.contract_end_date} error={errors.contract_end_date} onChange={(v) => update('contract_end_date', v)} />
+          </ClientFormSection>
+          <ClientFormSection title="Onboarding Details">
+            <ClientField required label="Status" value={form.status} onChange={(v) => update('status', v)} options={clientStatuses.map((status) => ({ value: apiValue(status), label: status }))} />
+            <ClientField required label="Onboarding Stage" value={form.onboarding_stage} onChange={(v) => update('onboarding_stage', v)} options={stageOptions} />
+            <ClientField label="Owner / Client Manager" value={form.owner_id} onChange={(v) => update('owner_id', v)} options={employeeOptions} />
+            <ClientField label="Target Go-Live Date" type="date" value={form.target_go_live_date} error={errors.target_go_live_date} onChange={(v) => update('target_go_live_date', v)} />
+          </ClientFormSection>
+          <div>
+            <div className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-gray-400">Notes</div>
+            <textarea value={form.notes} onChange={(event) => update('notes', event.target.value)} rows={4} className="w-full resize-none rounded-xl border border-[#E5E7EB] bg-warm-bg px-3 py-2 text-sm outline-none focus:border-olive" placeholder="Add onboarding context, risks, or expectations..." />
+          </div>
+        </div>
+        <div className="sticky bottom-0 flex justify-end gap-2 border-t border-[#E5E7EB] bg-white px-6 py-4">
+          <Button variant="ghost" disabled={saving} onClick={onClose}>Cancel</Button>
+          <Button disabled={!isValid || saving} onClick={() => onSave(form, client?.client.id)}>{saving ? 'Saving...' : 'Save Client'}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ClientFormSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return <section><div className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-gray-400">{title}</div><div className="grid gap-3 md:grid-cols-2">{children}</div></section>;
+}
+
+function ClientQuickModal({ title, fields, onClose, onSave }: { title: string; fields: Array<{ key: string; label: string; type?: string; options?: Array<{ value: string; label: string }> }>; onClose: () => void; onSave: (payload: Record<string, string>) => void }) {
+  const [form, setForm] = useState<Record<string, string>>(Object.fromEntries(fields.map((field) => [field.key, field.options?.[0]?.value || ''])));
+  return (
+    <Modal title={title} onClose={onClose}>
+      {fields.map((field) => <ClientField key={field.key} label={field.label} value={form[field.key] || ''} type={field.type || 'text'} options={field.options} onChange={(value) => setForm({ ...form, [field.key]: value })} />)}
+      <div className="mt-2 flex justify-end gap-2"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={() => onSave(form)}>Save</Button></div>
+    </Modal>
+  );
+}
+
+export function ClientOnboardingPage() {
+  const { user } = useAuth();
+  const { showToast } = useToast();
+  const role = (user?.role || '').toLowerCase().replace(/\s+/g, '_');
+  const canAdmin = ['super_admin', 'admin', 'hr_admin', 'global_access'].includes(role);
+  const headers = useMemo(() => ({ 'Content-Type': 'application/json', 'x-user-id': user?.id || '', 'x-user-email': user?.email || '', 'x-user-name': user?.name || '' }), [user]);
+  const [data, setData] = useState<ClientData>({ clients: [], total_count: 0, employees: [], stages: [] });
+  const [detail, setDetail] = useState<ClientDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState({ status: 'All', stage: 'All', owner: 'All' });
+  const [activeTab, setActiveTab] = useState('Overview');
+  const [clientForm, setClientForm] = useState<ClientDetail | null | 'new'>(null);
+  const [quickForm, setQuickForm] = useState<null | { type: string; title: string; fields: Array<{ key: string; label: string; type?: string; options?: Array<{ value: string; label: string }> }> }>(null);
+  const [savingClient, setSavingClient] = useState(false);
+
+  const loadClients = useCallback(async () => {
+    if (!user || !canAdmin) return;
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (search.trim()) params.set('search', search.trim());
+    if (filters.status !== 'All') params.set('status', filters.status);
+    if (filters.stage !== 'All') params.set('stage', filters.stage);
+    if (filters.owner !== 'All') params.set('owner', filters.owner);
+    try {
+      const res = await fetch(`${API_BASE}/admin/client-onboarding?${params.toString()}`, { headers });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(body?.detail || 'Could not load client onboarding.');
+      setData(body);
+      if (detail && !body.clients.some((client: ClientRow) => client.id === detail.client.id)) setDetail(null);
+    } catch (err) {
+      showToast({ message: err instanceof Error ? err.message : 'Could not load client onboarding.' });
+    } finally {
+      setLoading(false);
+    }
+  }, [canAdmin, detail, filters.owner, filters.stage, filters.status, headers, search, showToast, user]);
+
+  useEffect(() => { loadClients(); }, [loadClients]);
+
+  const loadDetail = async (id: string) => {
+    const res = await fetch(`${API_BASE}/admin/client-onboarding/${id}`, { headers });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) return showToast({ message: body?.detail || 'Could not load client details.' });
+    setDetail(body);
+    setActiveTab('Overview');
+  };
+
+  const saveClient = async (payload: Record<string, unknown>, id?: string) => {
+    if (!String(payload.client_name || '').trim()) return showToast({ message: 'Client name is required.' });
+    setSavingClient(true);
+    const method = id ? 'PUT' : 'POST';
+    const url = id ? `${API_BASE}/admin/client-onboarding/${id}` : `${API_BASE}/admin/client-onboarding`;
+    const cleaned = Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, value === '' ? null : value]));
+    try {
+      const res = await fetch(url, { method, headers, body: JSON.stringify(cleaned) });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(body?.detail || 'Could not save client.');
+      setClientForm(null);
+      setDetail(body);
+      await loadClients();
+      showToast({ message: id ? 'Client updated.' : 'Client added.' });
+    } catch (err) {
+      showToast({ message: err instanceof Error ? err.message : 'Could not save client.' });
+    } finally {
+      setSavingClient(false);
+    }
+  };
+
+  const updateDetail = async (url: string, method: string, payload?: Record<string, unknown>, message = 'Saved.') => {
+    if (!detail) return;
+    const res = await fetch(`${API_BASE}/admin/client-onboarding/${detail.client.id}${url}`, { method, headers, body: payload ? JSON.stringify(Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, value === '' ? null : value]))) : undefined });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) return showToast({ message: body?.detail || 'Action failed.' });
+    setDetail(body);
+    await loadClients();
+    showToast({ message });
+  };
+
+  const employeeOptions = [{ value: '', label: 'Unassigned' }, ...data.employees.map((employee) => ({ value: employee.id, label: employee.name }))];
+  const ownerOptions = ['All', ...data.employees.map((employee) => employee.id)];
+  const filtersActive = !!search.trim() || filters.status !== 'All' || filters.stage !== 'All' || filters.owner !== 'All';
+  const metrics = useMemo(() => {
+    const clients = data.clients;
+    return [
+      { label: 'Total Clients', value: data.total_count || clients.length, icon: <Building2 size={18} />, tone: 'olive' },
+      { label: 'In Onboarding', value: clients.filter((client) => client.status === 'onboarding').length, icon: <RefreshCw size={18} />, tone: 'info' },
+      { label: 'Active Clients', value: clients.filter((client) => client.status === 'active').length, icon: <CheckCircle2 size={18} />, tone: 'success' },
+      { label: 'Delayed / At Risk', value: clients.filter((client) => client.status === 'at_risk').length, icon: <AlertTriangle size={18} />, tone: 'warning' },
+    ];
+  }, [data.clients, data.total_count]);
+
+  if (!canAdmin) return <PlaceholderPage title="Client Onboarding" description="Admin access required." />;
+
+  return (
+    <div className="animate-fade-up">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div><h1 className="mb-1 text-2xl font-bold tracking-tight text-[#2F3437]">Client Onboarding</h1><p className="text-sm text-gray-500">Manage client onboarding from contract signed to go-live.</p></div>
+        <Button icon={<Plus size={15} />} onClick={() => setClientForm('new')}>Add Client</Button>
+      </div>
+      <div className="mb-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {metrics.map((item) => <Card key={item.label} className="p-5"><div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-hover-bg text-olive">{item.icon}</div><div className="text-2xl font-bold text-[#2F3437]">{item.value}</div><div className="text-sm text-gray-500">{item.label}</div></Card>)}
+      </div>
+      <Card className="mb-5 p-4">
+        <div className="grid gap-3 xl:grid-cols-[1fr_auto_auto_auto_auto]">
+          <label className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search clients or contacts..." className="h-10 w-full rounded-lg border border-[#E5E7EB] bg-warm-bg pl-9 pr-3 text-sm outline-none focus:border-olive" /></label>
+          <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })} className="h-10 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 text-sm"><option>All</option>{clientStatuses.map((status) => <option key={status} value={apiValue(status)}>{status}</option>)}</select>
+          <select value={filters.stage} onChange={(event) => setFilters({ ...filters, stage: event.target.value })} className="h-10 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 text-sm"><option>All</option>{data.stages.map((stage) => <option key={stage}>{stage}</option>)}</select>
+          <select value={filters.owner} onChange={(event) => setFilters({ ...filters, owner: event.target.value })} className="h-10 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 text-sm">{ownerOptions.map((owner) => <option key={owner} value={owner}>{owner === 'All' ? 'Owner: All' : data.employees.find((employee) => employee.id === owner)?.name || owner}</option>)}</select>
+          {filtersActive && <Button variant="ghost" onClick={() => { setSearch(''); setFilters({ status: 'All', stage: 'All', owner: 'All' }); }}>Clear filters</Button>}
+        </div>
+        <div className="mt-3 text-xs font-semibold text-gray-500">{filtersActive ? `Showing ${data.clients.length} of ${data.total_count} clients` : `${data.total_count || data.clients.length} clients`}</div>
+      </Card>
+      <Card className="mb-5 overflow-hidden">
+        <CardHeader title="Clients" icon={<Users size={17} />} />
+        {loading ? <EmptyState message="Loading clients..." /> : data.clients.length === 0 ? (
+          <div className="px-6 py-16 text-center"><div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-hover-bg text-olive"><BriefcaseBusiness size={24} /></div><div className="text-lg font-bold text-[#2F3437]">No clients yet</div><div className="mx-auto mt-2 max-w-xl text-sm text-gray-500">Create your first client onboarding record to track contracts, checklist items, tasks, team assignments, milestones, and go-live progress.</div><Button className="mt-5" icon={<Plus size={15} />} onClick={() => setClientForm('new')}>Add Client</Button></div>
+        ) : <div className="overflow-x-auto"><table className="w-full min-w-[1050px] text-sm"><thead className="bg-warm-bg text-[11px] uppercase tracking-wide text-gray-400"><tr><th className="px-5 py-3 text-left">Client</th><th className="px-5 py-3 text-left">Industry</th><th className="px-5 py-3 text-left">Status</th><th className="px-5 py-3 text-left">Stage</th><th className="px-5 py-3 text-left">Progress</th><th className="px-5 py-3 text-left">Owner</th><th className="px-5 py-3 text-left">Target Go-Live</th><th className="px-5 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-[#E5E7EB]">{data.clients.map((client) => <tr key={client.id} className={cn('cursor-pointer hover:bg-hover-bg/70', detail?.client.id === client.id && 'bg-olive/5')} onClick={() => loadDetail(client.id)}><td className="px-5 py-4"><div className="flex items-center gap-3"><Avatar initials={clientInitials(client.client_name)} variant="filled" /><div><div className="font-bold text-[#2F3437]">{client.client_name}</div><div className="text-xs text-gray-400">{client.website || client.contact_email || 'No contact yet'}</div></div></div></td><td className="px-5 py-4">{client.industry || '-'}</td><td className="px-5 py-4"><Badge variant={clientStatusVariant(client.status)}>{labelize(client.status)}</Badge></td><td className="px-5 py-4"><Badge variant="neutral">{client.onboarding_stage}</Badge></td><td className="px-5 py-4"><div className="flex items-center gap-2"><div className="h-2 w-28 rounded-full bg-olive/10"><div className="h-2 rounded-full bg-olive" style={{ width: `${client.progress_percent}%` }} /></div><span className="text-xs font-bold text-gray-500">{client.progress_percent}%</span></div></td><td className="px-5 py-4">{client.owner_name}</td><td className="px-5 py-4">{formatDate(client.target_go_live_date)}</td><td className="px-5 py-4 text-right"><Button size="sm" variant="ghost" onClick={(event) => { event.stopPropagation(); loadDetail(client.id); }}>View / Edit</Button></td></tr>)}</tbody></table></div>}
+      </Card>
+      {detail && <ClientDetailSection detail={detail} activeTab={activeTab} setActiveTab={setActiveTab} employeeOptions={employeeOptions} onEdit={() => setClientForm(detail)} updateDetail={updateDetail} setQuickForm={setQuickForm} />}
+      {(clientForm === 'new' || clientForm) && <ClientFormDrawer client={clientForm === 'new' ? null : clientForm} employees={data.employees} stages={data.stages} currentUserId={user?.id} onClose={() => setClientForm(null)} onSave={saveClient} saving={savingClient} />}
+      {quickForm && <ClientQuickModal title={quickForm.title} fields={quickForm.fields} onClose={() => setQuickForm(null)} onSave={(payload) => { const endpoint = quickForm.type === 'task' ? '/tasks' : quickForm.type === 'team' ? '/team' : quickForm.type === 'document' ? '/documents' : '/milestones'; updateDetail(endpoint, 'POST', payload, `${quickForm.title} saved.`); setQuickForm(null); }} />}
+    </div>
+  );
+}
+
+function ClientDetailSection({ detail, activeTab, setActiveTab, employeeOptions, onEdit, updateDetail, setQuickForm }: { detail: ClientDetail; activeTab: string; setActiveTab: (tab: string) => void; employeeOptions: Array<{ value: string; label: string }>; onEdit: () => void; updateDetail: (url: string, method: string, payload?: Record<string, unknown>, message?: string) => void; setQuickForm: (form: null | { type: string; title: string; fields: Array<{ key: string; label: string; type?: string; options?: Array<{ value: string; label: string }> }> }) => void }) {
+  return <Card className="overflow-hidden"><div className="border-b border-[#E5E7EB] p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div className="flex items-center gap-3"><Avatar initials={clientInitials(detail.client.client_name)} size="lg" variant="filled" /><div><div className="text-xl font-bold text-[#2F3437]">{detail.client.client_name}</div><div className="text-sm text-gray-500">{detail.client.industry || 'Industry not set'} - {detail.client.owner_name}</div></div></div><Button size="sm" variant="ghost" icon={<Pencil size={13} />} onClick={onEdit}>Edit Client</Button></div><div className="mt-5 grid gap-3 md:grid-cols-4"><MiniMetric label="Status" value={labelize(detail.client.status)} /><MiniMetric label="Stage" value={detail.onboarding.stage} /><MiniMetric label="Progress" value={`${detail.onboarding.progress_percent}%`} /><MiniMetric label="Target Go-Live" value={formatDate(detail.onboarding.target_go_live_date)} /></div></div><div className="flex gap-1 overflow-x-auto border-b border-[#E5E7EB] p-2">{clientTabs.map((tab) => <button key={tab} onClick={() => setActiveTab(tab)} className={cn('rounded-lg px-3 py-2 text-xs font-bold', activeTab === tab ? 'bg-olive text-white' : 'text-gray-500 hover:bg-hover-bg')}>{tab}</button>)}</div><div className="p-5">
+    {activeTab === 'Overview' && <div className="grid gap-4 lg:grid-cols-3"><InfoBlock title="Client Information" rows={[['Client', detail.client.client_name], ['Industry', detail.client.industry || '-'], ['Website', detail.client.website || '-']]} /><InfoBlock title="Contact Information" rows={[['Primary Contact', detail.client.primary_contact_name || '-'], ['Email', detail.client.contact_email || '-'], ['Phone', detail.client.contact_phone || '-']]} /><InfoBlock title="Contract & Audit" rows={[['Contract', `${formatDate(detail.client.contract_start_date)} - ${formatDate(detail.client.contract_end_date)}`], ['Created', formatDateTime(detail.client.created_at)], ['Updated', formatDateTime(detail.client.updated_at)]]} /><div className="lg:col-span-3 rounded-xl border border-[#E5E7EB] bg-warm-bg p-4 text-sm"><div className="mb-1 font-bold text-[#2F3437]">Notes</div><div className="text-gray-600">{detail.client.notes || 'No notes added.'}</div></div></div>}
+    {activeTab === 'Checklist' && <div className="grid gap-3 md:grid-cols-2">{detail.checklist.map((item) => <div key={item.id} className="rounded-xl border border-[#E5E7EB] p-4"><label className="flex items-center gap-2 font-bold"><input type="checkbox" checked={item.is_complete} onChange={(event) => updateDetail(`/checklist/${item.id}`, 'PUT', { is_complete: event.target.checked, owner_id: item.owner_id, due_date: item.due_date, notes: item.notes }, 'Checklist updated.')} className="h-4 w-4 accent-olive" />{item.title}</label><div className="mt-3 grid gap-2 md:grid-cols-2"><select value={item.owner_id || ''} onChange={(event) => updateDetail(`/checklist/${item.id}`, 'PUT', { owner_id: event.target.value, is_complete: item.is_complete, due_date: item.due_date, notes: item.notes }, 'Checklist owner updated.')} className="rounded-lg border border-[#E5E7EB] bg-warm-bg px-2 py-2 text-xs">{employeeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><input type="date" value={item.due_date || ''} onChange={(event) => updateDetail(`/checklist/${item.id}`, 'PUT', { due_date: event.target.value, is_complete: item.is_complete, owner_id: item.owner_id, notes: item.notes }, 'Checklist due date updated.')} className="rounded-lg border border-[#E5E7EB] bg-warm-bg px-2 py-2 text-xs" /></div></div>)}</div>}
+    {activeTab === 'Tasks' && <CrudList rows={detail.tasks} onAdd={() => setQuickForm({ type: 'task', title: 'Add Task', fields: [{ key: 'title', label: 'Task Title' }, { key: 'description', label: 'Description' }, { key: 'assigned_to_id', label: 'Assigned To', options: employeeOptions }, { key: 'priority', label: 'Priority', options: ['Low', 'Medium', 'High'].map((v) => ({ value: apiValue(v), label: v })) }, { key: 'status', label: 'Status', options: ['Not Started', 'In Progress', 'Blocked', 'Completed'].map((v) => ({ value: apiValue(v), label: v })) }, { key: 'due_date', label: 'Due Date', type: 'date' }] })} render={(row) => <div><b>{row.title}</b><div className="text-xs text-gray-500">{labelize(row.status)} - {labelize(row.priority)} - {row.assigned_to_name || 'Unassigned'} - Due {formatDate(row.due_date)}</div>{row.due_date && row.status !== 'completed' && new Date(`${row.due_date}T00:00:00`) < new Date(new Date().toDateString()) && <Badge variant="error">Overdue</Badge>}</div>} onDelete={(row) => updateDetail(`/tasks/${row.id}`, 'DELETE', undefined, 'Task deleted.')} />}
+    {activeTab === 'Team' && <CrudList rows={detail.team} onAdd={() => setQuickForm({ type: 'team', title: 'Assign Team Member', fields: [{ key: 'employee_id', label: 'Employee', options: employeeOptions.filter((option) => option.value) }, { key: 'role', label: 'Role', options: teamRoles.map((v) => ({ value: apiValue(v), label: v })) }, { key: 'notes', label: 'Notes' }] })} render={(row) => <div><b>{row.employee_name}</b><div className="text-xs text-gray-500">{labelize(row.role)} - {row.notes || '-'}</div></div>} onDelete={(row) => updateDetail(`/team/${row.id}`, 'DELETE', undefined, 'Team member removed.')} />}
+    {activeTab === 'Documents' && <CrudList rows={detail.documents} onAdd={() => setQuickForm({ type: 'document', title: 'Attach Document', fields: [{ key: 'document_type', label: 'Document Type', options: documentTypes.map((v) => ({ value: apiValue(v), label: v })) }, { key: 'file_name', label: 'File Name' }, { key: 'file_url', label: 'File URL' }, { key: 'notes', label: 'Notes' }] })} render={(row) => <div><b>{row.file_name}</b><div className="text-xs text-gray-500">{labelize(row.document_type)} - {row.uploaded_by_name || '-'}</div></div>} onDelete={(row) => updateDetail(`/documents/${row.id}`, 'DELETE', undefined, 'Document removed.')} />}
+    {activeTab === 'Milestones' && <CrudList rows={detail.milestones} onAdd={() => setQuickForm({ type: 'milestone', title: 'Add Milestone', fields: [{ key: 'milestone_name', label: 'Milestone Name' }, { key: 'target_date', label: 'Target Date', type: 'date' }, { key: 'actual_date', label: 'Actual Date', type: 'date' }, { key: 'status', label: 'Status', options: ['Not Started', 'In Progress', 'Blocked', 'Completed', 'Approved'].map((v) => ({ value: apiValue(v), label: v })) }] })} render={(row) => <div><b>{row.milestone_name}</b><div className="text-xs text-gray-500">{labelize(row.status)} - Target {formatDate(row.target_date)} - Actual {formatDate(row.actual_date)}</div></div>} onDelete={(row) => updateDetail(`/milestones/${row.id}`, 'DELETE', undefined, 'Milestone deleted.')} />}
+    {activeTab === 'Activity' && (detail.activity.length === 0 ? <EmptyState message="No activity yet." /> : <div className="grid gap-3">{detail.activity.map((row) => <div key={row.id} className="rounded-xl border border-[#E5E7EB] p-4 text-sm"><div className="font-bold text-[#2F3437]">{row.action}</div><div className="text-gray-500">{row.details || 'No details'} - {row.performed_by_name} - {formatDateTime(row.created_at)}</div></div>)}</div>)}
+  </div></Card>;
+}
+
+function MiniMetric({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-xl border border-[#E5E7EB] bg-warm-bg p-3"><div className="text-xs font-bold uppercase tracking-wide text-gray-400">{label}</div><div className="mt-1 font-bold text-[#2F3437]">{value}</div></div>;
+}
+
+function InfoBlock({ title, rows }: { title: string; rows: Array<[string, string]> }) {
+  return <div className="rounded-xl border border-[#E5E7EB] p-4"><div className="mb-3 font-bold text-[#2F3437]">{title}</div><div className="grid gap-2 text-sm">{rows.map(([label, value]) => <div key={label} className="flex justify-between gap-3"><span className="text-gray-500">{label}</span><span className="text-right font-semibold text-[#2F3437]">{value}</span></div>)}</div></div>;
+}
+
+function CrudList<T extends { id: string }>({ rows, render, onAdd, onDelete }: { rows: T[]; render: (row: T) => React.ReactNode; onAdd: () => void; onDelete?: (row: T) => void }) {
+  return (
+    <div>
+      <div className="mb-3 flex justify-end"><Button size="sm" icon={<Plus size={13} />} onClick={onAdd}>Add</Button></div>
+      {rows.length === 0 ? <EmptyState message="No records yet." /> : <div className="grid gap-2">{rows.map((row) => <div key={row.id} className="flex items-center justify-between gap-3 rounded-xl border border-[#E5E7EB] p-3 text-sm"><div>{render(row)}</div>{onDelete && <button onClick={() => onDelete(row)} className="rounded-lg p-2 text-gray-400 hover:bg-hover-bg hover:text-status-error"><Trash2 size={15} /></button>}</div>)}</div>}
+    </div>
   );
 }
 

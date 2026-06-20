@@ -65,6 +65,16 @@ class Employee(Base):
     current_address: Mapped[str | None] = mapped_column(Text, nullable=True)
     permanent_address: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Encrypted PII shadow fields for production hardening and future migrations.
+    personal_email_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    phone_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    date_of_birth_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    emergency_contact_name_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    emergency_contact_phone_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    current_address_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    permanent_address_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pii_key_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     # ─── Notes ───
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 

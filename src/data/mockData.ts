@@ -108,6 +108,7 @@ export const adminNavItems: NavItem[] = [
   { key: 'policies', label: 'Policies', icon: 'FileText', path: '/admin/policies' },
   { key: 'certificates', label: 'Certificates', icon: 'Award', path: '/admin/certificates' },
   { key: 'hr-documents', label: 'HR Documents', icon: 'Files', path: '/admin/hr-documents' },
+  { key: 'audit-trail', label: 'Audit Trail', icon: 'Shield', path: '/admin/audit-trail' },
 ];
 
 export const employeeNavItems: NavItem[] = [

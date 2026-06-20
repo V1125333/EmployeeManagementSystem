@@ -20,6 +20,7 @@ from app.core.database import get_db
 from app.models.employee import Employee
 from app.models.leave_attendance import Attendance, AttendanceCorrection, LeaveBalance, LeaveRequest, LeaveType
 from app.models.operations import ActivityLog, Notification, TimesheetEntry
+from app.services.audit_service import log_audit as log_central_audit
 from app.services.settings_service import get_current_employee
 
 router = APIRouter(prefix="/admin/time-off", tags=["Admin Time Off & Attendance"])
@@ -94,6 +95,19 @@ def log_audit(
             "performed_at": datetime.utcnow().isoformat(),
         }, default=str),
     ))
+    action_name = action.replace("_", ".")
+    log_central_audit(
+        db,
+        actor,
+        action=f"admin_time_off.{action_name}",
+        entity_type=target_type,
+        entity_id=target_id,
+        old_values=old_value if isinstance(old_value, dict) else {"value": old_value},
+        new_values=new_value if isinstance(new_value, dict) else {"value": new_value},
+        reason=reason,
+        metadata={"legacy_activity_log": True},
+        source="admin",
+    )
 
 
 def notify(db: Session, employee_id: str, title: str, message: str, entity_type: str, entity_id: str | None) -> None:

@@ -39,3 +39,24 @@ from app.models.operations import (
 
 # User preference and support tables
 from app.models.settings import UserSettings, SupportTicket
+
+# Client onboarding tables
+from app.models.client_onboarding import (
+    Client,
+    ClientOnboarding,
+    ClientChecklistItem,
+    ClientTask,
+    ClientTeamMember,
+    ClientDocument,
+    ClientMilestone,
+    ClientActivityLog,
+)
+
+# Certificate verification tables
+from app.models.certificate import Certificate, CertificateAuditLog
+
+# Sensitive data access audit
+from app.models.security import SensitiveAccessAuditLog
+
+# Centralized compliance audit trail
+from app.models.audit import AuditLog

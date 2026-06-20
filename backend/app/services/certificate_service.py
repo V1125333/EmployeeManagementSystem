@@ -352,11 +352,11 @@ def qr_reader(value: str) -> ImageReader:
     return pil_to_reader(image)
 
 
-def draw_verification_qr(c: canvas.Canvas, cert_id: str, page_w: float, bottom_y: float) -> None:
-    size = 38
+def draw_verification_qr(c: canvas.Canvas, verification_url: str, page_w: float, bottom_y: float) -> None:
+    size = 42
     x = page_w / 2 - size / 2
     c.drawImage(
-        qr_reader(certificate_verify_url(cert_id)),
+        qr_reader(verification_url),
         x,
         bottom_y,
         width=size,
@@ -464,13 +464,17 @@ def generate_certificate_pdf(
 
     if request.include_certificate_number and serial_number is not None:
         cert_id = certificate_id(request.cohort_code, request.year, serial_number)
-        cert_y = margin + 18
-        qr_y = cert_y + 12
-        draw_verification_qr(c, cert_id, page_w, qr_y)
+        verification_url = certificate_verify_url(cert_id)
+        cert_y = margin + 14
+        verify_y = cert_y + 12
+        qr_y = verify_y + 28
+        draw_verification_qr(c, verification_url, page_w, qr_y)
 
-        c.setFont(font("Poppins", "Helvetica"), 8)
+        c.setFont(font("Poppins", "Helvetica"), 7.2)
         c.setFillColor(HexColor("#888EA8"))
-        c.drawCentredString(page_w / 2, cert_y, cert_id)
+        c.drawCentredString(page_w / 2, verify_y + 10, "Verify at:")
+        c.drawCentredString(page_w / 2, verify_y, verification_url)
+        c.drawCentredString(page_w / 2, cert_y, f"Certificate ID: {cert_id}")
 
     c.save()
     return buffer.getvalue()
@@ -509,3 +513,7 @@ def record_issued_certificate(
 def get_certificate_verification(cert_id: str) -> dict | None:
     records = _load_issued_certificates()
     return records.get(cert_id)
+
+
+def list_legacy_issued_certificates() -> dict[str, dict]:
+    return _load_issued_certificates()

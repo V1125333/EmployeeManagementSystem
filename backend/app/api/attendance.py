@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models.leave_attendance import Attendance
+from app.services.audit_service import log_audit
 from app.services.settings_service import get_current_employee
 
 router = APIRouter(prefix="/attendance", tags=["Attendance"])
@@ -104,6 +105,16 @@ async def check_in(
     attendance.status = "present"
     attendance.source = "web"
     attendance.updated_at = now
+    db.flush()
+    log_audit(
+        db,
+        employee,
+        action="attendance.checked_in",
+        entity_type="attendance",
+        entity_id=attendance.id,
+        new_values={"date": today, "check_in": now, "status": attendance.status, "source": attendance.source},
+        source="user",
+    )
     db.commit()
     db.refresh(attendance)
     return serialize_attendance(attendance, today)
@@ -129,9 +140,20 @@ async def check_out(
         raise HTTPException(status_code=400, detail="You already checked out today.")
 
     total_hours = round((now - attendance.check_in).total_seconds() / 3600, 2)
+    old_values = {"check_out": attendance.check_out, "total_hours": attendance.total_hours, "status": attendance.status}
     attendance.check_out = now
     attendance.total_hours = total_hours
     attendance.updated_at = now
+    log_audit(
+        db,
+        employee,
+        action="attendance.checked_out",
+        entity_type="attendance",
+        entity_id=attendance.id,
+        old_values=old_values,
+        new_values={"check_out": now, "total_hours": total_hours, "status": attendance.status},
+        source="user",
+    )
     db.commit()
     db.refresh(attendance)
     return serialize_attendance(attendance, today)

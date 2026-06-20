@@ -11,7 +11,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import (
     create_tables,
+    ensure_audit_log_table,
     ensure_employee_audit_columns,
+    ensure_employee_sensitive_columns,
     ensure_announcement_columns,
     ensure_notification_columns,
     ensure_timesheet_columns,
@@ -29,6 +31,11 @@ from app.models import (
     Project, Allocation, Announcement, AnnouncementAudience, AnnouncementAcknowledgment,
     AnnouncementRead, Notification, ActionInboxItem, ActivityLog,
     UserSettings, SupportTicket,
+    Client, ClientOnboarding, ClientChecklistItem, ClientTask, ClientTeamMember,
+    ClientDocument, ClientMilestone, ClientActivityLog,
+    Certificate, CertificateAuditLog,
+    SensitiveAccessAuditLog,
+    AuditLog,
 )
 from app.services.auth_service import hash_password
 from app.api.dashboard import router as dashboard_router
@@ -44,6 +51,8 @@ from app.api.attendance import router as attendance_router
 from app.api.timesheets import router as timesheets_router
 from app.api.leaves import router as leaves_router
 from app.api.admin_time_off import router as admin_time_off_router
+from app.api.client_onboarding import router as client_onboarding_router
+from app.api.audit_logs import router as audit_logs_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -176,13 +185,15 @@ def seed_admin(db):
 async def lifespan(app: FastAPI):
     """Startup: create all tables and seed data."""
     create_tables()
+    ensure_audit_log_table()
     ensure_employee_audit_columns()
+    ensure_employee_sensitive_columns()
     ensure_announcement_columns()
     ensure_notification_columns()
     ensure_timesheet_columns()
     ensure_time_off_columns()
     ensure_leave_type_policy_columns()
-    logger.info("All 19 database tables created")
+    logger.info("All database tables created")
 
     db = SessionLocal()
     try:
@@ -226,6 +237,8 @@ app.include_router(attendance_router, prefix="/api/v1")
 app.include_router(timesheets_router, prefix="/api/v1")
 app.include_router(leaves_router, prefix="/api/v1")
 app.include_router(admin_time_off_router, prefix="/api/v1")
+app.include_router(client_onboarding_router, prefix="/api/v1")
+app.include_router(audit_logs_router, prefix="/api/v1")
 
 
 

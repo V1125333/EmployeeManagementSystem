@@ -3,19 +3,27 @@ Employee API endpoints.
 """
 
 import logging
+from urllib.parse import quote
 from typing import Optional
 from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Header, UploadFile, File
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func, literal, or_
 from app.core.database import get_db
 from app.models.employee import Employee, EmployeeAuditLog, EmployeePerformanceSnapshot
 from app.models.leave_attendance import LeaveBalance, LeaveRequest
-from app.models.operations import Allocation, Project
+from app.models.operations import ActionInboxItem, Allocation, Notification, Project
 from app.models.training import TrainingEnrollment
 from app.schemas.employee import AddEmployeeRequest, AddEmployeeResponse, UpdateEmployeeRequest
 from app.services.employee_service import create_employee
+from app.services.audit_service import changed_fields, log_audit, log_authorization_failure
 from app.services.settings_service import get_current_employee, is_admin_role, require_admin_employee
+from app.services.security_service import (
+    export_employee_csv,
+    log_sensitive_access,
+    require_export_level,
+)
 import base64
 
 logger = logging.getLogger(__name__)
@@ -153,10 +161,10 @@ async def list_employees(
     if search:
         normalized_search = " ".join(search.strip().split())
         if normalized_search:
-            full_name = func.concat(
-                func.coalesce(Employee.first_name, ""),
-                literal(" "),
-                func.coalesce(Employee.last_name, ""),
+            full_name = (
+                func.coalesce(Employee.first_name, "")
+                + literal(" ")
+                + func.coalesce(Employee.last_name, "")
             )
             searchable_fields = [
                 Employee.first_name,
@@ -234,6 +242,95 @@ async def list_employees(
     }
 
 
+@router.get("/export")
+async def export_employees(
+    search: Optional[str] = Query(None, description="Search by name or email"),
+    department: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    role: Optional[str] = Query(None),
+    location: Optional[str] = Query(None),
+    level: str = Query("basic", pattern="^(basic|hr|payroll)$"),
+    db: Session = Depends(get_db),
+    current_user_id: str | None = Header(None, alias="x-user-id"),
+    current_user_email: str | None = Header(None, alias="x-user-email"),
+):
+    """Export employees with server-side role checks and sensitive-access audit."""
+    actor = require_admin_employee(db, current_user_id, current_user_email)
+    require_export_level(actor, level)
+
+    query = db.query(Employee).filter(Employee.work_email != "superadmin@reknew.ai")
+    if search:
+        normalized_search = " ".join(search.strip().split())
+        if normalized_search:
+            full_name = (
+                func.coalesce(Employee.first_name, "")
+                + literal(" ")
+                + func.coalesce(Employee.last_name, "")
+            )
+            searchable_fields = [
+                Employee.first_name,
+                Employee.last_name,
+                Employee.work_email,
+                Employee.department,
+                Employee.designation,
+                Employee.role,
+                Employee.work_location,
+                Employee.location,
+                full_name,
+            ]
+            token_filters = []
+            for token in normalized_search.split(" "):
+                token_term = f"%{token}%"
+                token_filters.append(or_(*[field.ilike(token_term) for field in searchable_fields]))
+            phrase_term = f"%{normalized_search}%"
+            query = query.filter(or_(
+                full_name.ilike(phrase_term),
+                Employee.work_email.ilike(phrase_term),
+                and_(*token_filters),
+            ))
+    if department:
+        query = query.filter(Employee.department.ilike(department))
+    if status:
+        query = query.filter(Employee.employment_status.ilike(status))
+    if role:
+        normalized_role = role.strip().lower().replace(" ", "_").replace("-", "_")
+        role_value = func.lower(func.replace(func.replace(Employee.role, " ", "_"), "-", "_"))
+        query = query.filter(role_value == normalized_role)
+    if location:
+        query = query.filter(Employee.work_location.ilike(location))
+
+    employees = query.order_by(Employee.created_at.desc()).limit(10000).all()
+    log_sensitive_access(
+        db,
+        actor,
+        action="employee_csv_export",
+        target_type="employees",
+        target_id=None,
+        sensitivity_level="restricted" if level == "basic" else "confidential",
+        reason=f"{level} employee export",
+        metadata={
+            "level": level,
+            "row_count": len(employees),
+            "filters": {
+                "search": search,
+                "department": department,
+                "status": status,
+                "role": role,
+                "location": location,
+            },
+        },
+    )
+    db.commit()
+
+    csv_content = export_employee_csv(employees, level)
+    filename = quote(f"reknew-employees-{level}-{date.today().isoformat()}.csv")
+    return Response(
+        content=csv_content,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/{employee_id}")
 async def get_employee(
     employee_id: str,
@@ -249,6 +346,18 @@ async def get_employee(
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
 
+    if actor.id != employee_id:
+        log_sensitive_access(
+            db,
+            actor,
+            action="employee_profile_view",
+            target_type="employee",
+            target_id=employee_id,
+            sensitivity_level="confidential",
+            reason="Admin profile lookup",
+        )
+        db.commit()
+
     return serialize_employee(emp)
 
 
@@ -260,10 +369,20 @@ async def get_employee_preview(
     current_user_email: str | None = Header(None, alias="x-user-email"),
 ):
     """Executive employee preview drawer data."""
-    require_admin_employee(db, current_user_id, current_user_email)
+    actor = require_admin_employee(db, current_user_id, current_user_email)
     emp = db.query(Employee).filter(Employee.id == employee_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
+    log_sensitive_access(
+        db,
+        actor,
+        action="employee_preview_view",
+        target_type="employee",
+        target_id=employee_id,
+        sensitivity_level="confidential",
+        reason="Admin employee preview",
+    )
+    db.commit()
 
     today = date.today()
     current_leave = db.query(LeaveRequest).filter(
@@ -388,6 +507,72 @@ async def get_employee_preview(
     }
 
 
+@router.post("/{employee_id}/remind-emergency-contact")
+async def remind_emergency_contact(
+    employee_id: str,
+    db: Session = Depends(get_db),
+    current_user_id: str | None = Header(None, alias="x-user-id"),
+    current_user_email: str | None = Header(None, alias="x-user-email"),
+):
+    """Ask an employee to update missing emergency contact information."""
+    actor = require_admin_employee(db, current_user_id, current_user_email)
+    emp = db.query(Employee).filter(Employee.id == employee_id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    if not emp.is_active:
+        raise HTTPException(status_code=400, detail="Reminders can only be sent to active employees.")
+
+    existing_action = db.query(ActionInboxItem).filter(
+        ActionInboxItem.assigned_to_user_id == emp.id,
+        ActionInboxItem.item_type == "profile_update",
+        ActionInboxItem.related_entity_type == "employee",
+        ActionInboxItem.related_entity_id == emp.id,
+        ActionInboxItem.status == "pending",
+    ).first()
+    if not existing_action:
+        db.add(ActionInboxItem(
+            assigned_to_user_id=emp.id,
+            item_type="profile_update",
+            title="Update emergency contact",
+            description="Please add or update your emergency contact details in My Profile.",
+            status="pending",
+            priority="normal",
+            related_entity_type="employee",
+            related_entity_id=emp.id,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        ))
+
+    # This is an action the employee must complete, so keep it in Inbox only.
+    # Remove older duplicate notification reminders created before this was separated.
+    db.query(Notification).filter(
+        Notification.user_id == emp.id,
+        Notification.notification_type == "profile_update",
+        Notification.related_entity_type == "employee",
+        Notification.related_entity_id == emp.id,
+    ).delete(synchronize_session=False)
+    log_sensitive_access(
+        db,
+        actor,
+        action="emergency_contact_reminder_sent",
+        target_type="employee",
+        target_id=emp.id,
+        sensitivity_level="restricted",
+        reason="Admin requested employee emergency contact update",
+    )
+    log_audit(
+        db,
+        actor,
+        action="employee.emergency_contact_reminder_sent",
+        entity_type="employee",
+        entity_id=emp.id,
+        reason="Admin requested employee emergency contact update",
+        metadata={"target_employee": f"{emp.first_name} {emp.last_name}".strip()},
+    )
+    db.commit()
+    return {"success": True, "message": "Reminder sent to employee."}
+
+
 @router.post("/", response_model=AddEmployeeResponse)
 async def add_employee(
     data: AddEmployeeRequest,
@@ -396,9 +581,20 @@ async def add_employee(
     current_user_email: str | None = Header(None, alias="x-user-email"),
 ):
     """Add a new employee with setup code for first-time login."""
-    require_admin_employee(db, current_user_id, current_user_email)
+    actor = require_admin_employee(db, current_user_id, current_user_email)
     try:
         result = create_employee(db, data)
+        if result.success and result.employee_id:
+            log_audit(
+                db,
+                actor,
+                action="employee.created",
+                entity_type="employee",
+                entity_id=result.employee_id,
+                new_values=data.model_dump(),
+                metadata={"security_event": False},
+            )
+            db.commit()
         return result
     except Exception as e:
         logger.error(f"Error adding employee: {e}")
@@ -424,12 +620,30 @@ async def update_employee(
     is_admin = is_admin_role(actor.role)
 
     if not (is_self or is_admin):
+        log_authorization_failure(
+            db,
+            actor,
+            action="employee.update",
+            entity_type="employee",
+            entity_id=employee_id,
+            reason="User attempted to update an employee they do not own.",
+        )
+        db.commit()
         raise HTTPException(status_code=403, detail="Not authorized to update this employee")
 
     updates = data.dict(exclude_unset=True)
     if is_self and not is_admin:
         blocked_fields = sorted(set(updates) - SELF_PROFILE_FIELDS)
         if blocked_fields:
+            log_authorization_failure(
+                db,
+                actor,
+                action="employee.update_restricted_fields",
+                entity_type="employee",
+                entity_id=employee_id,
+                reason=f"Restricted fields attempted: {', '.join(blocked_fields)}",
+            )
+            db.commit()
             raise HTTPException(
                 status_code=403,
                 detail=f"Employees cannot modify restricted profile fields: {', '.join(blocked_fields)}.",
@@ -445,6 +659,20 @@ async def update_employee(
     emp.last_updated_at = datetime.utcnow()
     emp.updated_by = changed_by_value(actor.work_email, current_user_name, actor.id)
     log_employee_changes(db, employee_id, old_values, updates, emp.updated_by)
+    action = "employee.self_profile_updated" if is_self and not is_admin else "employee.updated"
+    field_changes = changed_fields(old_values, updates)
+    if field_changes:
+        log_audit(
+            db,
+            actor,
+            action=action,
+            entity_type="employee",
+            entity_id=employee_id,
+            old_values=old_values,
+            new_values=updates,
+            changed_fields_payload=field_changes,
+            metadata={"changed_by": emp.updated_by},
+        )
 
     db.commit()
     db.refresh(emp)
@@ -496,6 +724,16 @@ async def upload_profile_picture(
     emp.profile_image_url = data_uri
     emp.last_updated_at = datetime.utcnow()
     emp.updated_by = actor.work_email or current_user_name or actor.id or "unknown"
+    log_audit(
+        db,
+        actor,
+        action="employee.profile_picture_uploaded",
+        entity_type="employee",
+        entity_id=employee_id,
+        old_values={"profile_image_url": "[IMAGE_PREVIOUS]"},
+        new_values={"profile_image_url": "[IMAGE_UPDATED]"},
+        metadata={"content_type": file.content_type, "file_size": len(file_content)},
+    )
     db.commit()
     db.refresh(emp)
 

@@ -9,6 +9,8 @@ import { EmployeesPage } from '@/pages/EmployeesPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { CertificateGeneratorPage } from '@/pages/CertificateGeneratorPage';
+import { CertificateVerificationPage } from '@/pages/CertificateVerificationPage';
+import { AuditTrailPage } from '@/pages/AuditTrailPage';
 import { HRDocumentsPage } from '@/pages/HRDocumentsPage';
 import {
   OnboardingPage,
@@ -42,6 +44,7 @@ export default function App() {
           <Routes>
             {/* Public route */}
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/verify/:certificateCode" element={<CertificateVerificationPage />} />
 
             {/* Protected routes */}
             <Route element={<ProtectedRoute />}>
@@ -79,6 +82,7 @@ export default function App() {
                   <Route path="/admin/policies" element={<PoliciesPage />} />
                   <Route path="/admin/certificates" element={<CertificateGeneratorPage />} />
                   <Route path="/admin/hr-documents" element={<HRDocumentsPage />} />
+                  <Route path="/admin/audit-trail" element={<AuditTrailPage />} />
                 </Route>
               </Route>
             </Route>

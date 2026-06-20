@@ -28,6 +28,31 @@ def create_tables():
     Base.metadata.create_all(bind=engine)
 
 
+def ensure_audit_log_table():
+    """Create the centralized audit table and indexes for existing deployments."""
+    from app.models.audit import AuditLog  # noqa: F401
+
+    Base.metadata.create_all(bind=engine)
+    inspector = inspect(engine)
+    if "audit_logs" not in inspector.get_table_names():
+        return
+
+    dialect = engine.dialect.name
+    if dialect != "postgresql":
+        return
+
+    index_statements = [
+        "CREATE INDEX IF NOT EXISTS ix_audit_logs_created_at ON audit_logs (created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_audit_logs_actor_user_id ON audit_logs (actor_user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_audit_logs_entity_type ON audit_logs (entity_type)",
+        "CREATE INDEX IF NOT EXISTS ix_audit_logs_entity_id ON audit_logs (entity_id)",
+        "CREATE INDEX IF NOT EXISTS ix_audit_logs_action ON audit_logs (action)",
+    ]
+    with engine.begin() as connection:
+        for statement in index_statements:
+            connection.execute(text(statement))
+
+
 def ensure_employee_audit_columns():
     """Safely add employee intelligence columns to existing databases."""
     inspector = inspect(engine)
@@ -49,6 +74,44 @@ def ensure_employee_audit_columns():
         "device_assigned": "BOOLEAN DEFAULT FALSE",
     }
 
+    for column_name, definition in column_definitions.items():
+        if column_name in existing_columns:
+            continue
+        if dialect == "postgresql":
+            statements.append(
+                f"ALTER TABLE employees ADD COLUMN IF NOT EXISTS {column_name} {definition}"
+            )
+        else:
+            statements.append(f"ALTER TABLE employees ADD COLUMN {column_name} {definition}")
+
+    if not statements:
+        return
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+
+
+def ensure_employee_sensitive_columns():
+    """Safely add encrypted placeholders for highly sensitive employee PII."""
+    inspector = inspect(engine)
+    if "employees" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("employees")}
+    dialect = engine.dialect.name
+    column_definitions = {
+        "personal_email_encrypted": "TEXT",
+        "phone_encrypted": "TEXT",
+        "date_of_birth_encrypted": "TEXT",
+        "emergency_contact_name_encrypted": "TEXT",
+        "emergency_contact_phone_encrypted": "TEXT",
+        "current_address_encrypted": "TEXT",
+        "permanent_address_encrypted": "TEXT",
+        "pii_key_version": "VARCHAR(20)",
+    }
+
+    statements = []
     for column_name, definition in column_definitions.items():
         if column_name in existing_columns:
             continue

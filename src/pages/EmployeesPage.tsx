@@ -3,12 +3,13 @@ import { useSearchParams } from 'react-router-dom';
 import {
   Search, Filter, UserPlus, Download, ChevronDown, ChevronLeft, ChevronRight,
   Mail, Phone, MapPin, Calendar, Briefcase, Building2, User, Shield, X,
-  Pencil, Loader2, Plane, KeyRound, History, CheckCircle2,
+  Pencil, Loader2, Plane, KeyRound, History, CheckCircle2, Bell,
 } from 'lucide-react';
 import { Card, CardHeader, Badge, Button, Avatar } from '@/components/ui';
 import { Drawer } from '@/components/ui/Drawer';
 import { AddEmployeeDrawer } from '@/components/dashboard/AddEmployeeDrawer';
 import { countriesForDialCode } from '@/data/countryCodes';
+import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/utils/cn';
 
@@ -41,6 +42,9 @@ interface EmployeeRecord {
   is_first_login: boolean;
   setup_code: string | null;
   created_at: string;
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
+  emergency_contact_relation?: string | null;
 }
 
 interface EmployeeListResponse {
@@ -304,17 +308,26 @@ function ExecutiveEmployeeDetail({
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     account: true,
     contact: true,
+    emergency: true,
     employment: true,
     access: true,
     leave: true,
     audit: true,
   });
+  const { showToast } = useToast();
+  const { user } = useAuth();
+  const [sendingEmergencyReminder, setSendingEmergencyReminder] = useState(false);
 
   useEffect(() => {
     if (!open || !employee) return;
     setLoadingPreview(true);
     setPreviewError('');
-    fetch(`${API_BASE}/employees/${employee.id}/preview`)
+    fetch(`${API_BASE}/employees/${employee.id}/preview`, {
+      headers: {
+        'x-user-id': user?.id || '',
+        'x-user-email': user?.email || '',
+      },
+    })
       .then(async (res) => {
         if (!res.ok) throw new Error('Preview data is not available');
         const data = await res.json();
@@ -326,7 +339,7 @@ function ExecutiveEmployeeDetail({
         setPreviewError(err instanceof Error ? err.message : 'Preview data is not available');
       })
       .finally(() => setLoadingPreview(false));
-  }, [open, employee, refreshKey]);
+  }, [open, employee, refreshKey, user?.email, user?.id]);
 
   if (!employee) return null;
 
@@ -338,6 +351,11 @@ function ExecutiveEmployeeDetail({
   const activationCode = preview?.account_activation?.activation_code || (data.is_first_login ? data.setup_code : null);
   const inviteStatus = preview?.account_activation?.invite_status || (data.is_first_login ? 'pending' : 'accepted');
   const accessRole = preview?.it_access?.access_level || data.role;
+  const hasEmergencyDetails = Boolean(
+    data.emergency_contact_name?.trim()
+    || data.emergency_contact_phone?.trim()
+    || data.emergency_contact_relation?.trim()
+  );
 
   const formatDate = (value?: string | null) => value
     ? new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -363,6 +381,27 @@ function ExecutiveEmployeeDetail({
     return 'Not available';
   };
   const toggleSection = (key: string) => setOpenSections((current) => ({ ...current, [key]: !current[key] }));
+  const sendEmergencyReminder = async () => {
+    setSendingEmergencyReminder(true);
+    try {
+      const res = await fetch(`${API_BASE}/employees/${data.id}/remind-emergency-contact`, {
+        method: 'POST',
+        headers: {
+          'x-user-id': user?.id || '',
+          'x-user-email': user?.email || '',
+        },
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || result.success === false) {
+        throw new Error(result.detail || result.message || 'Unable to send reminder.');
+      }
+      showToast({ message: 'Reminder sent to employee.' });
+    } catch (err) {
+      showToast({ message: err instanceof Error ? err.message : 'Unable to send reminder.' });
+    } finally {
+      setSendingEmergencyReminder(false);
+    }
+  };
 
   const Metric = ({ label, value, tone = 'neutral' }: { label: string; value: string | number; tone?: 'neutral' | 'good' | 'warn' | 'bad' }) => (
     <div className="rounded-xl border border-[#E5E7EB] bg-warm-bg px-3 py-2.5">
@@ -461,6 +500,33 @@ function ExecutiveEmployeeDetail({
                 <Metric label="Work Country" value={countryName(data.country_code)} />
                 <Metric label="Work Location" value={data.work_location || 'Not recorded'} />
               </div>
+            </Panel>
+
+            <Panel id="emergency" title="Emergency Contact" icon={<Bell size={15} />}>
+              {hasEmergencyDetails ? (
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <Metric label="Contact Name" value={data.emergency_contact_name || 'Not recorded'} />
+                  <Metric label="Contact Phone" value={data.emergency_contact_phone || 'Not recorded'} />
+                  <Metric label="Relationship" value={data.emergency_contact_relation || 'Not recorded'} />
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-[#DDE3DD] bg-warm-bg px-4 py-4">
+                  <div className="text-[14px] font-semibold text-[#2F3437]">No details provided</div>
+                  <div className="mt-1 text-[12.5px] text-gray-500">
+                    Ask the employee to add emergency contact details in My Profile.
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={sendingEmergencyReminder ? <Loader2 size={13} className="animate-spin" /> : <Bell size={13} />}
+                    className="mt-3"
+                    disabled={sendingEmergencyReminder || !data.is_active}
+                    onClick={sendEmergencyReminder}
+                  >
+                    {sendingEmergencyReminder ? 'Sending' : 'Send Reminder'}
+                  </Button>
+                </div>
+              )}
             </Panel>
 
             <Panel id="employment" title="Employment" icon={<Briefcase size={15} />}>
@@ -752,6 +818,7 @@ export function EmployeesPage() {
   const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
   const [showAddEmployee, setShowAddEmployee] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportLevel, setExportLevel] = useState<'basic' | 'hr' | 'payroll'>('basic');
   const authHeaders = useMemo(() => ({
     'Content-Type': 'application/json',
     'x-user-id': user?.id || '',
@@ -849,44 +916,16 @@ export function EmployeesPage() {
       if (statusFilter !== 'All') params.set('status', statusFilter);
       if (roleFilter !== 'All') params.set('role', roleFilter);
       if (locationFilter !== 'All') params.set('location', locationFilter);
+      params.set('level', exportLevel);
 
-      const res = await fetch(`${API_BASE}/employees/?${params.toString()}`, { headers: authHeaders });
+      const res = await fetch(`${API_BASE}/employees/export?${params.toString()}`, { headers: authHeaders });
       if (!res.ok) throw new Error(`Unable to export employees (${res.status})`);
-      const data: EmployeeListResponse = await res.json();
-      const rows = data.employees || [];
-      const columns: Array<[string, (employee: EmployeeRecord, index: number) => string | number | boolean | null | undefined]> = [
-        ['Employee Code', (_employee, index) => `EMP-${String(index + 1).padStart(4, '0')}`],
-        ['First Name', (employee) => employee.first_name],
-        ['Last Name', (employee) => employee.last_name],
-        ['Work Email', (employee) => employee.work_email],
-        ['Country Code', (employee) => employee.country_code],
-        ['Phone', (employee) => employee.phone],
-        ['Full Phone', (employee) => [employee.country_code?.trim(), employee.phone?.trim()].filter(Boolean).join(' ')],
-        ['Country / Region', (employee) => countriesForDialCode(employee.country_code)],
-        ['Department', (employee) => employee.department],
-        ['Designation', (employee) => employee.designation],
-        ['Role', (employee) => roleLabels[employee.role] || employee.role],
-        ['Workforce Type', (employee) => employee.workforce_type],
-        ['Status', (employee) => employee.employment_status],
-        ['Work Location', (employee) => employee.work_location],
-        ['Reporting Manager', (employee) => employee.reporting_manager],
-        ['Joining Date', (employee) => employee.joining_date],
-        ['Active', (employee) => employee.is_active ? 'Yes' : 'No'],
-      ];
-      const escapeCsv = (value: string | number | boolean | null | undefined) => {
-        const text = value === null || value === undefined ? '' : String(value);
-        return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-      };
-      const csv = [
-        columns.map(([label]) => escapeCsv(label)).join(','),
-        ...rows.map((employee, index) => columns.map(([, getter]) => escapeCsv(getter(employee, index))).join(',')),
-      ].join('\r\n');
-      const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+      const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       const date = new Date().toISOString().slice(0, 10);
       link.href = url;
-      link.download = `reknew-employees-${date}.csv`;
+      link.download = `reknew-employees-${exportLevel}-${date}.csv`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -909,8 +948,18 @@ export function EmployeesPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <select
+            className="h-10 rounded-md border border-[#DDE3DD] bg-white px-3 text-sm font-semibold text-[#66785F] outline-none"
+            value={exportLevel}
+            onChange={(event) => setExportLevel(event.target.value as 'basic' | 'hr' | 'payroll')}
+            aria-label="Employee export level"
+          >
+            <option value="basic">Basic CSV</option>
+            <option value="hr">HR CSV</option>
+            <option value="payroll">Payroll CSV</option>
+          </select>
           <Button variant="ghost" icon={<Download size={14} />} disabled={exporting} onClick={exportCsv}>
-            {exporting ? 'Exporting' : 'Export CSV'}
+            {exporting ? 'Exporting' : 'Export'}
           </Button>
           <Button icon={<UserPlus size={14} />} onClick={() => setShowAddEmployee(true)}>Add Employee</Button>
         </div>
