@@ -8,9 +8,10 @@ Bonus: activity_log — System-wide audit trail
 
 import uuid
 from datetime import datetime, date, time
-from sqlalchemy import String, Boolean, Date, DateTime, Time, Text, Integer, Numeric, ForeignKey
+from sqlalchemy import String, Boolean, Date, DateTime, Time, Text, Numeric, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
+from app.models.allocation import Allocation
 
 
 class Project(Base):
@@ -25,21 +26,6 @@ class Project(Base):
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="planning")  # planning, active, on_hold, completed, cancelled
     created_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("employees.id"), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-
-class Allocation(Base):
-    __tablename__ = "allocations"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    employee_id: Mapped[str] = mapped_column(String(36), ForeignKey("employees.id"), nullable=False)
-    project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.id"), nullable=False)
-    allocation_percentage: Mapped[int] = mapped_column(Integer, default=100)
-    role_in_project: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    start_date: Mapped[date] = mapped_column(Date, nullable=False)
-    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

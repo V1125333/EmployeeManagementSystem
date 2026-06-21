@@ -23,10 +23,12 @@ from app.models.training import OnboardingTask, Training, TrainingEnrollment
 # Tables 12-15: channels, channel_members, messages, message_reactions
 from app.models.chat import Channel, ChannelMember, Message, MessageReaction
 
+# Resource allocation foundation
+from app.models.allocation import Allocation
+
 # Tables 16-19+: projects, allocations, announcements, notifications, activity_log
 from app.models.operations import (
     Project,
-    Allocation,
     TimesheetEntry,
     Announcement,
     AnnouncementAudience,

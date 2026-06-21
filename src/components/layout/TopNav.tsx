@@ -51,7 +51,7 @@ interface SearchDestination {
   description: string;
   path: string;
   keywords: string;
-  roles: Array<'admin' | 'employee' | 'all'>;
+  roles: Array<'admin' | 'employee' | 'manager' | 'all'>;
 }
 
 const searchDestinations: SearchDestination[] = [
@@ -61,6 +61,8 @@ const searchDestinations: SearchDestination[] = [
   { label: 'Onboarding Center', description: 'Employee onboarding workflows', path: '/onboarding', keywords: 'onboarding setup new employee trainee', roles: ['admin'] },
   { label: 'Client Onboarding', description: 'Client onboarding workstreams', path: '/client-onboarding', keywords: 'client onboarding customer implementation', roles: ['admin'] },
   { label: 'Team Allocation', description: 'Project and team allocations', path: '/team-allocation', keywords: 'team allocation project skills staffing resource', roles: ['admin'] },
+  { label: 'Bench & Availability', description: 'Resource availability and bench capacity', path: '/bench', keywords: 'bench availability allocation utilization capacity resources', roles: ['admin'] },
+  { label: 'Workforce Forecasting', description: 'Forecast employee availability and bench risk', path: '/forecasting', keywords: 'forecasting workforce bench risk future availability allocations', roles: ['admin', 'manager'] },
   { label: 'Assets & Access', description: 'Hardware, software, and access', path: '/assets', keywords: 'assets access laptop software license permissions', roles: ['admin'] },
   { label: 'Policies', description: 'Policy management', path: '/admin/policies', keywords: 'policies leave attendance rules configuration', roles: ['admin'] },
   { label: 'Certificates', description: 'Generate employee certificates', path: '/admin/certificates', keywords: 'certificates documents letters', roles: ['admin'] },
@@ -186,7 +188,7 @@ export function TopNav() {
   }, []);
 
   const visibleDestinations = useMemo(() => {
-    const audience = isAdminRole(user?.role) ? 'admin' : 'employee';
+    const audience = isAdminRole(user?.role) ? 'admin' : normalizeRole(user?.role) === 'manager' ? 'manager' : 'employee';
     const term = searchQuery.trim().toLowerCase();
     return searchDestinations
       .filter((item) => item.roles.includes('all') || item.roles.includes(audience))

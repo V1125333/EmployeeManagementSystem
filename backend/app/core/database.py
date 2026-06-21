@@ -292,3 +292,63 @@ def ensure_leave_type_policy_columns():
     with engine.begin() as connection:
         for statement in statements:
             connection.execute(text(statement))
+
+
+def ensure_allocation_columns():
+    """Safely align allocations table with the resource allocation foundation."""
+    from app.models.allocation import Allocation  # noqa: F401
+
+    Base.metadata.create_all(bind=engine)
+    inspector = inspect(engine)
+    if "allocations" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("allocations")}
+    dialect = engine.dialect.name
+    column_definitions = {
+        "project_name": "VARCHAR(150)",
+        "manager_id": "VARCHAR(36)",
+        "allocation_role": "VARCHAR(100)",
+        "billing_type": "VARCHAR(20)",
+        "status": "VARCHAR(20) DEFAULT 'active'",
+        "notes": "TEXT",
+        "created_by": "VARCHAR(36)",
+        "updated_by": "VARCHAR(36)",
+    }
+
+    statements = []
+    for column_name, definition in column_definitions.items():
+        if column_name in existing_columns:
+            continue
+        if dialect == "postgresql":
+            statements.append(f"ALTER TABLE allocations ADD COLUMN IF NOT EXISTS {column_name} {definition}")
+        else:
+            statements.append(f"ALTER TABLE allocations ADD COLUMN {column_name} {definition}")
+
+    role_source = "role_in_project" if "role_in_project" in existing_columns else "'Team Member'"
+
+    if dialect == "postgresql":
+        statements.extend([
+            "ALTER TABLE allocations ALTER COLUMN project_id DROP NOT NULL",
+            "UPDATE allocations SET status = 'active' WHERE status IS NULL",
+            f"UPDATE allocations SET allocation_role = COALESCE(allocation_role, {role_source}, 'Team Member') WHERE allocation_role IS NULL",
+            "UPDATE allocations SET billing_type = COALESCE(billing_type, 'billable') WHERE billing_type IS NULL",
+            "UPDATE allocations SET manager_id = COALESCE(manager_id, employee_id) WHERE manager_id IS NULL",
+            "UPDATE allocations SET created_by = COALESCE(created_by, employee_id) WHERE created_by IS NULL",
+        ])
+    else:
+        statements.extend([
+            "UPDATE allocations SET status = 'active' WHERE status IS NULL",
+            f"UPDATE allocations SET allocation_role = COALESCE(allocation_role, {role_source}, 'Team Member') WHERE allocation_role IS NULL",
+            "UPDATE allocations SET billing_type = COALESCE(billing_type, 'billable') WHERE billing_type IS NULL",
+            "UPDATE allocations SET manager_id = COALESCE(manager_id, employee_id) WHERE manager_id IS NULL",
+            "UPDATE allocations SET created_by = COALESCE(created_by, employee_id) WHERE created_by IS NULL",
+        ])
+
+    with engine.begin() as connection:
+        for statement in statements:
+            try:
+                connection.execute(text(statement))
+            except Exception:
+                if "DROP NOT NULL" not in statement:
+                    raise

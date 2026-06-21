@@ -12,6 +12,8 @@ import { CertificateGeneratorPage } from '@/pages/CertificateGeneratorPage';
 import { CertificateVerificationPage } from '@/pages/CertificateVerificationPage';
 import { AuditTrailPage } from '@/pages/AuditTrailPage';
 import { HRDocumentsPage } from '@/pages/HRDocumentsPage';
+import { BenchPage } from '@/pages/BenchPage';
+import { WorkforceForecastPage } from '@/pages/WorkforceForecastPage';
 import {
   OnboardingPage,
   ClientOnboardingPage,
@@ -52,6 +54,8 @@ export default function App() {
                 <Route path="/" element={<RoleHomeRedirect />} />
                 <Route path="/profile" element={<ProfilePage />} />
                 <Route path="/notifications" element={<EmployeeNotificationsPage />} />
+                <Route path="/bench" element={<BenchPage />} />
+                <Route path="/forecasting" element={<WorkforceForecastPage />} />
 
                 <Route element={<EmployeeRoute />}>
                   <Route path="/employee" element={<EmployeeDashboardPage />} />

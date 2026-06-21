@@ -16,7 +16,9 @@ from app.core.database import get_db
 from app.models.employee import Employee
 from app.models.leave_attendance import LeaveRequest, LeaveType
 from app.models.operations import Allocation, Notification, Project, TimesheetEntry
+from app.schemas.compliance import ComplianceReport
 from app.services.audit_service import log_audit, log_authorization_failure
+from app.services.compliance_service import calculate_compliance
 from app.services.settings_service import get_current_employee
 
 router = APIRouter(prefix="/timesheets", tags=["Timesheets"])
@@ -171,6 +173,16 @@ def manager_for_employee(db: Session, employee: Employee) -> Employee | None:
         if candidate.id != employee.id and employee_name(candidate).lower() == manager_name:
             return candidate
     return None
+
+
+def can_view_timesheet_compliance(actor: Employee, employee: Employee) -> bool:
+    if actor.id == employee.id:
+        return True
+    if is_admin(actor.role):
+        return True
+    if employee.manager_id and employee.manager_id == actor.id:
+        return True
+    return employee.reporting_manager == employee_name(actor)
 
 
 def reviewer_name_for_entries(db: Session, entries: list[TimesheetEntry]) -> str | None:
@@ -480,7 +492,7 @@ async def my_timesheet_options(
     today = date.today()
     allocated_projects = db.query(Project).join(Allocation, Allocation.project_id == Project.id).filter(
         Allocation.employee_id == employee.id,
-        Allocation.is_active == True,
+        Allocation.status == "active",
         Allocation.start_date <= today,
         or_(Allocation.end_date.is_(None), Allocation.end_date >= today),
     ).order_by(Project.name.asc()).all()
@@ -838,6 +850,52 @@ async def my_timesheet_summary(
     )
 
 
+@router.get("/{timesheet_id}/allocation-compliance", response_model=ComplianceReport)
+async def timesheet_allocation_compliance(
+    timesheet_id: str,
+    db: Session = Depends(get_db),
+    x_user_id: str | None = Header(default=None),
+    x_user_email: str | None = Header(default=None),
+):
+    actor = get_employee(db, x_user_id, x_user_email)
+    seed_entry = db.query(TimesheetEntry).filter(TimesheetEntry.id == timesheet_id).first()
+    if not seed_entry:
+        raise HTTPException(status_code=404, detail="Timesheet not found.")
+    employee = db.query(Employee).filter(Employee.id == seed_entry.employee_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+    if not can_view_timesheet_compliance(actor, employee):
+        log_authorization_failure(
+            db,
+            actor,
+            action="allocation_compliance_checked",
+            entity_type="timesheet",
+            entity_id=timesheet_id,
+            reason="Actor is not the timesheet owner, reporting manager, HR, admin, or super admin.",
+        )
+        db.commit()
+        raise HTTPException(status_code=403, detail="Not authorized to view allocation compliance for this timesheet.")
+
+    report = calculate_compliance(db, employee.id, timesheet_id)
+    log_audit(
+        db,
+        actor,
+        action="allocation_compliance_checked",
+        entity_type="timesheet",
+        entity_id=timesheet_id,
+        metadata={
+            "employee_id": employee.id,
+            "employee_name": employee_name(employee),
+            "week_start": report.week_start,
+            "week_end": report.week_end,
+            "overall_status": report.overall_status,
+            "unallocated_hours": report.unallocated_hours,
+        },
+    )
+    db.commit()
+    return report
+
+
 def serialize_timesheet_approval(db: Session, employee: Employee, week_start: date) -> dict:
     entries = load_week_entries(db, employee.id, week_start)
     week = serialize_employee_week(
@@ -936,6 +994,10 @@ async def decide_timesheet(
     if not all(entry.status == "submitted" for entry in entries):
         raise HTTPException(status_code=400, detail="Only submitted timesheets can be reviewed.")
 
+    compliance_report = None
+    if payload.decision == "approve":
+        compliance_report = calculate_compliance(db, employee.id, entries[0].id)
+
     now = datetime.utcnow()
     next_status = "approved" if payload.decision == "approve" else "rejected"
     for entry in entries:
@@ -965,6 +1027,30 @@ async def decide_timesheet(
         reason=payload.reviewer_notes,
         metadata={"employee_id": employee.id, "employee_name": employee_name(employee), "week_end": week_end(week_start), "entry_count": len(entries)},
     )
+    if compliance_report and compliance_report.overall_status in {"warning", "violation"}:
+        log_audit(
+            db,
+            reviewer,
+            action="timesheet_approved_with_variance",
+            entity_type="timesheet",
+            entity_id=f"{employee.id}:{week_start}",
+            old_values={"status": "submitted"},
+            new_values={
+                "status": "approved",
+                "allocation_compliance_status": compliance_report.overall_status,
+            },
+            reason=payload.reviewer_notes,
+            metadata={
+                "employee_id": employee.id,
+                "employee_name": employee_name(employee),
+                "week_end": week_end(week_start),
+                "unallocated_hours": compliance_report.unallocated_hours,
+                "total_expected_hours": compliance_report.total_expected_hours,
+                "total_actual_hours": compliance_report.total_actual_hours,
+                "total_variance_hours": compliance_report.total_variance_hours,
+                "project_rows": [row.model_dump(mode="json") for row in compliance_report.project_rows],
+            },
+        )
     db.commit()
     return await timesheet_approvals(db, x_user_id, x_user_email)
 

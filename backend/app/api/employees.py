@@ -411,7 +411,7 @@ async def get_employee_preview(
 
     active_allocations = db.query(Allocation).filter(
         Allocation.employee_id == employee_id,
-        Allocation.is_active == True,
+        Allocation.status == "active",
         Allocation.start_date <= today,
         or_(Allocation.end_date.is_(None), Allocation.end_date >= today),
     ).all()

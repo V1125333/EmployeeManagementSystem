@@ -4,10 +4,10 @@ import {
   Network, Package, Settings, Shield, FileText,
   PanelLeftClose, PanelLeftOpen, Award, Files, CalendarPlus,
   WalletCards, ClipboardCheck, Clock3, LogIn, Send, PartyPopper,
-  BookOpen,
+  BookOpen, CalendarClock,
 } from 'lucide-react';
 import { cn } from '@/utils/cn';
-import { mainNavItems, adminNavItems, employeeNavItems } from '@/data/mockData';
+import { mainNavItems, adminNavItems, employeeNavItems, resourceNavItems } from '@/data/mockData';
 import { useAuth } from '@/hooks/useAuth';
 import { ProfileDropdown } from '@/components/ui/ProfileDropdown';
 
@@ -15,12 +15,16 @@ const iconMap: Record<string, React.ElementType> = {
   LayoutDashboard, Users, UserPlus, Briefcase, CalendarDays,
   Network, Package, Settings, Shield, FileText, Award, Files,
   CalendarPlus, WalletCards, ClipboardCheck, Clock3, LogIn, Send,
-  PartyPopper, BookOpen,
+  PartyPopper, BookOpen, CalendarClock,
 };
 
 function isAdminRole(role?: string) {
   const normalized = (role || '').toLowerCase().replace(/\s+/g, '_');
   return ['super_admin', 'admin', 'hr_admin', 'global_access'].includes(normalized);
+}
+
+function isManagerRole(role?: string) {
+  return (role || '').toLowerCase().replace(/\s+/g, '_') === 'manager';
 }
 
 interface SidebarProps {
@@ -33,6 +37,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const showAdminNavigation = isAdminRole(user?.role);
+  const showManagerResources = isManagerRole(user?.role);
   const currentUser = user || {
     name: 'User',
     role: 'Employee',
@@ -122,6 +127,19 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               <NavButton key={item.key} item={item} />
             ))}
 
+            <div className={cn('my-3', collapsed ? 'px-1' : 'px-3.5')}>
+              {!collapsed && (
+                <div className="text-[10px] font-bold text-gray-400 tracking-widest uppercase">
+                  Resource Management
+                </div>
+              )}
+              {collapsed && <div className="h-px bg-[#E5E7EB]" />}
+            </div>
+
+            {resourceNavItems.map((item) => (
+              <NavButton key={item.key} item={item} />
+            ))}
+
             {/* Admin section divider */}
             <div className={cn('my-3', collapsed ? 'px-1' : 'px-3.5')}>
               {!collapsed && (
@@ -137,9 +155,26 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             ))}
           </>
         ) : (
-          employeeNavItems.map((item) => (
-            <NavButton key={item.key} item={item} />
-          ))
+          <>
+            {employeeNavItems.map((item) => (
+              <NavButton key={item.key} item={item} />
+            ))}
+            {showManagerResources && (
+              <>
+                <div className={cn('my-3', collapsed ? 'px-1' : 'px-3.5')}>
+                  {!collapsed && (
+                    <div className="text-[10px] font-bold text-gray-400 tracking-widest uppercase">
+                      Resource Management
+                    </div>
+                  )}
+                  {collapsed && <div className="h-px bg-[#E5E7EB]" />}
+                </div>
+                {resourceNavItems.map((item) => (
+                  <NavButton key={item.key} item={item} />
+                ))}
+              </>
+            )}
+          </>
         )}
       </nav>
 

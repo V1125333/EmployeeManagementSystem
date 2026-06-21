@@ -111,6 +111,11 @@ export const adminNavItems: NavItem[] = [
   { key: 'audit-trail', label: 'Audit Trail', icon: 'Shield', path: '/admin/audit-trail' },
 ];
 
+export const resourceNavItems: NavItem[] = [
+  { key: 'bench-availability', label: 'Bench & Availability', icon: 'Users', path: '/bench' },
+  { key: 'workforce-forecasting', label: 'Workforce Forecasting', icon: 'CalendarClock', path: '/forecasting' },
+];
+
 export const employeeNavItems: NavItem[] = [
   { key: 'employee-dashboard', label: 'My Dashboard', icon: 'LayoutDashboard', path: '/employee' },
   { key: 'leave', label: 'Apply Leave', icon: 'CalendarPlus', path: '/employee/apply-leave' },

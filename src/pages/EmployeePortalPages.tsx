@@ -194,6 +194,34 @@ interface TimesheetApprovalItem {
   leave_days: TimesheetLeaveDay[];
 }
 
+interface ComplianceProjectRow {
+  project_id?: string | null;
+  project_name: string;
+  allocation_percentage: number;
+  expected_hours: number;
+  actual_hours: number;
+  variance_hours: number;
+  status: 'compliant' | 'warning' | 'violation';
+}
+
+interface ComplianceReport {
+  employee_id: string;
+  timesheet_id: string;
+  week_start: string;
+  week_end: string;
+  expected_weekly_hours: number;
+  used_default_hours: boolean;
+  no_allocations_found: boolean;
+  project_rows: ComplianceProjectRow[];
+  unallocated_hours: number;
+  total_expected_hours: number;
+  total_actual_hours: number;
+  total_variance_hours: number;
+  overall_status: 'compliant' | 'warning' | 'violation' | 'not_applicable';
+  compliant_threshold: number;
+  warning_threshold: number;
+}
+
 const recentActivity = [
   { title: 'Sick leave approved', meta: 'May 21, 2026', status: 'Approved' },
   { title: 'Timesheet submitted', meta: 'Week 22', status: 'Pending' },
@@ -321,6 +349,22 @@ function formatElapsed(start?: string | null, end = new Date()) {
 
 function formatNumber(value: number) {
   return Number.isInteger(value) ? `${value}` : `${Math.round(value * 10) / 10}`;
+}
+
+function complianceBadgeVariant(status: ComplianceReport['overall_status'] | ComplianceProjectRow['status']) {
+  if (status === 'compliant') return 'success';
+  if (status === 'warning') return 'warning';
+  if (status === 'violation') return 'error';
+  return 'neutral';
+}
+
+function complianceStatusLabel(status: ComplianceReport['overall_status'] | ComplianceProjectRow['status']) {
+  return status.replace('_', ' ');
+}
+
+function signedHours(value: number) {
+  if (value === 0) return '0h';
+  return `${value > 0 ? '+' : ''}${formatNumber(value)}h`;
 }
 
 function attendanceLabel(today: AttendanceRecord | null) {
@@ -458,6 +502,105 @@ function MetricCard({
         </div>
       </div>
     </Card>
+  );
+}
+
+function AllocationCompliancePanel({
+  report,
+  loading = false,
+  open,
+  onToggle,
+  action,
+}: {
+  report: ComplianceReport | null;
+  loading?: boolean;
+  open: boolean;
+  onToggle?: () => void;
+  action?: React.ReactNode;
+}) {
+  if (loading) {
+    return (
+      <div className="rounded-lg border border-[#DDE3EA] bg-white px-4 py-3 text-sm text-gray-500">
+        Checking allocation compliance...
+      </div>
+    );
+  }
+  if (!report) return null;
+
+  const isIssue = report.overall_status === 'warning' || report.overall_status === 'violation';
+  return (
+    <div className={cn(
+      'rounded-lg border bg-white shadow-[0_6px_18px_rgba(17,24,39,0.05)]',
+      isIssue ? 'border-status-warning/30' : 'border-[#DDE3EA]'
+    )}>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+      >
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-bold text-[#2F3437]">Allocation Compliance</span>
+            <Badge variant={complianceBadgeVariant(report.overall_status)}>
+              {complianceStatusLabel(report.overall_status)}
+            </Badge>
+          </div>
+          <div className="mt-1 text-xs text-gray-500">
+            Expected week: {formatNumber(report.expected_weekly_hours)}h. Compliant within {formatNumber(report.compliant_threshold)}h, warning above {formatNumber(report.compliant_threshold)}h, violation above {formatNumber(report.warning_threshold)}h.
+            {report.used_default_hours ? ' Default weekly hours were used.' : ''}
+          </div>
+        </div>
+        {onToggle && <span className="text-xs font-semibold text-olive">{open ? 'Hide' : 'Show'}</span>}
+      </button>
+      {open && (
+        <div className="border-t border-[#E5E7EB] px-4 py-3">
+          {report.no_allocations_found ? (
+            <div className="rounded-lg border border-[#E5E7EB] bg-warm-bg px-4 py-3 text-sm text-gray-600">
+              No active allocations were found for this week. Compliance is not applicable, but {formatNumber(report.unallocated_hours)}h were logged without an allocation.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[700px] text-left text-xs">
+                <thead className="bg-warm-bg text-[10px] uppercase tracking-wide text-gray-400">
+                  <tr>
+                    <th className="px-3 py-2 font-bold">Project</th>
+                    <th className="px-3 py-2 text-right font-bold">Allocation</th>
+                    <th className="px-3 py-2 text-right font-bold">Expected</th>
+                    <th className="px-3 py-2 text-right font-bold">Actual</th>
+                    <th className="px-3 py-2 text-right font-bold">Variance</th>
+                    <th className="px-3 py-2 text-right font-bold">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#E5E7EB]">
+                  {report.project_rows.map((row) => (
+                    <tr key={`${row.project_id || row.project_name}-${row.allocation_percentage}`}>
+                      <td className="px-3 py-2 font-semibold text-[#2F3437]">{row.project_name}</td>
+                      <td className="px-3 py-2 text-right text-gray-500">{row.allocation_percentage}%</td>
+                      <td className="px-3 py-2 text-right">{formatNumber(row.expected_hours)}h</td>
+                      <td className="px-3 py-2 text-right">{formatNumber(row.actual_hours)}h</td>
+                      <td className={cn('px-3 py-2 text-right font-semibold', row.status !== 'compliant' && 'text-status-warning')}>{signedHours(row.variance_hours)}</td>
+                      <td className="px-3 py-2 text-right"><Badge variant={complianceBadgeVariant(row.status)}>{row.status}</Badge></td>
+                    </tr>
+                  ))}
+                  <tr className="bg-warm-bg/60">
+                    <td className="px-3 py-2 font-bold text-[#2F3437]">Unallocated hours</td>
+                    <td className="px-3 py-2 text-right text-gray-400" colSpan={3}>Logged against projects without active allocation</td>
+                    <td className={cn('px-3 py-2 text-right font-bold', report.unallocated_hours > report.compliant_threshold && 'text-status-warning')}>{formatNumber(report.unallocated_hours)}h</td>
+                    <td className="px-3 py-2 text-right">-</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+          {isIssue && (
+            <div className="mt-3 rounded-lg border border-status-warning/20 bg-status-warning/10 px-3 py-2 text-sm text-status-warning">
+              This timesheet has allocation variance. It can still be submitted or approved, but the variance will remain visible for review and audit.
+            </div>
+          )}
+          {action && <div className="mt-3 flex justify-end gap-2">{action}</div>}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1119,6 +1262,9 @@ export function LeaveApprovalsPage() {
   const [approvalError, setApprovalError] = useState<string | null>(null);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [reviewTimesheet, setReviewTimesheet] = useState<TimesheetApprovalItem | null>(null);
+  const [reviewCompliance, setReviewCompliance] = useState<ComplianceReport | null>(null);
+  const [reviewComplianceLoading, setReviewComplianceLoading] = useState(false);
+  const [reviewComplianceOpen, setReviewComplianceOpen] = useState(false);
 
   const headers = useMemo(() => ({
     'Content-Type': 'application/json',
@@ -1151,6 +1297,40 @@ export function LeaveApprovalsPage() {
   useEffect(() => {
     loadApprovals();
   }, [loadApprovals]);
+
+  useEffect(() => {
+    const entryId = reviewTimesheet?.entries?.[0]?.id;
+    if (!entryId || !user) {
+      setReviewCompliance(null);
+      setReviewComplianceLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setReviewCompliance(null);
+    setReviewComplianceLoading(true);
+    fetch(`${API_BASE}/timesheets/${entryId}/allocation-compliance`, { headers })
+      .then(async (res) => {
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.detail || 'Could not load allocation compliance.');
+        return data as ComplianceReport;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        setReviewCompliance(data);
+        setReviewComplianceOpen(data.overall_status === 'warning' || data.overall_status === 'violation');
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setReviewCompliance(null);
+        setApprovalError(err instanceof Error ? err.message : 'Could not load allocation compliance.');
+      })
+      .finally(() => {
+        if (!cancelled) setReviewComplianceLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [headers, reviewTimesheet, user]);
 
   const decideLeave = async (requestId: string, decision: 'approve' | 'reject') => {
     const reviewerNotes = decision === 'reject' ? window.prompt('Add a rejection reason for the employee:') : null;
@@ -1369,6 +1549,15 @@ export function LeaveApprovalsPage() {
                 </table>
               </div>
 
+              <div className="mt-4">
+                <AllocationCompliancePanel
+                  report={reviewCompliance}
+                  loading={reviewComplianceLoading}
+                  open={reviewComplianceOpen}
+                  onToggle={() => setReviewComplianceOpen((current) => !current)}
+                />
+              </div>
+
               {reviewTimesheet.overtime_hours > 0 && (
                 <div className="mt-4 rounded-lg border border-status-warning/20 bg-status-warning/10 px-4 py-3 text-sm text-status-warning">
                   This timesheet includes {reviewTimesheet.overtime_hours}h overtime. Approval will also approve the overtime log.
@@ -1416,6 +1605,9 @@ export function TimesheetsPage() {
   const [saving, setSaving] = useState<'draft' | 'submit' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [submitCompliance, setSubmitCompliance] = useState<ComplianceReport | null>(null);
+  const [submitComplianceOpen, setSubmitComplianceOpen] = useState(true);
+  const [complianceCheckMessage, setComplianceCheckMessage] = useState<string | null>(null);
 
   const headers = useMemo(() => ({
     'Content-Type': 'application/json',
@@ -1533,6 +1725,8 @@ export function TimesheetsPage() {
       return;
     }
     const code = project.id ? 'PRJ' : project.code;
+    setSubmitCompliance(null);
+    setComplianceCheckMessage(null);
     setRows((current) => [...current, makeTimesheetRow(project, code, date)]);
     setActiveCell({ projectKey: project.id || project.code, date });
   };
@@ -1542,6 +1736,8 @@ export function TimesheetsPage() {
     if (!project) return;
     const key = project.id || project.code;
     setSelectedProjectKeys((current) => current.includes(key) ? current : [...current, key]);
+    setSubmitCompliance(null);
+    setComplianceCheckMessage(null);
     const firstOpenDate = weekDates
       .map(toDateInput)
       .find((dateKey) => dateKey >= taskDraft.startDate && dateKey <= taskDraft.endDate && !leaveByDate.has(dateKey) && !isWeekendDate(dateKey));
@@ -1555,12 +1751,16 @@ export function TimesheetsPage() {
 
   const removeProjectRow = (project: TimesheetProject) => {
     const key = project.id || project.code;
+    setSubmitCompliance(null);
+    setComplianceCheckMessage(null);
     setSelectedProjectKeys((current) => current.filter((item) => item !== key));
     setRows((current) => current.filter((row) => row.projectKey !== key));
     setActiveCell((current) => current?.projectKey === key ? null : current);
   };
 
   const updateBlock = (rowId: string, updates: Partial<TimesheetRow>) => {
+    setSubmitCompliance(null);
+    setComplianceCheckMessage(null);
     setRows((current) => current.map((row) => row.id === rowId ? { ...row, ...updates } : row));
   };
 
@@ -1599,24 +1799,91 @@ export function TimesheetsPage() {
     }),
   });
 
+  const applyWeekResponse = (week: TimesheetWeek) => {
+    setCurrentWeek(week);
+    const nextRows = rowsFromTimesheet(week, projects);
+    setRows(nextRows);
+    setSelectedProjectKeys(Array.from(new Set(nextRows.map((row) => row.projectKey))));
+    setActiveCell(null);
+  };
+
+  const postDraftTimesheet = async () => {
+    const res = await fetch(`${API_BASE}/timesheets/me/week`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(buildPayload()),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(data?.detail || 'Could not save timesheet.');
+    return data as TimesheetWeek;
+  };
+
+  const submitTimesheetToBackend = async () => {
+    const res = await fetch(`${API_BASE}/timesheets/me/week/submit`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(buildPayload()),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(data?.detail || 'Could not submit timesheet.');
+    applyWeekResponse(data as TimesheetWeek);
+    setSubmitCompliance(null);
+    setSuccess('Timesheet submitted for approval.');
+  };
+
   const saveTimesheet = async (mode: 'draft' | 'submit') => {
     setSaving(mode);
     setError(null);
     setSuccess(null);
+    setComplianceCheckMessage(null);
+    if (mode === 'draft') {
+      setSubmitCompliance(null);
+    }
     try {
-      const res = await fetch(`${API_BASE}/timesheets/me/week${mode === 'submit' ? '/submit' : ''}`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(buildPayload()),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.detail || 'Could not save timesheet.');
-      setCurrentWeek(data);
-      setRows(rowsFromTimesheet(data, projects));
-      setActiveCell(null);
-      setSuccess(mode === 'submit' ? 'Timesheet submitted for approval.' : 'Timesheet draft saved.');
+      if (mode === 'draft') {
+        const draft = await postDraftTimesheet();
+        applyWeekResponse(draft);
+        setSuccess('Timesheet draft saved.');
+        return;
+      }
+
+      const draft = await postDraftTimesheet();
+      applyWeekResponse(draft);
+      const timesheetId = draft.entries[0]?.id;
+      if (!timesheetId) {
+        throw new Error('Add at least one timesheet entry before submitting.');
+      }
+      try {
+        const complianceRes = await fetch(`${API_BASE}/timesheets/${timesheetId}/allocation-compliance`, { headers });
+        const complianceData = await complianceRes.json().catch(() => null);
+        if (!complianceRes.ok) throw new Error(complianceData?.detail || 'Allocation compliance could not be checked.');
+        const report = complianceData as ComplianceReport;
+        if (report.overall_status === 'warning' || report.overall_status === 'violation') {
+          setSubmitCompliance(report);
+          setSubmitComplianceOpen(true);
+          setSuccess(null);
+          return;
+        }
+      } catch {
+        setComplianceCheckMessage('Allocation compliance could not be checked. You may still submit, but the issue will be logged.');
+      }
+      await submitTimesheetToBackend();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save timesheet.');
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const submitAfterComplianceWarning = async () => {
+    setSaving('submit');
+    setError(null);
+    setSuccess(null);
+    setComplianceCheckMessage(null);
+    try {
+      await submitTimesheetToBackend();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not submit timesheet.');
     } finally {
       setSaving(null);
     }
@@ -1724,6 +1991,37 @@ export function TimesheetsPage() {
       {success && (
         <div className="mb-5 rounded-lg border border-status-success/20 bg-status-success/10 px-4 py-3 text-sm text-status-success">
           {success}
+        </div>
+      )}
+      {complianceCheckMessage && (
+        <div className="mb-5 rounded-lg border border-status-warning/20 bg-status-warning/10 px-4 py-3 text-sm text-status-warning">
+          {complianceCheckMessage}
+        </div>
+      )}
+      {submitCompliance && (
+        <div className="mb-5">
+          <AllocationCompliancePanel
+            report={submitCompliance}
+            open={submitComplianceOpen}
+            onToggle={() => setSubmitComplianceOpen((current) => !current)}
+            action={(
+              <>
+                <Button
+                  variant="ghost"
+                  disabled={!!saving}
+                  onClick={() => {
+                    setSubmitCompliance(null);
+                    setSuccess('Review your time blocks, then submit again when ready.');
+                  }}
+                >
+                  Go Back and Review
+                </Button>
+                <Button disabled={!!saving} onClick={submitAfterComplianceWarning} icon={<CheckCircle2 size={15} />}>
+                  {saving === 'submit' ? 'Submitting' : 'Submit Anyway'}
+                </Button>
+              </>
+            )}
+          />
         </div>
       )}
       {!!currentWeek?.warnings?.length && !selectedWeekApproved && (
@@ -2049,7 +2347,11 @@ export function TimesheetsPage() {
                   className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
                 />
                 <button
-                  onClick={() => setRows((current) => current.filter((item) => item.id !== block.id))}
+                  onClick={() => {
+                    setSubmitCompliance(null);
+                    setComplianceCheckMessage(null);
+                    setRows((current) => current.filter((item) => item.id !== block.id));
+                  }}
                   className="flex h-10 w-10 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-hover-bg hover:text-status-error"
                   title="Remove block"
                 >

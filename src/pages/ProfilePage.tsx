@@ -51,6 +51,27 @@ interface ProfileForm {
   emergency_contact_relation: string;
 }
 
+interface AllocationRecord {
+  id: string;
+  project_id: string | null;
+  project_name: string | null;
+  manager_name: string | null;
+  allocation_percentage: number;
+  allocation_role: string;
+  billing_type: string;
+  status: string;
+  start_date: string;
+  end_date: string | null;
+}
+
+interface AllocationSummaryRecord {
+  total_active_allocation_percentage: number;
+  available_capacity_percentage: number;
+  allocation_status: string;
+  active_projects_count: number;
+  next_end_date: string | null;
+}
+
 const roleLabels: Record<string, string> = {
   super_admin: 'Super Admin',
   hr_admin: 'HR Admin',
@@ -64,6 +85,17 @@ const statusVariant: Record<string, 'success' | 'warning' | 'error' | 'neutral' 
   inactive: 'neutral',
   onboarding: 'info',
   offboarding: 'warning',
+};
+
+const allocationStatusVariant: Record<string, 'olive' | 'success' | 'warning' | 'error' | 'neutral' | 'info'> = {
+  active: 'olive',
+  upcoming: 'info',
+  completed: 'neutral',
+  cancelled: 'error',
+  bench: 'neutral',
+  partially_allocated: 'info',
+  fully_allocated: 'olive',
+  overallocated: 'error',
 };
 
 const GENDER_OPTIONS = [
@@ -108,6 +140,25 @@ function formatDate(value: string | null) {
     day: 'numeric',
     year: 'numeric',
   });
+}
+
+function formatShortDate(value: string | null) {
+  if (!value) return null;
+  return new Date(value).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+function formatAllocationStatus(value: string) {
+  return value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function capacityTone(value: number) {
+  if (value >= 50) return 'bg-status-success text-status-success border-status-success/20';
+  if (value >= 20) return 'bg-status-warning text-status-warning border-status-warning/20';
+  return 'bg-status-error text-status-error border-status-error/20';
 }
 
 function normalizeRole(role: string | undefined) {
@@ -211,6 +262,11 @@ export function ProfilePage() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
+  const [activeTab, setActiveTab] = useState<'overview' | 'allocations'>('overview');
+  const [allocations, setAllocations] = useState<AllocationRecord[]>([]);
+  const [allocationSummary, setAllocationSummary] = useState<AllocationSummaryRecord | null>(null);
+  const [allocationsLoading, setAllocationsLoading] = useState(false);
+  const [allocationsError, setAllocationsError] = useState('');
 
   const loadProfile = async () => {
     if (!user?.email) {
@@ -240,6 +296,48 @@ export function ProfilePage() {
   useEffect(() => {
     loadProfile();
   }, [user?.email]);
+
+  const loadAllocations = async (employeeId: string) => {
+    setAllocationsLoading(true);
+    setAllocationsError('');
+    try {
+      const res = await fetch(`${API_BASE}/allocations/employee/${employeeId}`, {
+        headers: {
+          'x-user-id': user?.id || employeeId,
+          'x-user-role': normalizeRole(user?.role),
+          'x-user-email': user?.email || profile?.work_email || '',
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || 'Unable to load allocations');
+      }
+      setAllocations(Array.isArray(data) ? data : []);
+
+      const summaryRes = await fetch(`${API_BASE}/allocations/employee/${employeeId}/summary`, {
+        headers: {
+          'x-user-id': user?.id || employeeId,
+          'x-user-role': normalizeRole(user?.role),
+          'x-user-email': user?.email || profile?.work_email || '',
+        },
+      });
+      const summaryData = await summaryRes.json();
+      if (!summaryRes.ok) {
+        throw new Error(summaryData.detail || 'Unable to load allocation summary');
+      }
+      setAllocationSummary(summaryData);
+    } catch (err) {
+      setAllocations([]);
+      setAllocationSummary(null);
+      setAllocationsError(err instanceof Error ? err.message : 'Unable to load allocations');
+    } finally {
+      setAllocationsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (profile?.id) loadAllocations(profile.id);
+  }, [profile?.id, user?.id, user?.email, user?.role]);
 
   useEffect(() => {
     return () => {
@@ -499,6 +597,28 @@ export function ProfilePage() {
         </div>
       </Card>
 
+      <div className="mb-5 flex border-b border-[#E5E7EB]">
+        {[
+          { key: 'overview', label: 'Overview' },
+          { key: 'allocations', label: 'Allocations' },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setActiveTab(tab.key as 'overview' | 'allocations')}
+            className={cn(
+              'border-b-2 px-4 py-3 text-[13px] font-bold transition-colors',
+              activeTab === tab.key
+                ? 'border-olive text-[#2F3437]'
+                : 'border-transparent text-gray-400 hover:text-[#2F3437]'
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'overview' && (
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <Card>
           <div className="px-6 py-4 border-b border-[#E5E7EB]">
@@ -578,6 +698,115 @@ export function ProfilePage() {
           </div>
         </Card>
       </div>
+      )}
+
+      {activeTab === 'allocations' && (
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {[
+              {
+                title: 'Current Allocation',
+                value: `${allocationSummary?.total_active_allocation_percentage ?? 0}%`,
+                progress: allocationSummary?.total_active_allocation_percentage ?? 0,
+              },
+              {
+                title: 'Available Capacity',
+                value: `${allocationSummary?.available_capacity_percentage ?? 0}%`,
+                progress: allocationSummary?.available_capacity_percentage ?? 0,
+                tone: capacityTone(allocationSummary?.available_capacity_percentage ?? 0),
+              },
+              {
+                title: 'Active Projects',
+                value: String(allocationSummary?.active_projects_count ?? 0),
+              },
+              {
+                title: 'Next End Date',
+                value: allocationSummary?.next_end_date ? formatShortDate(allocationSummary.next_end_date) : 'Open-ended',
+              },
+            ].map((item) => (
+              <Card key={item.title} className="p-5">
+                <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">{item.title}</div>
+                <div className={cn('mt-2 text-2xl font-bold text-[#2F3437]', item.tone && 'inline-flex rounded-lg border px-2.5 py-1 text-xl', item.tone)}>
+                  {item.value}
+                </div>
+                {typeof item.progress === 'number' && (
+                  <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-hover-bg">
+                    <div
+                      className="h-full rounded-full bg-olive transition-all"
+                      style={{ width: `${Math.min(100, Math.max(0, item.progress))}%` }}
+                    />
+                  </div>
+                )}
+              </Card>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[12px] font-bold uppercase tracking-wide text-gray-400">Allocation Status</span>
+            <Badge variant={allocationStatusVariant[allocationSummary?.allocation_status || 'bench'] || 'neutral'}>
+              {formatAllocationStatus(allocationSummary?.allocation_status || 'bench')}
+            </Badge>
+          </div>
+
+          <Card>
+            <div className="px-6 py-4 border-b border-[#E5E7EB]">
+              <div className="text-[13px] font-bold text-[#2F3437]">Allocations</div>
+            </div>
+          {allocationsLoading ? (
+            <div className="flex items-center justify-center px-6 py-16 text-sm text-gray-400">
+              Loading allocations...
+            </div>
+          ) : allocationsError ? (
+            <div className="px-6 py-10 text-center">
+              <div className="text-[15px] font-semibold text-[#2F3437] mb-1">Allocations unavailable</div>
+              <div className="text-sm text-gray-500">{allocationsError}</div>
+            </div>
+          ) : allocations.length === 0 ? (
+            <div className="px-6 py-16 text-center">
+              <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-olive/10 text-olive">
+                <Briefcase size={20} />
+              </div>
+              <div className="text-[15px] font-semibold text-[#2F3437]">No allocations found</div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[860px] text-left">
+                <thead className="bg-warm-bg">
+                  <tr className="text-[11px] font-bold uppercase tracking-wide text-gray-400">
+                    <th className="px-6 py-3">Project</th>
+                    <th className="px-4 py-3">Role</th>
+                    <th className="px-4 py-3">Allocation %</th>
+                    <th className="px-4 py-3">Manager</th>
+                    <th className="px-4 py-3">Start Date</th>
+                    <th className="px-4 py-3">End Date</th>
+                    <th className="px-4 py-3">Billing Type</th>
+                    <th className="px-4 py-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allocations.map((allocation) => (
+                    <tr key={allocation.id} className="border-t border-[#E5E7EB] text-[14px] text-[#2F3437]">
+                      <td className="px-6 py-4 font-semibold">{allocation.project_name || allocation.project_id || 'Project not set'}</td>
+                      <td className="px-4 py-4 text-gray-600">{allocation.allocation_role}</td>
+                      <td className="px-4 py-4 font-semibold">{allocation.allocation_percentage}%</td>
+                      <td className="px-4 py-4 text-gray-600">{allocation.manager_name || 'Not assigned'}</td>
+                      <td className="px-4 py-4 text-gray-600">{formatDate(allocation.start_date) || '-'}</td>
+                      <td className="px-4 py-4 text-gray-600">{formatDate(allocation.end_date) || '-'}</td>
+                      <td className="px-4 py-4 text-gray-600">{allocation.billing_type.replace(/_/g, ' ')}</td>
+                      <td className="px-4 py-4">
+                        <Badge variant={allocationStatusVariant[allocation.status] || 'neutral'}>
+                          {allocation.status}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

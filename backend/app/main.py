@@ -19,6 +19,7 @@ from app.core.database import (
     ensure_timesheet_columns,
     ensure_time_off_columns,
     ensure_leave_type_policy_columns,
+    ensure_allocation_columns,
     SessionLocal,
 )
 
@@ -53,6 +54,8 @@ from app.api.leaves import router as leaves_router
 from app.api.admin_time_off import router as admin_time_off_router
 from app.api.client_onboarding import router as client_onboarding_router
 from app.api.audit_logs import router as audit_logs_router
+from app.api.allocations import router as allocations_router
+from app.api.forecasting import router as forecasting_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -193,6 +196,7 @@ async def lifespan(app: FastAPI):
     ensure_timesheet_columns()
     ensure_time_off_columns()
     ensure_leave_type_policy_columns()
+    ensure_allocation_columns()
     logger.info("All database tables created")
 
     db = SessionLocal()
@@ -239,6 +243,8 @@ app.include_router(leaves_router, prefix="/api/v1")
 app.include_router(admin_time_off_router, prefix="/api/v1")
 app.include_router(client_onboarding_router, prefix="/api/v1")
 app.include_router(audit_logs_router, prefix="/api/v1")
+app.include_router(allocations_router, prefix="/api/v1")
+app.include_router(forecasting_router, prefix="/api/v1")
 
 
 
