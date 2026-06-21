@@ -4,18 +4,19 @@ import {
   Network, Package, Settings, Shield, FileText,
   PanelLeftClose, PanelLeftOpen, Award, Files, CalendarPlus,
   WalletCards, ClipboardCheck, Clock3, LogIn, Send, PartyPopper,
-  BookOpen, CalendarClock,
+  BookOpen, CalendarClock, ClipboardList,
 } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { mainNavItems, adminNavItems, employeeNavItems, resourceNavItems } from '@/data/mockData';
 import { useAuth } from '@/hooks/useAuth';
+import { useTheme } from '@/hooks/useTheme';
 import { ProfileDropdown } from '@/components/ui/ProfileDropdown';
 
 const iconMap: Record<string, React.ElementType> = {
   LayoutDashboard, Users, UserPlus, Briefcase, CalendarDays,
   Network, Package, Settings, Shield, FileText, Award, Files,
   CalendarPlus, WalletCards, ClipboardCheck, Clock3, LogIn, Send,
-  PartyPopper, BookOpen, CalendarClock,
+  PartyPopper, BookOpen, CalendarClock, ClipboardList,
 };
 
 function isAdminRole(role?: string) {
@@ -27,15 +28,11 @@ function isManagerRole(role?: string) {
   return (role || '').toLowerCase().replace(/\s+/g, '_') === 'manager';
 }
 
-interface SidebarProps {
-  collapsed: boolean;
-  onToggle: () => void;
-}
-
-export function Sidebar({ collapsed, onToggle }: SidebarProps) {
+export function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const { sidebarCollapsed: collapsed, saveAppearancePatch } = useTheme();
   const showAdminNavigation = isAdminRole(user?.role);
   const showManagerResources = isManagerRole(user?.role);
   const currentUser = user || {
@@ -52,6 +49,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     logout();
     navigate('/login');
   };
+  const handleToggle = () => {
+    saveAppearancePatch({ sidebar_collapsed: !collapsed }).catch(() => undefined);
+  };
 
   const NavButton = ({ item }: { item: typeof mainNavItems[0] }) => {
     const active = location.pathname === item.path;
@@ -65,7 +65,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           'w-full flex items-center gap-2.5 rounded-lg text-[13.5px] font-medium transition-all duration-150 mb-0.5',
           collapsed ? 'justify-center px-0 py-2.5' : 'px-3.5 py-2.5',
           active
-            ? 'bg-olive text-white'
+            ? 'bg-accent text-white'
             : 'text-gray-500 hover:bg-hover-bg hover:text-[#2F3437]'
         )}
       >
@@ -90,13 +90,13 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         )}
       >
         <div className={cn('flex items-center gap-2.5 overflow-hidden', collapsed && 'hidden')}>
-          <div className="w-8 h-8 rounded-lg bg-olive flex items-center justify-center text-white font-extrabold text-sm shrink-0">
+          <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center text-white font-extrabold text-sm shrink-0">
             R
           </div>
           {!collapsed && (
             <div className="min-w-0">
               <div className="text-[15px] font-bold text-[#2F3437] tracking-tight leading-tight">
-                Reknew <span className="text-olive">Orbit</span>
+                Reknew <span className="text-accent">Orbit</span>
               </div>
               <div className="text-[10px] text-gray-400 font-medium tracking-wide">
                 Employee Management
@@ -107,11 +107,11 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
         {/* Collapse button — only when expanded */}
         <button
-          onClick={onToggle}
+          onClick={handleToggle}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           className={cn(
-            'h-8 w-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-hover-bg hover:text-olive transition-all duration-150',
+            'h-8 w-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-hover-bg hover:text-accent transition-all duration-150',
             collapsed && 'border border-[#E5E7EB] bg-white'
           )}
         >

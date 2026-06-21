@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from '@/hooks/useAuth';
+import { ThemeProvider } from '@/hooks/useTheme';
 import { ToastProvider } from '@/components/ui/Toast';
 import { AdminRoute, EmployeeRoute, ProtectedRoute, RoleHomeRedirect } from '@/components/layout/ProtectedRoute';
 import { AppLayout } from '@/layouts/AppLayout';
@@ -14,6 +15,8 @@ import { AuditTrailPage } from '@/pages/AuditTrailPage';
 import { HRDocumentsPage } from '@/pages/HRDocumentsPage';
 import { BenchPage } from '@/pages/BenchPage';
 import { WorkforceForecastPage } from '@/pages/WorkforceForecastPage';
+import { StaffingRequestDetailPage } from '@/pages/StaffingRequestDetailPage';
+import { StaffingRequestsPage } from '@/pages/StaffingRequestsPage';
 import {
   OnboardingPage,
   ClientOnboardingPage,
@@ -42,6 +45,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <ThemeProvider>
         <ToastProvider>
           <Routes>
             {/* Public route */}
@@ -53,8 +57,11 @@ export default function App() {
               <Route element={<AppLayout />}>
                 <Route path="/" element={<RoleHomeRedirect />} />
                 <Route path="/profile" element={<ProfilePage />} />
+                <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/notifications" element={<EmployeeNotificationsPage />} />
                 <Route path="/bench" element={<BenchPage />} />
+                <Route path="/staffing-requests" element={<StaffingRequestsPage />} />
+                <Route path="/staffing-requests/:requestId" element={<StaffingRequestDetailPage />} />
                 <Route path="/forecasting" element={<WorkforceForecastPage />} />
 
                 <Route element={<EmployeeRoute />}>
@@ -75,7 +82,6 @@ export default function App() {
                 <Route element={<AdminRoute />}>
                   <Route path="/dashboard" element={<DashboardPage />} />
                   <Route path="/employees" element={<EmployeesPage />} />
-                  <Route path="/settings" element={<SettingsPage />} />
                   <Route path="/onboarding" element={<OnboardingPage />} />
                   <Route path="/client-onboarding" element={<ClientOnboardingPage />} />
                   <Route path="/time-off" element={<TimeOffPage />} />
@@ -95,6 +101,7 @@ export default function App() {
             <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
         </ToastProvider>
+        </ThemeProvider>
       </AuthProvider>
     </BrowserRouter>
   );

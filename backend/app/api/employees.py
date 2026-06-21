@@ -659,7 +659,7 @@ async def update_employee(
     emp.last_updated_at = datetime.utcnow()
     emp.updated_by = changed_by_value(actor.work_email, current_user_name, actor.id)
     log_employee_changes(db, employee_id, old_values, updates, emp.updated_by)
-    action = "employee.self_profile_updated" if is_self and not is_admin else "employee.updated"
+    action = "user_profile_updated" if is_self and not is_admin else "employee.updated"
     field_changes = changed_fields(old_values, updates)
     if field_changes:
         log_audit(

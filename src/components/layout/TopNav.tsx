@@ -62,6 +62,7 @@ const searchDestinations: SearchDestination[] = [
   { label: 'Client Onboarding', description: 'Client onboarding workstreams', path: '/client-onboarding', keywords: 'client onboarding customer implementation', roles: ['admin'] },
   { label: 'Team Allocation', description: 'Project and team allocations', path: '/team-allocation', keywords: 'team allocation project skills staffing resource', roles: ['admin'] },
   { label: 'Bench & Availability', description: 'Resource availability and bench capacity', path: '/bench', keywords: 'bench availability allocation utilization capacity resources', roles: ['admin'] },
+  { label: 'Staffing Requests', description: 'Resource demand requests and candidate matching', path: '/staffing-requests', keywords: 'staffing requests resource demand candidates hiring manager headcount', roles: ['admin', 'manager'] },
   { label: 'Workforce Forecasting', description: 'Forecast employee availability and bench risk', path: '/forecasting', keywords: 'forecasting workforce bench risk future availability allocations', roles: ['admin', 'manager'] },
   { label: 'Assets & Access', description: 'Hardware, software, and access', path: '/assets', keywords: 'assets access laptop software license permissions', roles: ['admin'] },
   { label: 'Policies', description: 'Policy management', path: '/admin/policies', keywords: 'policies leave attendance rules configuration', roles: ['admin'] },

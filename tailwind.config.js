@@ -4,6 +4,12 @@ export default {
   theme: {
     extend: {
       colors: {
+        accent: {
+          DEFAULT: 'var(--color-accent)',
+          light: 'var(--color-accent-light)',
+          mid: 'var(--color-accent-mid)',
+          dark: 'var(--color-accent-dark)',
+        },
         olive: {
           DEFAULT: '#66785F',
           light: '#f3f5ef',

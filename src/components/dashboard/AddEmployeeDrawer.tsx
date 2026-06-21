@@ -6,6 +6,8 @@ import { COUNTRY_CODES } from '@/data/countryCodes';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/utils/cn';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+
 interface AddEmployeeDrawerProps {
   open: boolean;
   onClose: () => void;
@@ -62,7 +64,7 @@ function FormInput({
             'bg-warm-bg border',
             'text-[#2F3437] placeholder:text-gray-400',
             'outline-none transition-all duration-150 font-sans',
-            'focus:border-olive/40 focus:ring-2 focus:ring-olive/10',
+            'focus:border-accent/40 focus:ring-2 focus:ring-accent-light',
             icon ? 'pl-10 pr-4' : 'px-4',
             error ? 'border-status-error/40' : 'border-[#E5E7EB]'
           )}
@@ -84,12 +86,14 @@ function FormSelect({
   placeholder,
   options,
   searchable,
+  placement = 'down',
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
   options: string[];
   searchable?: boolean;
+  placement?: 'down' | 'up';
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -107,7 +111,7 @@ function FormSelect({
           'w-full flex items-center justify-between py-2.5 px-4 rounded-xl text-[14px] font-medium',
           'bg-warm-bg border border-[#E5E7EB]',
           'outline-none transition-all duration-150',
-          'hover:border-olive/30',
+          'hover:border-accent/30',
           value ? 'text-[#2F3437]' : 'text-gray-400'
         )}
       >
@@ -118,7 +122,12 @@ function FormSelect({
       {isOpen && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
-          <div className="absolute top-full left-0 right-0 mt-1 z-20 bg-warm-card border border-[#E5E7EB] rounded-xl shadow-card-md max-h-[200px] overflow-hidden flex flex-col">
+          <div
+            className={cn(
+              'absolute left-0 right-0 z-20 flex max-h-[220px] flex-col overflow-hidden rounded-xl border border-[#E5E7EB] bg-warm-card shadow-card-md',
+              placement === 'up' ? 'bottom-full mb-1' : 'top-full mt-1'
+            )}
+          >
             {searchable && (
               <div className="px-3 pt-2.5 pb-1.5 border-b border-[#E5E7EB]">
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-warm-bg border border-[#E5E7EB]">
@@ -142,7 +151,7 @@ function FormSelect({
                   className={cn(
                     'w-full text-left px-4 py-2 text-[13px] font-medium transition-colors',
                     opt === value
-                      ? 'bg-hover-bg text-olive'
+                      ? 'bg-hover-bg text-accent'
                       : 'text-[#2F3437] hover:bg-hover-bg'
                   )}
                 >
@@ -187,7 +196,7 @@ function PhoneInput({
         <button
           type="button"
           onClick={() => setShowCodes(!showCodes)}
-          className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-warm-bg border border-[#E5E7EB] text-[13px] font-medium text-[#2F3437] hover:border-olive/30 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-warm-bg border border-[#E5E7EB] text-[13px] font-medium text-[#2F3437] hover:border-accent/30 transition-colors"
         >
           <span className="text-[11px] font-bold">{selected.iso}</span>
           <span>{selected.code}</span>
@@ -217,7 +226,7 @@ function PhoneInput({
                     onClick={() => { onCountryChange(c.code); setShowCodes(false); setCodeSearch(''); }}
                     className={cn(
                       'flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] font-medium transition-colors',
-                      c.code === countryCode ? 'bg-hover-bg text-olive' : 'text-[#2F3437] hover:bg-hover-bg'
+                      c.code === countryCode ? 'bg-hover-bg text-accent' : 'text-[#2F3437] hover:bg-hover-bg'
                     )}
                   >
                     <span className="w-7 text-[11px] font-bold text-gray-400">{c.iso}</span>
@@ -238,7 +247,7 @@ function PhoneInput({
         value={phone}
         onChange={(e) => onPhoneChange(e.target.value)}
         placeholder="Enter phone number"
-        className="flex-1 py-2.5 px-4 rounded-xl text-[14px] font-medium bg-warm-bg border border-[#E5E7EB] text-[#2F3437] placeholder:text-gray-400 outline-none transition-all focus:border-olive/40 focus:ring-2 focus:ring-olive/10 font-sans"
+        className="flex-1 py-2.5 px-4 rounded-xl text-[14px] font-medium bg-warm-bg border border-[#E5E7EB] text-[#2F3437] placeholder:text-gray-400 outline-none transition-all focus:border-accent/40 focus:ring-2 focus:ring-accent-light font-sans"
       />
     </div>
   );
@@ -286,6 +295,8 @@ const INITIAL_FORM: FormState = {
   dateOfBirth: '',
 };
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
   const { user } = useAuth();
   const { showToast } = useToast();
@@ -307,8 +318,8 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
     if (!form.lastName.trim()) newErrors.lastName = 'Last name is required';
     if (!form.workEmail.trim()) {
       newErrors.workEmail = 'Work email is required';
-    } else if (!form.workEmail.endsWith('@reknew.com')) {
-      newErrors.workEmail = 'Use a valid ReKnew work email.';
+    } else if (!EMAIL_PATTERN.test(form.workEmail.trim())) {
+      newErrors.workEmail = 'Enter a valid work email address.';
     }
     if (!form.phone.trim()) newErrors.phone = 'Phone number is required';
     if (!form.dateOfBirth) newErrors.dateOfBirth = 'Date of birth is required for setup code';
@@ -347,7 +358,7 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
     };
 
     try {
-      const response = await fetch('http://localhost:8000/api/v1/employees/', {
+      const response = await fetch(`${API_BASE}/employees/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -387,9 +398,8 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
       }
 
     } catch (error) {
-      console.log('Backend not available — using mock mode');
       showToast({
-        message: error instanceof Error ? error.message : 'Unable to add employee',
+        message: error instanceof Error ? error.message : 'Unable to add employee. Please confirm the backend is running.',
         duration: 6000,
       });
     } finally {
@@ -424,8 +434,8 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
             className={cn(
               'px-6 py-2.5 rounded-xl text-[13px] font-semibold text-white transition-all shadow-sm',
               submitting
-                ? 'bg-olive/60 cursor-not-allowed'
-                : 'bg-olive hover:bg-olive-dark active:scale-[0.98]'
+                ? 'bg-accent/60 cursor-not-allowed'
+                : 'bg-accent hover:bg-accent-dark active:scale-[0.98]'
             )}
           >
             {submitting ? 'Adding...' : 'Add Employee'}
@@ -463,7 +473,7 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
           <FormInput
             value={form.workEmail}
             onChange={(v) => update('workEmail', v)}
-            placeholder="john.doe@reknew.com"
+            placeholder="john.doe@company.com"
             type="email"
             error={errors.workEmail}
           />
@@ -496,7 +506,7 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
               'w-full py-2.5 px-4 rounded-xl text-[14px] font-medium',
               'bg-warm-bg border border-[#E5E7EB]',
               'text-[#2F3437] outline-none transition-all duration-150',
-              'focus:border-olive/40 focus:ring-2 focus:ring-olive/10 font-sans',
+              'focus:border-accent/40 focus:ring-2 focus:ring-accent-light font-sans',
               !form.dateOfBirth && 'text-gray-400'
             )}
           />
@@ -577,7 +587,7 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
                 'w-full py-2.5 px-4 rounded-xl text-[14px] font-medium',
                 'bg-warm-bg border border-[#E5E7EB]',
                 'text-[#2F3437] outline-none transition-all duration-150',
-                'focus:border-olive/40 focus:ring-2 focus:ring-olive/10 font-sans',
+                'focus:border-accent/40 focus:ring-2 focus:ring-accent-light font-sans',
                 !form.joiningDate && 'text-gray-400'
               )}
             />
@@ -598,6 +608,7 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
           onChange={(v) => update('workLocation', v)}
           placeholder="Select work location"
           options={LOCATIONS}
+          placement="up"
         />
       </div>
     </Drawer>

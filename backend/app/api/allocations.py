@@ -19,6 +19,7 @@ from app.services.allocation_service import (
 )
 from app.services.audit_service import log_authorization_failure
 from app.services.settings_service import get_current_employee, normalize_role
+from app.services.staffing_allocation_service import capacity_check_payload
 
 router = APIRouter(prefix="/allocations", tags=["Allocations"])
 
@@ -236,6 +237,29 @@ async def employee_allocation_summary(
     actor = get_current_employee(db, current_user_id, current_user_email)
     _require_read_access(db, actor, employee_id)
     return get_allocation_summary(db, employee_id)
+
+
+@router.get("/employee/{employee_id}/capacity-check")
+async def employee_capacity_check(
+    employee_id: str,
+    allocation_percentage: int = Query(..., ge=1, le=100),
+    start_date: date = Query(...),
+    end_date: date | None = Query(None),
+    exclude_allocation_id: str | None = Query(None),
+    db: Session = Depends(get_db),
+    current_user_id: str | None = Header(None, alias="x-user-id"),
+    current_user_email: str | None = Header(None, alias="x-user-email"),
+):
+    actor = get_current_employee(db, current_user_id, current_user_email)
+    _require_read_access(db, actor, employee_id)
+    return capacity_check_payload(
+        db,
+        employee_id=employee_id,
+        allocation_percentage=allocation_percentage,
+        start_date=start_date,
+        end_date=end_date,
+        exclude_allocation_id=exclude_allocation_id,
+    )
 
 
 @router.get("/employee/{employee_id}/active", response_model=list[AllocationOut])

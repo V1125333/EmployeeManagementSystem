@@ -20,6 +20,7 @@ from app.core.database import (
     ensure_time_off_columns,
     ensure_leave_type_policy_columns,
     ensure_allocation_columns,
+    ensure_staffing_fulfillment_columns,
     SessionLocal,
 )
 
@@ -31,7 +32,8 @@ from app.models import (
     Channel, ChannelMember, Message, MessageReaction,
     Project, Allocation, Announcement, AnnouncementAudience, AnnouncementAcknowledgment,
     AnnouncementRead, Notification, ActionInboxItem, ActivityLog,
-    UserSettings, SupportTicket,
+    StaffingRequest, StaffingRequestCandidate,
+    UserSettings, SupportTicket, UserPreferences,
     Client, ClientOnboarding, ClientChecklistItem, ClientTask, ClientTeamMember,
     ClientDocument, ClientMilestone, ClientActivityLog,
     Certificate, CertificateAuditLog,
@@ -56,6 +58,7 @@ from app.api.client_onboarding import router as client_onboarding_router
 from app.api.audit_logs import router as audit_logs_router
 from app.api.allocations import router as allocations_router
 from app.api.forecasting import router as forecasting_router
+from app.api.staffing_requests import router as staffing_requests_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -197,6 +200,7 @@ async def lifespan(app: FastAPI):
     ensure_time_off_columns()
     ensure_leave_type_policy_columns()
     ensure_allocation_columns()
+    ensure_staffing_fulfillment_columns()
     logger.info("All database tables created")
 
     db = SessionLocal()
@@ -245,6 +249,7 @@ app.include_router(client_onboarding_router, prefix="/api/v1")
 app.include_router(audit_logs_router, prefix="/api/v1")
 app.include_router(allocations_router, prefix="/api/v1")
 app.include_router(forecasting_router, prefix="/api/v1")
+app.include_router(staffing_requests_router, prefix="/api/v1")
 
 
 

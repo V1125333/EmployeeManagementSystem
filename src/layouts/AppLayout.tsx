@@ -1,18 +1,15 @@
-import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { TopNav } from '@/components/layout/TopNav';
 import { cn } from '@/utils/cn';
+import { useTheme } from '@/hooks/useTheme';
 
 export function AppLayout() {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const { sidebarCollapsed, compactMode } = useTheme();
 
   return (
-    <div className="min-h-screen bg-warm-bg font-sans">
-      <Sidebar
-        collapsed={sidebarCollapsed}
-        onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
-      />
+    <div className="min-h-screen bg-warm-bg font-sans" data-compact={compactMode}>
+      <Sidebar />
 
       <div
         className={cn(
@@ -22,7 +19,7 @@ export function AppLayout() {
       >
         <TopNav />
 
-        <main className="px-8 py-7">
+        <main className="px-[var(--layout-main-padding-x)] py-[var(--layout-main-padding-y)]">
           <Outlet />
         </main>
       </div>

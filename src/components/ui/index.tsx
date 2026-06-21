@@ -38,7 +38,7 @@ export function CardHeader({
   return (
     <div className="flex items-center justify-between px-5 py-4 border-b border-[#E5E7EB]">
       <div className="flex items-center gap-2">
-        {icon && <span className="text-olive">{icon}</span>}
+        {icon && <span className="text-accent">{icon}</span>}
         <span className="text-sm font-semibold text-[#2F3437] tracking-tight">
           {title}
         </span>
@@ -71,8 +71,8 @@ export function Avatar({ initials, size = 'md', variant = 'soft', src }: AvatarP
         'rounded-full flex items-center justify-center font-semibold shrink-0 overflow-hidden',
         avatarSizes[size],
         variant === 'filled'
-          ? 'bg-olive text-white'
-          : 'bg-hover-bg text-olive'
+          ? 'bg-accent text-white'
+          : 'bg-accent-light text-accent'
       )}
     >
       {src ? (
@@ -90,7 +90,7 @@ export function Avatar({ initials, size = 'md', variant = 'soft', src }: AvatarP
 type BadgeVariant = 'olive' | 'success' | 'warning' | 'error' | 'info' | 'sage' | 'neutral';
 
 const badgeStyles: Record<BadgeVariant, string> = {
-  olive: 'bg-olive/10 text-olive',
+  olive: 'bg-accent-light text-accent',
   success: 'bg-status-success/10 text-status-success',
   warning: 'bg-status-warning/10 text-status-warning',
   error: 'bg-status-error/10 text-status-error',
@@ -141,11 +141,11 @@ export function Button({
         'inline-flex items-center gap-1.5 font-semibold rounded-btn transition-all duration-150 cursor-pointer',
         size === 'sm' ? 'px-3 py-1.5 text-xs' : 'px-4 py-2 text-[13px]',
         variant === 'primary' &&
-          'bg-olive text-white shadow-sm hover:bg-olive-dark active:scale-[0.98]',
+          'bg-accent text-white shadow-sm hover:bg-accent-dark active:scale-[0.98]',
         variant === 'ghost' &&
-          'bg-transparent text-olive border border-[#E5E7EB] hover:bg-hover-bg active:scale-[0.98]',
+          'bg-transparent text-accent border border-[#E5E7EB] hover:bg-hover-bg active:scale-[0.98]',
         variant === 'soft' &&
-          'bg-hover-bg text-olive hover:bg-olive-mid active:scale-[0.98]',
+          'bg-accent-light text-accent hover:bg-accent-mid active:scale-[0.98]',
         className
       )}
       {...props}

@@ -5,7 +5,7 @@ import {
 import { Card } from '@/components/ui';
 import { cn } from '@/utils/cn';
 
-const API_BASE = 'http://localhost:8000/api/v1';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
 const iconMap: Record<string, React.ElementType> = {
   Users, UserCheck, UserX, Calendar, CheckCircle, Cake, Award,

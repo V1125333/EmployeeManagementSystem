@@ -26,6 +26,9 @@ from app.models.chat import Channel, ChannelMember, Message, MessageReaction
 # Resource allocation foundation
 from app.models.allocation import Allocation
 
+# Staffing requests and candidate matches
+from app.models.staffing_request import StaffingRequest, StaffingRequestCandidate
+
 # Tables 16-19+: projects, allocations, announcements, notifications, activity_log
 from app.models.operations import (
     Project,
@@ -41,6 +44,7 @@ from app.models.operations import (
 
 # User preference and support tables
 from app.models.settings import UserSettings, SupportTicket
+from app.models.user_preferences import UserPreferences
 
 # Client onboarding tables
 from app.models.client_onboarding import (

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from fastapi import HTTPException
@@ -15,6 +15,24 @@ from app.services.audit_service import changed_fields, log_audit
 
 VALID_BILLING_TYPES = {"billable", "non_billable", "internal"}
 VALID_STATUSES = {"active", "upcoming", "completed", "cancelled"}
+
+
+def _overlapping_capacity_total(
+    db: Session,
+    employee_id: str,
+    start_date: date,
+    end_date: date | None,
+    allocation_id: str | None = None,
+) -> int:
+    query = db.query(func.coalesce(func.sum(Allocation.allocation_percentage), 0)).filter(
+        Allocation.employee_id == employee_id,
+        Allocation.status.in_(["active", "upcoming"]),
+        Allocation.start_date <= (end_date or date.max),
+        (Allocation.end_date == None) | (Allocation.end_date >= start_date),  # noqa: E711
+    )
+    if allocation_id:
+        query = query.filter(Allocation.id != allocation_id)
+    return int(query.scalar() or 0)
 
 
 def _values(allocation: Allocation) -> dict[str, Any]:
@@ -86,22 +104,22 @@ def _validate_state(db: Session, state: dict[str, Any], allocation_id: str | Non
     _require_employee(db, state["manager_id"], "Manager")
     state["project_name"] = _validate_project(db, state.get("project_id"), state.get("project_name"))
 
-    if state.get("status") == "active":
-        query = db.query(func.coalesce(func.sum(Allocation.allocation_percentage), 0)).filter(
-            Allocation.employee_id == state["employee_id"],
-            Allocation.status == "active",
+    if state.get("status") in {"active", "upcoming"}:
+        active_total = _overlapping_capacity_total(
+            db,
+            employee_id=state["employee_id"],
+            start_date=state["start_date"],
+            end_date=state.get("end_date"),
+            allocation_id=allocation_id,
         )
-        if allocation_id:
-            query = query.filter(Allocation.id != allocation_id)
-        active_total = int(query.scalar() or 0)
         if active_total + percentage > 100:
             raise HTTPException(
                 status_code=422,
-                detail=f"Total active allocation cannot exceed 100%. Current active total is {active_total}%.",
+                detail=f"Total allocation cannot exceed 100% for the selected period. Current overlapping total is {active_total}%.",
             )
 
 
-def create_allocation(db: Session, data: AllocationCreate, created_by_id: str) -> Allocation:
+def create_allocation(db: Session, data: AllocationCreate, created_by_id: str, commit: bool = True) -> Allocation:
     state = data.model_dump()
     _validate_state(db, state)
 
@@ -128,8 +146,9 @@ def create_allocation(db: Session, data: AllocationCreate, created_by_id: str) -
             "changed_at": datetime.utcnow().isoformat(),
         },
     )
-    db.commit()
-    db.refresh(allocation)
+    if commit:
+        db.commit()
+        db.refresh(allocation)
     return allocation
 
 

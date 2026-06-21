@@ -10,6 +10,7 @@ import pyotp
 import qrcode
 from sqlalchemy.orm import Session
 from app.models.employee import Employee
+from app.services.preferences_service import get_or_create_preferences
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +196,7 @@ def login(db: Session, email: str, password: str, totp_code: str) -> dict:
     if not employee.totp_secret or not verify_totp(employee.totp_secret, totp_code):
         return {"success": False, "message": "Invalid authenticator code"}
 
+    get_or_create_preferences(db, employee.id)
     logger.info(f"Login successful for {email}")
 
     return {

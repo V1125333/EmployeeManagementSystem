@@ -352,3 +352,70 @@ def ensure_allocation_columns():
             except Exception:
                 if "DROP NOT NULL" not in statement:
                     raise
+
+
+def ensure_staffing_fulfillment_columns():
+    """Safely add Phase 7 fulfillment columns for existing local/dev databases."""
+    inspector = inspect(engine)
+    table_names = inspector.get_table_names()
+    if "staffing_requests" not in table_names or "staffing_request_candidates" not in table_names:
+        return
+
+    dialect = engine.dialect.name
+    request_columns = {column["name"] for column in inspector.get_columns("staffing_requests")}
+    candidate_columns = {column["name"] for column in inspector.get_columns("staffing_request_candidates")}
+
+    statements = []
+    request_definitions = {
+        "fulfilled_allocation_ids": "JSONB NOT NULL DEFAULT '[]'::jsonb" if dialect == "postgresql" else "TEXT DEFAULT '[]'",
+        "fulfilled_at": "TIMESTAMP",
+        "fulfilled_by": "VARCHAR(36)",
+    }
+    candidate_definitions = {
+        "allocation_id": "VARCHAR(36)",
+    }
+
+    for column_name, definition in request_definitions.items():
+        if column_name in request_columns:
+            continue
+        if dialect == "postgresql":
+            statements.append(f"ALTER TABLE staffing_requests ADD COLUMN IF NOT EXISTS {column_name} {definition}")
+        else:
+            statements.append(f"ALTER TABLE staffing_requests ADD COLUMN {column_name} {definition}")
+
+    for column_name, definition in candidate_definitions.items():
+        if column_name in candidate_columns:
+            continue
+        if dialect == "postgresql":
+            statements.append(f"ALTER TABLE staffing_request_candidates ADD COLUMN IF NOT EXISTS {column_name} {definition}")
+        else:
+            statements.append(f"ALTER TABLE staffing_request_candidates ADD COLUMN {column_name} {definition}")
+
+    if dialect == "postgresql":
+        statements.extend([
+            """
+            DO $$
+            BEGIN
+              IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'uq_staffing_candidate_request_allocation'
+              ) THEN
+                ALTER TABLE staffing_request_candidates
+                  ADD CONSTRAINT uq_staffing_candidate_request_allocation
+                  UNIQUE (staffing_request_id, allocation_id);
+              END IF;
+            END $$;
+            """,
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_staffing_candidate_allocated_employee ON staffing_request_candidates (staffing_request_id, employee_id) WHERE match_status = 'allocated'",
+        ])
+
+    if not statements:
+        return
+
+    with engine.begin() as connection:
+        for statement in statements:
+            try:
+                connection.execute(text(statement))
+            except Exception:
+                if dialect != "postgresql" and ("CONSTRAINT" in statement or "INDEX" in statement):
+                    continue
+                raise

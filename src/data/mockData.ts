@@ -113,6 +113,7 @@ export const adminNavItems: NavItem[] = [
 
 export const resourceNavItems: NavItem[] = [
   { key: 'bench-availability', label: 'Bench & Availability', icon: 'Users', path: '/bench' },
+  { key: 'staffing-requests', label: 'Staffing Requests', icon: 'ClipboardList', path: '/staffing-requests' },
   { key: 'workforce-forecasting', label: 'Workforce Forecasting', icon: 'CalendarClock', path: '/forecasting' },
 ];
 

@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { Card, CardHeader } from '@/components/ui';
 
-const API_BASE = 'http://localhost:8000/api/v1';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
 const deptChartColors = [
   '#66785F', '#A3B18A', '#7E9BB7', '#D6A85F',
