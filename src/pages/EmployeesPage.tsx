@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   Search, Filter, UserPlus, Download, ChevronDown, ChevronLeft, ChevronRight,
   Mail, Phone, MapPin, Calendar, Briefcase, Building2, User, Shield, X,
-  Pencil, Loader2, Plane, KeyRound, History, CheckCircle2, Bell,
+  Pencil, Loader2, Plane, KeyRound, History, CheckCircle2, Bell, RotateCcw, Copy,
 } from 'lucide-react';
 import { Card, CardHeader, Badge, Button, Avatar } from '@/components/ui';
 import { Drawer } from '@/components/ui/Drawer';
@@ -317,11 +317,14 @@ function ExecutiveEmployeeDetail({
   const { showToast } = useToast();
   const { user } = useAuth();
   const [sendingEmergencyReminder, setSendingEmergencyReminder] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
+  const [temporaryPassword, setTemporaryPassword] = useState('');
 
   useEffect(() => {
     if (!open || !employee) return;
     setLoadingPreview(true);
     setPreviewError('');
+    setTemporaryPassword('');
     fetch(`${API_BASE}/employees/${employee.id}/preview`, {
       headers: {
         'x-user-id': user?.id || '',
@@ -351,6 +354,8 @@ function ExecutiveEmployeeDetail({
   const activationCode = preview?.account_activation?.activation_code || (data.is_first_login ? data.setup_code : null);
   const inviteStatus = preview?.account_activation?.invite_status || (data.is_first_login ? 'pending' : 'accepted');
   const accessRole = preview?.it_access?.access_level || data.role;
+  const currentRole = (user?.role || '').toLowerCase().replace(/\s+/g, '_');
+  const canResetPassword = ['super_admin', 'hr_admin', 'admin'].includes(currentRole) && user?.id !== data.id;
   const hasEmergencyDetails = Boolean(
     data.emergency_contact_name?.trim()
     || data.emergency_contact_phone?.trim()
@@ -401,6 +406,41 @@ function ExecutiveEmployeeDetail({
     } finally {
       setSendingEmergencyReminder(false);
     }
+  };
+  const handleAdminResetPassword = async () => {
+    const reason = window.prompt(`Enter a reason for resetting ${fullName}'s password:`);
+    if (!reason) return;
+    if (reason.trim().length < 3) {
+      showToast({ message: 'Reset reason must be at least 3 characters.' });
+      return;
+    }
+    setResettingPassword(true);
+    try {
+      const res = await fetch(`${API_BASE}/auth/admin-reset-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user?.id || '',
+          'x-user-email': user?.email || '',
+        },
+        body: JSON.stringify({ employee_id: data.id, reason }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || result.success === false) {
+        throw new Error(result.detail || result.message || 'Unable to reset password.');
+      }
+      setTemporaryPassword(result.temporary_password || '');
+      showToast({ message: 'Temporary password generated.' });
+    } catch (err) {
+      showToast({ message: err instanceof Error ? err.message : 'Unable to reset password.' });
+    } finally {
+      setResettingPassword(false);
+    }
+  };
+  const copyTemporaryPassword = async () => {
+    if (!temporaryPassword) return;
+    await navigator.clipboard.writeText(temporaryPassword);
+    showToast({ message: 'Temporary password copied.' });
   };
 
   const Metric = ({ label, value, tone = 'neutral' }: { label: string; value: string | number; tone?: 'neutral' | 'good' | 'warn' | 'bad' }) => (
@@ -555,6 +595,38 @@ function ExecutiveEmployeeDetail({
                   <Metric label="Device Assigned" value={preview.it_access.device_assigned ? 'Assigned' : 'Not assigned'} />
                 )}
               </div>
+              {canResetPassword && (
+                <div className="mt-3 rounded-xl border border-[#E5E7EB] bg-warm-bg p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[13px] font-semibold text-[#2F3437]">Password recovery</div>
+                      <div className="mt-0.5 text-[12px] text-gray-500">Generate a temporary password and require a change on next login.</div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={resettingPassword ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+                      disabled={resettingPassword}
+                      onClick={handleAdminResetPassword}
+                    >
+                      {resettingPassword ? 'Resetting' : 'Reset Password'}
+                    </Button>
+                  </div>
+                  {temporaryPassword && (
+                    <div className="mt-3 flex items-center gap-2 rounded-lg border border-[#DDE3DD] bg-white px-3 py-2">
+                      <code className="min-w-0 flex-1 select-all truncate text-[13px] font-bold text-[#2F3437]">{temporaryPassword}</code>
+                      <button
+                        type="button"
+                        onClick={copyTemporaryPassword}
+                        className="rounded-lg p-2 text-olive transition-colors hover:bg-olive/10"
+                        aria-label="Copy temporary password"
+                      >
+                        <Copy size={14} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </Panel>
 
             <Panel id="leave" title="Leave Summary" icon={<Plane size={15} />}>

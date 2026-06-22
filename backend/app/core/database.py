@@ -130,6 +130,60 @@ def ensure_employee_sensitive_columns():
             connection.execute(text(statement))
 
 
+def ensure_account_recovery_tables():
+    """Safely add account recovery columns and reset sessions for existing databases."""
+    from app.models.password_reset import PasswordResetSession  # noqa: F401
+    from app.models.login_challenge import LoginChallengeSession  # noqa: F401
+    from app.models.unlock_request import AccountUnlockRequest  # noqa: F401
+
+    Base.metadata.create_all(bind=engine)
+    inspector = inspect(engine)
+    if "employees" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("employees")}
+    dialect = engine.dialect.name
+    column_definitions = {
+        "force_password_change": "BOOLEAN DEFAULT FALSE",
+        "password_changed_at": "TIMESTAMP",
+        "failed_reset_attempts": "INTEGER DEFAULT 0",
+        "locked_until": "TIMESTAMP",
+        "failed_login_attempts": "INTEGER DEFAULT 0",
+        "account_locked": "BOOLEAN DEFAULT FALSE",
+        "locked_at": "TIMESTAMP",
+        "locked_reason": "VARCHAR(255)",
+        "unlocked_at": "TIMESTAMP",
+        "unlocked_by_user_id": "VARCHAR(36)",
+    }
+
+    statements = []
+    for column_name, definition in column_definitions.items():
+        if column_name in existing_columns:
+            continue
+        if dialect == "postgresql":
+            statements.append(f"ALTER TABLE employees ADD COLUMN IF NOT EXISTS {column_name} {definition}")
+        else:
+            statements.append(f"ALTER TABLE employees ADD COLUMN {column_name} {definition}")
+
+    if dialect == "postgresql":
+        statements.extend([
+            "CREATE INDEX IF NOT EXISTS ix_password_reset_sessions_employee_id ON password_reset_sessions (employee_id)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_password_reset_sessions_reset_token_hash ON password_reset_sessions (reset_token_hash)",
+            "CREATE INDEX IF NOT EXISTS ix_password_reset_sessions_expires_at ON password_reset_sessions (expires_at)",
+            "CREATE INDEX IF NOT EXISTS ix_login_challenge_sessions_employee_id ON login_challenge_sessions (employee_id)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_login_challenge_sessions_token_hash ON login_challenge_sessions (token_hash)",
+            "CREATE INDEX IF NOT EXISTS ix_unlock_requests_status ON account_unlock_requests (status)",
+            "CREATE INDEX IF NOT EXISTS ix_unlock_requests_locked_user ON account_unlock_requests (locked_user_id)",
+        ])
+
+    if not statements:
+        return
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+
+
 def ensure_announcement_columns():
     """Safely add announcement workflow columns to existing databases."""
     inspector = inspect(engine)
@@ -419,3 +473,126 @@ def ensure_staffing_fulfillment_columns():
                 if dialect != "postgresql" and ("CONSTRAINT" in statement or "INDEX" in statement):
                     continue
                 raise
+
+
+def ensure_employee_request_tables():
+    """Create request workflow tables and useful indexes for existing deployments."""
+    from app.models.requests import (  # noqa: F401
+        EmployeeRequest,
+        RequestAttachment,
+        RequestComment,
+        RequestStatusHistory,
+    )
+
+    Base.metadata.create_all(bind=engine)
+    if engine.dialect.name != "postgresql":
+        return
+
+    inspector = inspect(engine)
+    existing_columns = {
+        table: {column["name"] for column in inspector.get_columns(table)}
+        for table in ("employee_requests", "request_status_history", "request_comments", "request_attachments")
+        if table in inspector.get_table_names()
+    }
+
+    statements = [
+        "CREATE INDEX IF NOT EXISTS idx_er_employee_id ON employee_requests (employee_id)",
+        "CREATE INDEX IF NOT EXISTS idx_er_status ON employee_requests (status)",
+        "CREATE INDEX IF NOT EXISTS idx_er_request_type ON employee_requests (request_type)",
+        "CREATE INDEX IF NOT EXISTS idx_er_pending ON employee_requests (status) WHERE status = 'pending'",
+        "CREATE INDEX IF NOT EXISTS idx_rsh_request_id ON request_status_history (request_id)",
+        "CREATE INDEX IF NOT EXISTS idx_rc_request_id ON request_comments (request_id)",
+        "CREATE INDEX IF NOT EXISTS idx_ra_request_id ON request_attachments (request_id)",
+    ]
+
+    request_columns = {
+        "wfh_from_date": "DATE",
+        "wfh_to_date": "DATE",
+        "wfh_reason": "TEXT",
+        "wfh_note": "TEXT",
+        "sp_date": "DATE",
+        "sp_start_time": "TIME",
+        "sp_end_time": "TIME",
+        "sp_reason": "TEXT",
+        "sp_duration_minutes": "INTEGER",
+        "ot_date": "DATE",
+        "ot_start_time": "TIME",
+        "ot_end_time": "TIME",
+        "ot_project_id": "VARCHAR(36)",
+        "ot_reason": "TEXT",
+        "ot_duration_minutes": "INTEGER",
+        "exp_date": "DATE",
+        "exp_category": "VARCHAR(80)",
+        "exp_amount": "NUMERIC(10, 2)",
+        "exp_currency": "VARCHAR(10)",
+        "exp_description": "TEXT",
+        "exp_paid_at": "TIMESTAMP",
+        "exp_paid_by_id": "VARCHAR(36)",
+        "reviewed_by_id": "VARCHAR(36)",
+        "reviewed_at": "TIMESTAMP",
+        "reviewer_notes": "TEXT",
+    }
+    history_columns = {
+        "from_status": "VARCHAR(20)",
+        "to_status": "VARCHAR(20)",
+        "changed_by_id": "VARCHAR(36)",
+        "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+    }
+    comment_columns = {
+        "author_id": "VARCHAR(36)",
+        "body": "TEXT",
+        "updated_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+    }
+    attachment_columns = {
+        "uploaded_by_id": "VARCHAR(36)",
+        "file_size_bytes": "INTEGER",
+        "mime_type": "VARCHAR(120)",
+        "storage_path": "TEXT",
+        "is_deleted": "BOOLEAN DEFAULT FALSE",
+        "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+    }
+
+    for column, definition in request_columns.items():
+        if column not in existing_columns.get("employee_requests", set()):
+            statements.append(f"ALTER TABLE employee_requests ADD COLUMN IF NOT EXISTS {column} {definition}")
+    for column, definition in history_columns.items():
+        if column not in existing_columns.get("request_status_history", set()):
+            statements.append(f"ALTER TABLE request_status_history ADD COLUMN IF NOT EXISTS {column} {definition}")
+    for column, definition in comment_columns.items():
+        if column not in existing_columns.get("request_comments", set()):
+            statements.append(f"ALTER TABLE request_comments ADD COLUMN IF NOT EXISTS {column} {definition}")
+    for column, definition in attachment_columns.items():
+        if column not in existing_columns.get("request_attachments", set()):
+            statements.append(f"ALTER TABLE request_attachments ADD COLUMN IF NOT EXISTS {column} {definition}")
+
+    legacy_history_columns = existing_columns.get("request_status_history", set())
+    legacy_comment_columns = existing_columns.get("request_comments", set())
+    legacy_attachment_columns = existing_columns.get("request_attachments", set())
+    if "action" in legacy_history_columns:
+        statements.append("ALTER TABLE request_status_history ALTER COLUMN action DROP NOT NULL")
+    if "performed_by" in legacy_history_columns:
+        statements.append("ALTER TABLE request_status_history ALTER COLUMN performed_by DROP NOT NULL")
+        statements.append("UPDATE request_status_history SET changed_by_id = COALESCE(changed_by_id, performed_by) WHERE changed_by_id IS NULL AND performed_by IS NOT NULL")
+    if "new_status" in legacy_history_columns:
+        statements.append("ALTER TABLE request_status_history ALTER COLUMN new_status DROP NOT NULL")
+        statements.append("UPDATE request_status_history SET to_status = COALESCE(to_status, new_status) WHERE to_status IS NULL AND new_status IS NOT NULL")
+    if "old_status" in legacy_history_columns:
+        statements.append("UPDATE request_status_history SET from_status = COALESCE(from_status, old_status) WHERE from_status IS NULL AND old_status IS NOT NULL")
+    if "comment" in legacy_comment_columns:
+        statements.append("ALTER TABLE request_comments ALTER COLUMN comment DROP NOT NULL")
+        statements.append("UPDATE request_comments SET body = COALESCE(body, comment) WHERE body IS NULL AND comment IS NOT NULL")
+    if "created_by" in legacy_comment_columns:
+        statements.append("ALTER TABLE request_comments ALTER COLUMN created_by DROP NOT NULL")
+        statements.append("UPDATE request_comments SET author_id = COALESCE(author_id, created_by) WHERE author_id IS NULL AND created_by IS NOT NULL")
+    if "file_path" in legacy_attachment_columns:
+        statements.append("ALTER TABLE request_attachments ALTER COLUMN file_path DROP NOT NULL")
+        statements.append("UPDATE request_attachments SET storage_path = COALESCE(storage_path, file_path) WHERE storage_path IS NULL AND file_path IS NOT NULL")
+    if "content_type" in legacy_attachment_columns:
+        statements.append("UPDATE request_attachments SET mime_type = COALESCE(mime_type, content_type) WHERE mime_type IS NULL AND content_type IS NOT NULL")
+    if "uploaded_by" in legacy_attachment_columns:
+        statements.append("ALTER TABLE request_attachments ALTER COLUMN uploaded_by DROP NOT NULL")
+        statements.append("UPDATE request_attachments SET uploaded_by_id = COALESCE(uploaded_by_id, uploaded_by) WHERE uploaded_by_id IS NULL AND uploaded_by IS NOT NULL")
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))

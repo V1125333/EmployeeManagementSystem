@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, ArrowLeft, CheckCircle2, RefreshCw, UserCheck, UserRoundX } from 'lucide-react';
 import { Avatar, Badge, Button, Card } from '@/components/ui';
+import { AuditTimeline } from '@/components/audit/AuditTimeline';
 import { useToast } from '@/components/ui/Toast';
 import { Drawer } from '@/components/ui/Drawer';
 import { StaffingRequestDrawer, type StaffingRequestFormOptions, type StaffingRequestPayload } from '@/components/staffing/StaffingRequestDrawer';
@@ -54,14 +55,6 @@ interface StaffingRequest {
   candidates: Candidate[];
   created_at: string;
   updated_at?: string | null;
-}
-
-interface AuditItem {
-  id: string;
-  action: string;
-  performed_by?: string | null;
-  performed_at: string;
-  metadata?: Record<string, unknown> | null;
 }
 
 interface Allocation {
@@ -358,7 +351,6 @@ export function StaffingRequestDetailPage() {
   const [allocations, setAllocations] = useState<Allocation[]>([]);
   const [loadingAllocations, setLoadingAllocations] = useState(false);
   const [options, setOptions] = useState<StaffingRequestFormOptions | null>(null);
-  const [activity, setActivity] = useState<AuditItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -379,16 +371,14 @@ export function StaffingRequestDetailPage() {
     if (!requestId) return;
     setLoading(true);
     try {
-      const [requestRes, optionsRes, activityRes] = await Promise.all([
+      const [requestRes, optionsRes] = await Promise.all([
         fetch(`${API_BASE}/staffing-requests/${requestId}`, { headers }),
         fetch(`${API_BASE}/staffing-requests/options`, { headers }),
-        fetch(`${API_BASE}/staffing-requests/${requestId}/activity`, { headers }),
       ]);
       const requestData = await requestRes.json();
       if (!requestRes.ok) throw new Error(requestData.detail || 'Unable to load staffing request.');
       setRequest(requestData);
       if (optionsRes.ok) setOptions(await optionsRes.json());
-      if (activityRes.ok) setActivity(await activityRes.json());
       setLoadingAllocations(true);
       const allocationsRes = await fetch(`${API_BASE}/staffing-requests/${requestId}/allocations`, { headers });
       if (allocationsRes.ok) setAllocations(await allocationsRes.json());
@@ -698,17 +688,7 @@ export function StaffingRequestDetailPage() {
       )}
 
       {activeTab === 'activity' && (
-        <Card>
-          <div className="border-b border-[#E5E7EB] px-5 py-4 text-sm font-bold text-[#2F3437]">Activity Timeline</div>
-          <div className="divide-y divide-[#E5E7EB]">
-            {activity.length ? activity.map((item) => (
-              <div key={item.id} className="px-5 py-4">
-                <div className="font-semibold text-[#2F3437]">{titleCase(item.action)}</div>
-                <div className="mt-1 text-sm text-gray-500">{item.performed_by || 'System'} • {formatDateTime(item.performed_at)}</div>
-              </div>
-            )) : <div className="px-5 py-12 text-center text-sm text-gray-500">No activity yet.</div>}
-          </div>
-        </Card>
+        <AuditTimeline entityType="staffing_request" entityId={request.id} maxItems={15} />
       )}
 
       <StaffingRequestDrawer

@@ -5,6 +5,7 @@ import { ToastProvider } from '@/components/ui/Toast';
 import { AdminRoute, EmployeeRoute, ProtectedRoute, RoleHomeRedirect } from '@/components/layout/ProtectedRoute';
 import { AppLayout } from '@/layouts/AppLayout';
 import { LoginPage } from '@/pages/LoginPage';
+import { ForceChangePasswordPage } from '@/pages/ForceChangePasswordPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { EmployeesPage } from '@/pages/EmployeesPage';
 import { ProfilePage } from '@/pages/ProfilePage';
@@ -12,11 +13,13 @@ import { SettingsPage } from '@/pages/SettingsPage';
 import { CertificateGeneratorPage } from '@/pages/CertificateGeneratorPage';
 import { CertificateVerificationPage } from '@/pages/CertificateVerificationPage';
 import { AuditTrailPage } from '@/pages/AuditTrailPage';
+import { SecurityCenterPage } from '@/pages/SecurityCenterPage';
 import { HRDocumentsPage } from '@/pages/HRDocumentsPage';
 import { BenchPage } from '@/pages/BenchPage';
 import { WorkforceForecastPage } from '@/pages/WorkforceForecastPage';
 import { StaffingRequestDetailPage } from '@/pages/StaffingRequestDetailPage';
 import { StaffingRequestsPage } from '@/pages/StaffingRequestsPage';
+import { RequestsPage } from '@/pages/RequestsPage';
 import {
   OnboardingPage,
   ClientOnboardingPage,
@@ -35,7 +38,6 @@ import {
   EmployeeDashboardPage,
   EmployeeDocumentsPage,
   EmployeeNotificationsPage,
-  EmployeeRequestsPage,
   HolidaysPage,
   LeaveApprovalsPage,
   TimesheetsPage,
@@ -50,6 +52,7 @@ export default function App() {
           <Routes>
             {/* Public route */}
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/force-change-password" element={<ForceChangePasswordPage />} />
             <Route path="/verify/:certificateCode" element={<CertificateVerificationPage />} />
 
             {/* Protected routes */}
@@ -72,7 +75,7 @@ export default function App() {
                   <Route path="/employee/timesheets" element={<TimesheetsPage />} />
                   <Route path="/employee/check-in" element={<CheckInOutPage />} />
                   <Route path="/employee/attendance" element={<AttendanceHistoryPage />} />
-                  <Route path="/employee/requests" element={<EmployeeRequestsPage />} />
+                  <Route path="/employee/requests" element={<RequestsPage />} />
                   <Route path="/employee/documents" element={<EmployeeDocumentsPage />} />
                   <Route path="/employee/company-handbook" element={<CompanyHandbookPage />} />
                   <Route path="/employee/holidays" element={<HolidaysPage />} />
@@ -93,6 +96,7 @@ export default function App() {
                   <Route path="/admin/certificates" element={<CertificateGeneratorPage />} />
                   <Route path="/admin/hr-documents" element={<HRDocumentsPage />} />
                   <Route path="/admin/audit-trail" element={<AuditTrailPage />} />
+                  <Route path="/admin/security" element={<SecurityCenterPage />} />
                 </Route>
               </Route>
             </Route>

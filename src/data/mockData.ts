@@ -103,10 +103,11 @@ export const mainNavItems: NavItem[] = [
 ];
 
 export const adminNavItems: NavItem[] = [
-  { key: 'users', label: 'User Management', icon: 'Settings', path: '/admin/users' },
-  { key: 'roles', label: 'Roles & Permissions', icon: 'Shield', path: '/admin/roles' },
-  { key: 'policies', label: 'Policies', icon: 'FileText', path: '/admin/policies' },
-  { key: 'certificates', label: 'Certificates', icon: 'Award', path: '/admin/certificates' },
+    { key: 'users', label: 'User Management', icon: 'Settings', path: '/admin/users' },
+    { key: 'roles', label: 'Roles & Permissions', icon: 'Shield', path: '/admin/roles' },
+    { key: 'policies', label: 'Policies', icon: 'FileText', path: '/admin/policies' },
+    { key: 'security', label: 'Security Center', icon: 'Shield', path: '/admin/security' },
+    { key: 'certificates', label: 'Certificates', icon: 'Award', path: '/admin/certificates' },
   { key: 'hr-documents', label: 'HR Documents', icon: 'Files', path: '/admin/hr-documents' },
   { key: 'audit-trail', label: 'Audit Trail', icon: 'Shield', path: '/admin/audit-trail' },
 ];

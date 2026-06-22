@@ -64,5 +64,13 @@ from app.models.certificate import Certificate, CertificateAuditLog
 # Sensitive data access audit
 from app.models.security import SensitiveAccessAuditLog
 
+# Password reset sessions
+from app.models.password_reset import PasswordResetSession
+from app.models.login_challenge import LoginChallengeSession
+from app.models.unlock_request import AccountUnlockRequest
+
 # Centralized compliance audit trail
 from app.models.audit import AuditLog
+
+# Employee general requests
+from app.models.requests import EmployeeRequest, RequestAttachment, RequestComment, RequestStatusHistory

@@ -4,6 +4,7 @@ Creates all 19 database tables on startup and seeds initial data.
 """
 
 import logging
+import os
 from datetime import date
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -14,6 +15,7 @@ from app.core.database import (
     ensure_audit_log_table,
     ensure_employee_audit_columns,
     ensure_employee_sensitive_columns,
+    ensure_account_recovery_tables,
     ensure_announcement_columns,
     ensure_notification_columns,
     ensure_timesheet_columns,
@@ -21,12 +23,14 @@ from app.core.database import (
     ensure_leave_type_policy_columns,
     ensure_allocation_columns,
     ensure_staffing_fulfillment_columns,
+    ensure_employee_request_tables,
     SessionLocal,
 )
 
 # Import all models so SQLAlchemy registers them
 from app.models import (
     Employee, EmployeeAuditLog, EmployeePerformanceSnapshot, Department, Designation,
+    PasswordResetSession, LoginChallengeSession, AccountUnlockRequest,
     LeaveType, LeaveBalance, LeaveRequest, Attendance, AttendanceCorrection,
     OnboardingTask, Training, TrainingEnrollment,
     Channel, ChannelMember, Message, MessageReaction,
@@ -39,6 +43,7 @@ from app.models import (
     Certificate, CertificateAuditLog,
     SensitiveAccessAuditLog,
     AuditLog,
+    EmployeeRequest, RequestAttachment, RequestComment, RequestStatusHistory,
 )
 from app.services.auth_service import hash_password
 from app.api.dashboard import router as dashboard_router
@@ -59,9 +64,12 @@ from app.api.audit_logs import router as audit_logs_router
 from app.api.allocations import router as allocations_router
 from app.api.forecasting import router as forecasting_router
 from app.api.staffing_requests import router as staffing_requests_router
+from app.api.admin_security import router as admin_security_router
+from app.api.requests import router as requests_router
 
+_log_level = logging.DEBUG if os.getenv("APP_ENV", "development") == "development" else logging.INFO
 logging.basicConfig(
-    level=logging.INFO,
+    level=_log_level,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
 logger = logging.getLogger(__name__)
@@ -194,6 +202,7 @@ async def lifespan(app: FastAPI):
     ensure_audit_log_table()
     ensure_employee_audit_columns()
     ensure_employee_sensitive_columns()
+    ensure_account_recovery_tables()
     ensure_announcement_columns()
     ensure_notification_columns()
     ensure_timesheet_columns()
@@ -201,6 +210,7 @@ async def lifespan(app: FastAPI):
     ensure_leave_type_policy_columns()
     ensure_allocation_columns()
     ensure_staffing_fulfillment_columns()
+    ensure_employee_request_tables()
     logger.info("All database tables created")
 
     db = SessionLocal()
@@ -250,6 +260,8 @@ app.include_router(audit_logs_router, prefix="/api/v1")
 app.include_router(allocations_router, prefix="/api/v1")
 app.include_router(forecasting_router, prefix="/api/v1")
 app.include_router(staffing_requests_router, prefix="/api/v1")
+app.include_router(admin_security_router, prefix="/api/v1")
+app.include_router(requests_router, prefix="/api/v1")
 
 
 

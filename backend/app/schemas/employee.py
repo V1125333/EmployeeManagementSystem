@@ -145,6 +145,7 @@ class LoginResponse(BaseModel):
     message: str
     token: Optional[str] = None
     employee: Optional[dict] = None
+    force_password_change: bool = False
 
 
 # ═══════════════════════════════════════
@@ -160,3 +161,85 @@ class ForgotPasswordRequest(BaseModel):
 class ForgotPasswordResponse(BaseModel):
     success: bool
     message: str
+
+
+class ForgotPasswordInitiateRequest(BaseModel):
+    email: EmailStr
+
+
+class ForgotPasswordInitiateResponse(BaseModel):
+    success: bool
+    message: str
+    reset_token: Optional[str] = None
+    has_mfa: bool = False
+    expires_in_minutes: Optional[int] = None
+
+
+class ForgotPasswordVerifyMfaRequest(BaseModel):
+    reset_token: str = Field(..., min_length=20)
+    totp_code: str = Field(..., min_length=6, max_length=6)
+
+
+class ForgotPasswordVerifyMfaResponse(BaseModel):
+    success: bool
+    message: str
+
+
+class ForgotPasswordResetRequest(BaseModel):
+    reset_token: str = Field(..., min_length=20)
+    new_password: str = Field(..., min_length=8)
+    confirm_password: str = Field(..., min_length=8)
+
+
+class AdminResetPasswordRequest(BaseModel):
+    employee_id: str
+    reason: str = Field(..., min_length=3, max_length=500)
+
+
+class AdminResetPasswordResponse(BaseModel):
+    success: bool
+    message: str
+    temporary_password: Optional[str] = None
+
+
+class ForceChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=8)
+    confirm_password: str = Field(..., min_length=8)
+
+
+class ForceChangePasswordResponse(BaseModel):
+    success: bool
+    message: str
+
+
+class VerifyLoginPasswordRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class VerifyLoginPasswordResponse(BaseModel):
+    success: bool
+    message: str
+    login_challenge_token: Optional[str] = None
+    account_locked: bool = False
+    attempts_remaining: Optional[int] = None
+
+
+class CompleteLoginMfaRequest(BaseModel):
+    login_challenge_token: str = Field(..., min_length=20)
+    totp_code: str = Field(..., min_length=6, max_length=6)
+
+
+class RequestUnlockRequest(BaseModel):
+    email: EmailStr
+    reason: str = Field(..., min_length=10, max_length=500)
+
+
+class RequestUnlockForColleagueRequest(BaseModel):
+    employee_id: str
+    reason: str = Field(..., min_length=10, max_length=500)
+
+
+class ReviewUnlockRequest(BaseModel):
+    admin_notes: Optional[str] = Field(default=None, max_length=500)

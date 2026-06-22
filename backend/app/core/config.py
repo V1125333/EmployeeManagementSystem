@@ -34,5 +34,21 @@ class Settings:
     COMPLIANCE_COMPLIANT_THRESHOLD_HOURS: float = float(os.getenv("COMPLIANCE_COMPLIANT_THRESHOLD_HOURS", "2.0"))
     COMPLIANCE_WARNING_THRESHOLD_HOURS: float = float(os.getenv("COMPLIANCE_WARNING_THRESHOLD_HOURS", "5.0"))
 
+    # Requests module config
+    REQUESTS_SP_MAX_DURATION_MINUTES: int = int(os.getenv("REQUESTS_SP_MAX_DURATION_MINUTES", "480"))
+    REQUESTS_EXPENSE_RECEIPT_REQUIRED: bool = os.getenv("REQUESTS_EXPENSE_RECEIPT_REQUIRED", "true").lower() == "true"
+    REQUESTS_OVERTIME_MAX_DURATION_MINUTES: int = int(os.getenv("REQUESTS_OVERTIME_MAX_DURATION_MINUTES", "720"))
+    REQUESTS_WFH_MAX_DAYS: int = int(os.getenv("REQUESTS_WFH_MAX_DAYS", "90"))
+
+    # Account recovery
+    RESET_TOKEN_EXPIRY_MINUTES: int = int(os.getenv("RESET_TOKEN_EXPIRY_MINUTES", "15"))
+    RESET_MAX_ATTEMPTS: int = int(os.getenv("RESET_MAX_ATTEMPTS", "5"))
+    RESET_LOCKOUT_MINUTES: int = int(os.getenv("RESET_LOCKOUT_MINUTES", "30"))
+    RESET_RATE_LIMIT_PER_HOUR: int = int(os.getenv("RESET_RATE_LIMIT_PER_HOUR", "5"))
+    PASSWORD_MIN_LENGTH: int = int(os.getenv("PASSWORD_MIN_LENGTH", "8"))
+    MAX_LOGIN_ATTEMPTS: int = int(os.getenv("MAX_LOGIN_ATTEMPTS", "3"))
+    LOGIN_CHALLENGE_EXPIRY_MINUTES: int = int(os.getenv("LOGIN_CHALLENGE_EXPIRY_MINUTES", "5"))
+    UNLOCK_REQUEST_RATE_LIMIT_PER_HOUR: int = int(os.getenv("UNLOCK_REQUEST_RATE_LIMIT_PER_HOUR", "3"))
+
 
 settings = Settings()

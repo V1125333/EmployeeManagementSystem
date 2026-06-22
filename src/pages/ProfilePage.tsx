@@ -4,11 +4,12 @@ import {
   Heart, Home, Clock, Pencil, Camera, Trash2, Save, X, Loader2,
 } from 'lucide-react';
 import { Card, Badge, Button } from '@/components/ui';
+import { AuditTimeline } from '@/components/audit/AuditTimeline';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/utils/cn';
 
-const API_BASE = 'http://localhost:8000/api/v1';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
 interface ProfileData {
   id: string;
@@ -262,7 +263,7 @@ export function ProfilePage() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'allocations'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'allocations' | 'activity'>('overview');
   const [allocations, setAllocations] = useState<AllocationRecord[]>([]);
   const [allocationSummary, setAllocationSummary] = useState<AllocationSummaryRecord | null>(null);
   const [allocationsLoading, setAllocationsLoading] = useState(false);
@@ -601,11 +602,12 @@ export function ProfilePage() {
         {[
           { key: 'overview', label: 'Overview' },
           { key: 'allocations', label: 'Allocations' },
+          { key: 'activity', label: 'Activity' },
         ].map((tab) => (
           <button
             key={tab.key}
             type="button"
-            onClick={() => setActiveTab(tab.key as 'overview' | 'allocations')}
+            onClick={() => setActiveTab(tab.key as 'overview' | 'allocations' | 'activity')}
             className={cn(
               'border-b-2 px-4 py-3 text-[13px] font-bold transition-colors',
               activeTab === tab.key
@@ -806,6 +808,10 @@ export function ProfilePage() {
           )}
           </Card>
         </div>
+      )}
+
+      {activeTab === 'activity' && (
+        <AuditTimeline entityType="employee" entityId={profile.id} maxItems={12} />
       )}
     </div>
   );

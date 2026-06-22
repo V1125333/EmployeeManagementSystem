@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 
-const API_BASE = 'http://localhost:8000/api/v1';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 const STORAGE_KEY = 'reknew_orbit_auth';
 
 // ─── Types ───
@@ -11,6 +11,7 @@ export interface AuthUser {
   email: string;
   initials: string;
   profileImageUrl?: string | null;
+  forcePasswordChange?: boolean;
 }
 
 interface AuthContextType {
@@ -51,11 +52,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Login via backend API (email + password + TOTP)
   const loginWithApi = async (email: string, password: string, totpCode: string) => {
+    const normalizedEmail = email.trim().toLowerCase();
     try {
       const response = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, totp_code: totpCode }),
+        body: JSON.stringify({ email: normalizedEmail, password, totp_code: totpCode }),
       });
 
       const result = await response.json();
@@ -68,6 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: result.employee.role || 'Employee',
           initials: makeInitials(result.employee.name),
           profileImageUrl: result.employee.profile_image_url || null,
+          forcePasswordChange: Boolean(result.force_password_change),
         };
         setUser(authUser);
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: authUser, token: result.token }));
@@ -82,12 +85,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Simple admin login (superadmin fallback — no TOTP required)
   const loginAdmin = async (email: string, password: string): Promise<boolean> => {
+    const normalizedEmail = email.trim().toLowerCase();
     // Try API first for admin without TOTP
     try {
       const checkRes = await fetch(`${API_BASE}/auth/check-email`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email: normalizedEmail }),
       });
       const checkData = await checkRes.json();
 
@@ -96,10 +100,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const authUser: AuthUser = {
           id: checkData.employee_id,
           name: 'Super Admin',
-          email,
+          email: normalizedEmail,
           role: checkData.role || 'super_admin',
           initials: 'SA',
           profileImageUrl: checkData.profile_image_url || null,
+          forcePasswordChange: false,
         };
         setUser(authUser);
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: authUser, token: 'admin-token' }));
@@ -110,13 +115,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     // Hardcoded fallback for when backend is down
-    if (email === 'superadmin@reknew.ai' && password === 'test') {
+    if (normalizedEmail === 'superadmin@reknew.ai' && password === 'test') {
       const authUser: AuthUser = {
         name: 'Super Admin',
         email: 'superadmin@reknew.ai',
         role: 'super_admin',
         initials: 'SA',
         profileImageUrl: null,
+        forcePasswordChange: false,
       };
       setUser(authUser);
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: authUser, token: 'mock-token' }));
@@ -134,6 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role: employee.role || 'Employee',
       initials: makeInitials(employee.name || `${employee.first_name} ${employee.last_name}`),
       profileImageUrl: employee.profile_image_url || null,
+      forcePasswordChange: Boolean(employee.force_password_change),
     };
     setUser(authUser);
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: authUser, token: 'session-token' }));
