@@ -39,6 +39,8 @@ class AllocationUpdate(BaseModel):
 class AllocationOut(BaseModel):
     id: str
     employee_id: str
+    employee_name: str | None = None
+    employee_email: str | None = None
     project_id: str | None = None
     project_name: str | None = None
     manager_id: str

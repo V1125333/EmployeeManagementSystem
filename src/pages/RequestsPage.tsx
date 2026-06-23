@@ -7,6 +7,8 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock3,
+  Copy,
+  GitBranch,
   Eye,
   FileText,
   FileX,
@@ -16,6 +18,7 @@ import {
   RefreshCw,
   Send,
   Trash2,
+  UserRound,
   X,
 } from 'lucide-react';
 import { Badge, Button, Card, CardHeader } from '@/components/ui';
@@ -31,6 +34,7 @@ type RequestStatus = 'draft' | 'pending' | 'approved' | 'rejected' | 'cancelled'
 interface EmployeeRequest {
   id: string;
   employee_name: string;
+  ticket_number?: string | null;
   request_type: RequestType;
   request_type_label: string;
   title: string;
@@ -47,6 +51,12 @@ interface EmployeeRequest {
   category?: string | null;
   reason?: string | null;
   approver_name?: string | null;
+  current_owner_id?: string | null;
+  current_owner_name?: string | null;
+  submitted_to_id?: string | null;
+  submitted_to_name?: string | null;
+  pending_since?: string | null;
+  days_pending?: number | null;
   approved_by_name?: string | null;
   approved_at?: string | null;
   rejected_by_name?: string | null;
@@ -69,9 +79,28 @@ interface EmployeeRequest {
   can_submit: boolean;
   can_cancel: boolean;
   can_decide: boolean;
-  attachments?: Array<{ id: string; file_name: string; file_size_bytes?: number | null; mime_type?: string | null; uploaded_by_name?: string | null; created_at: string }>;
+  can_reassign?: boolean;
+  attachments?: Array<{
+    id: string;
+    request_id: string;
+    original_file_name: string;
+    file_extension?: string | null;
+    mime_type?: string | null;
+    file_size_bytes?: number | null;
+    document_type: string;
+    storage_provider: string;
+    uploaded_by_name?: string | null;
+    created_at: string;
+  }>;
   comments?: Array<{ id: string; body?: string; comment?: string; is_internal: boolean; created_by_name: string; created_at: string }>;
   history?: Array<{ id: string; action: string; old_status?: string | null; new_status: string; reason?: string | null; performed_by_name: string; performed_at: string }>;
+}
+
+interface EmployeeOption {
+  id: string;
+  name: string;
+  work_email?: string;
+  role?: string;
 }
 
 interface ListResponse {
@@ -162,6 +191,22 @@ function isPrivilegedPayer(role?: string) {
   return ['hr_admin', 'super_admin'].includes(roleKey(role));
 }
 
+function isPrivilegedAdmin(role?: string) {
+  return ['hr_admin', 'super_admin', 'admin', 'global_access'].includes(roleKey(role));
+}
+
+function pendingTone(days?: number | null) {
+  if (days == null) return 'text-gray-500';
+  if (days >= 5) return 'text-status-error';
+  if (days >= 2) return 'text-status-warning';
+  return 'text-status-success';
+}
+
+async function copyText(value?: string | null) {
+  if (!value) return;
+  await navigator.clipboard?.writeText(value);
+}
+
 function formatFileSize(bytes?: number | null) {
   if (!bytes) return '-';
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
@@ -214,7 +259,27 @@ function RequestTypeCards({ onCreate }: { onCreate: (type: RequestType) => void 
   );
 }
 
-function RequestsTable({ title, rows, empty, canCreate, onCreate, onView, onAction }: { title: string; rows: EmployeeRequest[]; empty: string; canCreate?: boolean; onCreate?: () => void; onView: (row: EmployeeRequest) => void; onAction: (row: EmployeeRequest, action: 'submit' | 'cancel' | 'approve' | 'reject') => void }) {
+function RequestsTable({
+  title,
+  rows,
+  empty,
+  canCreate,
+  canReassign,
+  onCreate,
+  onView,
+  onAction,
+  onReassign,
+}: {
+  title: string;
+  rows: EmployeeRequest[];
+  empty: string;
+  canCreate?: boolean;
+  canReassign?: boolean;
+  onCreate?: () => void;
+  onView: (row: EmployeeRequest) => void;
+  onAction: (row: EmployeeRequest, action: 'submit' | 'cancel' | 'approve' | 'reject') => void;
+  onReassign?: (row: EmployeeRequest) => void;
+}) {
   return (
     <Card className="overflow-hidden">
       <CardHeader title={title} icon={<Send size={17} />} />
@@ -226,13 +291,15 @@ function RequestsTable({ title, rows, empty, canCreate, onCreate, onView, onActi
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[940px] text-sm">
+          <table className="w-full min-w-[1120px] text-sm">
             <thead className="bg-warm-bg text-[11px] uppercase tracking-wide text-gray-400">
               <tr>
+                <th className="px-5 py-3 text-left">Ticket</th>
                 <th className="px-5 py-3 text-left">Request</th>
                 <th className="px-5 py-3 text-left">Employee</th>
                 <th className="px-5 py-3 text-left">Details</th>
-                <th className="px-5 py-3 text-left">Pending With</th>
+                <th className="px-5 py-3 text-left">Current Owner</th>
+                <th className="px-5 py-3 text-left">Pending</th>
                 <th className="px-5 py-3 text-left">Status</th>
                 <th className="px-5 py-3 text-right">Actions</th>
               </tr>
@@ -241,12 +308,26 @@ function RequestsTable({ title, rows, empty, canCreate, onCreate, onView, onActi
               {rows.map((row) => (
                 <tr key={row.id}>
                   <td className="px-5 py-4">
+                    <button
+                      type="button"
+                      title="Copy ticket number"
+                      onClick={() => copyText(row.ticket_number)}
+                      className="inline-flex items-center gap-1 rounded-md bg-gray-50 px-2 py-1 font-mono text-xs font-bold text-olive hover:bg-hover-bg"
+                    >
+                      {row.ticket_number || 'Pending ID'}
+                      <Copy size={12} />
+                    </button>
+                  </td>
+                  <td className="px-5 py-4">
                     <div className="font-bold text-[#2F3437]">{row.request_type_label}</div>
                     <div className="text-xs text-gray-500">{row.title}</div>
                   </td>
                   <td className="px-5 py-4 font-semibold">{row.employee_name}</td>
                   <td className="px-5 py-4 text-gray-600">{summarize(row)}</td>
-                  <td className="px-5 py-4 text-gray-600">{row.status === 'pending' ? row.approver_name : '-'}</td>
+                  <td className="px-5 py-4 text-gray-600">{row.current_owner_name || (row.status === 'pending' ? row.approver_name : '-')}</td>
+                  <td className={`px-5 py-4 font-semibold ${pendingTone(row.days_pending)}`}>
+                    {row.status === 'pending' ? `${row.days_pending ?? 0} day${(row.days_pending ?? 0) === 1 ? '' : 's'}` : '-'}
+                  </td>
                   <td className="px-5 py-4"><Badge variant={statusVariant(row.status)}>{labelize(row.status)}</Badge></td>
                   <td className="px-5 py-4">
                     <div className="flex justify-end gap-2">
@@ -255,6 +336,7 @@ function RequestsTable({ title, rows, empty, canCreate, onCreate, onView, onActi
                       {row.can_cancel && <Button size="sm" variant="ghost" icon={<Trash2 size={13} />} onClick={() => onAction(row, 'cancel')}>Cancel</Button>}
                       {row.can_decide && <Button size="sm" variant="soft" icon={<CheckCircle2 size={13} />} onClick={() => onAction(row, 'approve')}>Approve</Button>}
                       {row.can_decide && <Button size="sm" variant="ghost" icon={<X size={13} />} onClick={() => onAction(row, 'reject')}>Reject</Button>}
+                      {canReassign && row.can_reassign && onReassign && <Button size="sm" variant="ghost" icon={<GitBranch size={13} />} onClick={() => onReassign(row)}>Reassign</Button>}
                     </div>
                   </td>
                 </tr>
@@ -267,7 +349,7 @@ function RequestsTable({ title, rows, empty, canCreate, onCreate, onView, onActi
   );
 }
 
-function RequestModal({ initialType, onClose, onSave }: { initialType: RequestType; onClose: () => void; onSave: (form: FormState) => Promise<void> }) {
+function RequestModal({ initialType, lockedType = true, onClose, onSave }: { initialType: RequestType; lockedType?: boolean; onClose: () => void; onSave: (form: FormState) => Promise<void> }) {
   const [form, setForm] = useState<FormState>(() => emptyForm(initialType));
   const [saving, setSaving] = useState(false);
   const [fileError, setFileError] = useState('');
@@ -293,19 +375,21 @@ function RequestModal({ initialType, onClose, onSave }: { initialType: RequestTy
       <Card className="max-h-[90vh] w-full max-w-2xl overflow-hidden shadow-[0_24px_80px_rgba(31,41,55,0.24)]">
         <div className="flex items-start justify-between border-b border-[#E5E7EB] px-6 py-5">
           <div>
-            <h2 className="text-lg font-bold text-[#2F3437]">New Request</h2>
+            <h2 className="text-lg font-bold text-[#2F3437]">New {requestTypes.find((item) => item.type === form.request_type)?.label || 'Request'} Request</h2>
             <p className="mt-1 text-sm text-gray-500">Complete the required fields and submit for approval.</p>
           </div>
           <button onClick={onClose} className="rounded-lg p-2 text-gray-400 hover:bg-hover-bg"><X size={18} /></button>
         </div>
         <div className="max-h-[calc(90vh-150px)] overflow-y-auto p-6">
           <div className="grid gap-4 md:grid-cols-2">
-            <label className="grid gap-1 text-sm font-semibold text-[#2F3437]">
-              Request Type
-              <select value={form.request_type} onChange={(event) => setForm(emptyForm(event.target.value as RequestType))} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 outline-none focus:border-olive">
-                {requestTypes.map((item) => <option key={item.type} value={item.type}>{item.label}</option>)}
-              </select>
-            </label>
+            {!lockedType && (
+              <label className="grid gap-1 text-sm font-semibold text-[#2F3437]">
+                Request Type
+                <select value={form.request_type} onChange={(event) => setForm(emptyForm(event.target.value as RequestType))} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 outline-none focus:border-olive">
+                  {requestTypes.map((item) => <option key={item.type} value={item.type}>{item.label}</option>)}
+                </select>
+              </label>
+            )}
             {form.request_type === 'expense' && (
               <label className="grid gap-1 text-sm font-semibold text-[#2F3437]">
                 Category
@@ -344,7 +428,7 @@ function RequestModal({ initialType, onClose, onSave }: { initialType: RequestTy
                   <div className="rounded-lg border border-dashed border-[#D9DED3] bg-warm-bg p-3 text-sm text-gray-500">
                     <input
                       type="file"
-                      accept="image/jpeg,image/png,image/webp,application/pdf"
+                      accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
                       onChange={(event) => {
                         const file = event.target.files?.[0] || null;
                         setFileError('');
@@ -391,12 +475,37 @@ function RequestModal({ initialType, onClose, onSave }: { initialType: RequestTy
   );
 }
 
-function DetailDrawer({ request, userRole, onClose, onRefresh, onAction, onMarkPaid, headers }: { request: EmployeeRequest; userRole?: string; onClose: () => void; onRefresh: (id: string) => Promise<void>; onAction: (row: EmployeeRequest, action: 'submit' | 'cancel' | 'approve' | 'reject') => void; onMarkPaid: (row: EmployeeRequest) => Promise<void>; headers: Record<string, string> }) {
+function WorkflowProgressTracker({ request }: { request: EmployeeRequest }) {
+  const steps = [
+    { key: 'created', label: 'Created', complete: true },
+    { key: 'submitted', label: 'Submitted', complete: Boolean(request.submitted_at) || request.status !== 'draft' },
+    { key: 'manager', label: request.submitted_to_name ? `Manager: ${request.submitted_to_name}` : 'Manager Review', complete: ['approved', 'paid'].includes(request.status) },
+    { key: 'final', label: request.status === 'paid' ? 'Paid' : request.status === 'rejected' ? 'Rejected' : request.status === 'cancelled' ? 'Cancelled' : 'Finalized', complete: ['paid', 'rejected', 'cancelled'].includes(request.status) },
+  ];
+  return (
+    <Card className="mt-4 p-4">
+      <div className="mb-3 flex items-center gap-2 text-sm font-bold text-[#2F3437]"><GitBranch size={15} className="text-olive" /> Workflow</div>
+      <div className="grid gap-3">
+        {steps.map((step, index) => (
+          <div key={step.key} className="flex items-center gap-3">
+            <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${step.complete ? 'bg-olive text-white' : 'bg-gray-100 text-gray-400'}`}>{index + 1}</span>
+            <span className={`text-sm ${step.complete ? 'font-semibold text-[#2F3437]' : 'text-gray-500'}`}>{step.label}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function DetailDrawer({ request, userRole, employees, onClose, onRefresh, onAction, onMarkPaid, onReassign, headers }: { request: EmployeeRequest; userRole?: string; employees: EmployeeOption[]; onClose: () => void; onRefresh: (id: string) => Promise<void>; onAction: (row: EmployeeRequest, action: 'submit' | 'cancel' | 'approve' | 'reject') => void; onMarkPaid: (row: EmployeeRequest) => Promise<void>; onReassign: (row: EmployeeRequest, ownerId: string, reason: string) => Promise<void>; headers: Record<string, string> }) {
   const { showToast } = useToast();
   const [comment, setComment] = useState('');
   const [internal, setInternal] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [viewingAttachment, setViewingAttachment] = useState<{ file_name: string; mime_type?: string | null; data_uri: string } | null>(null);
+  const [reassignOpen, setReassignOpen] = useState(false);
+  const [newOwnerId, setNewOwnerId] = useState('');
+  const [reassignReason, setReassignReason] = useState('');
+  const [reassigning, setReassigning] = useState(false);
 
   const postComment = async () => {
     if (!comment.trim()) return;
@@ -424,6 +533,7 @@ function DetailDrawer({ request, userRole, onClose, onRefresh, onAction, onMarkP
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('document_type', 'EXPENSE_RECEIPT');
       const uploadHeaders = { 'x-user-id': headers['x-user-id'], 'x-user-email': headers['x-user-email'] };
       const res = await fetch(`${API_BASE}/requests/${request.id}/attachments`, { method: 'POST', headers: uploadHeaders, body: formData });
       const body = await res.json().catch(() => null);
@@ -438,18 +548,22 @@ function DetailDrawer({ request, userRole, onClose, onRefresh, onAction, onMarkP
     }
   };
 
-  const viewAttachment = async (attachmentId: string) => {
-    const res = await fetch(`${API_BASE}/requests/${request.id}/attachments/${attachmentId}`, { headers });
-    const body = await res.json().catch(() => null);
+  const downloadAttachment = async (attachmentId: string, fileName: string) => {
+    const res = await fetch(`${API_BASE}/requests/${request.id}/attachments/${attachmentId}/download`, { headers });
     if (!res.ok) {
-      showToast({ message: body?.detail || 'Could not open attachment.' });
+      const body = await res.json().catch(() => null);
+      showToast({ message: body?.detail || 'Download failed.' });
       return;
     }
-    if (body.mime_type === 'application/pdf') {
-      window.open(body.data_uri, '_blank', 'noopener,noreferrer');
-      return;
-    }
-    setViewingAttachment(body);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   };
 
   const deleteAttachment = async (attachmentId: string) => {
@@ -463,6 +577,46 @@ function DetailDrawer({ request, userRole, onClose, onRefresh, onAction, onMarkP
     await onRefresh(request.id);
   };
 
+  const timeline = useMemo(() => {
+    const events = [
+      ...(request.history || []).map((item) => ({
+        id: `history-${item.id}`,
+        at: item.performed_at,
+        title: `${labelize(item.action)} to ${labelize(item.new_status)}`,
+        detail: `${item.performed_by_name}${item.reason ? ` - ${item.reason}` : ''}`,
+      })),
+      ...(request.comments || []).map((item) => ({
+        id: `comment-${item.id}`,
+        at: item.created_at,
+        title: item.is_internal ? 'Internal comment added' : 'Comment added',
+        detail: `${item.created_by_name}: ${item.body || item.comment || ''}`,
+      })),
+      ...(request.attachments || []).map((item) => ({
+        id: `attachment-${item.id}`,
+        at: item.created_at,
+        title: 'Attachment uploaded',
+        detail: `${item.original_file_name} by ${item.uploaded_by_name || 'Unknown'}`,
+      })),
+    ];
+    return events.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+  }, [request.attachments, request.comments, request.history]);
+
+  const submitReassign = async () => {
+    if (!newOwnerId || !reassignReason.trim()) {
+      showToast({ message: 'Select a new owner and add a reassignment reason.' });
+      return;
+    }
+    setReassigning(true);
+    try {
+      await onReassign(request, newOwnerId, reassignReason.trim());
+      setReassignOpen(false);
+      setReassignReason('');
+      setNewOwnerId('');
+    } finally {
+      setReassigning(false);
+    }
+  };
+
   return createPortal(
     <>
       <div className="fixed inset-0 z-[1000] flex justify-end bg-black/25 backdrop-blur-sm">
@@ -472,17 +626,48 @@ function DetailDrawer({ request, userRole, onClose, onRefresh, onAction, onMarkP
             <div className="mb-2"><Badge variant={statusVariant(request.status)}>{labelize(request.status)}</Badge></div>
             <h2 className="text-lg font-bold text-[#2F3437]">{request.request_type_label}</h2>
             <p className="text-sm text-gray-500">{summarize(request)}</p>
+            <button
+              type="button"
+              onClick={() => copyText(request.ticket_number)}
+              className="mt-3 inline-flex items-center gap-2 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 py-1.5 font-mono text-xs font-bold text-olive hover:bg-hover-bg"
+            >
+              {request.ticket_number || 'Pending ID'} <Copy size={12} />
+            </button>
           </div>
           <button onClick={onClose} className="rounded-lg p-2 text-gray-400 hover:bg-hover-bg"><X size={18} /></button>
         </div>
         <div className="h-[calc(100%-88px)] overflow-y-auto p-6">
           <div className="grid gap-3 sm:grid-cols-2">
             <Info label="Employee" value={request.employee_name} />
-            <Info label="Pending With" value={request.status === 'pending' ? request.approver_name || '-' : '-'} />
+            <Info label="Current Owner" value={request.current_owner_name || (request.status === 'pending' ? request.approver_name || '-' : '-')} />
+            <Info label="Submitted To" value={request.submitted_to_name || '-'} />
+            <Info label="Pending Since" value={request.pending_since ? `${formatDateTime(request.pending_since)} (${request.days_pending ?? 0} days)` : '-'} />
             <Info label="Submitted" value={formatDateTime(request.submitted_at)} />
             <Info label="Updated" value={formatDateTime(request.updated_at)} />
             {request.status === 'paid' && <Info label="Paid On" value={formatDateTime(request.expense?.paid_at)} />}
           </div>
+          <WorkflowProgressTracker request={request} />
+          {request.can_reassign && isPrivilegedAdmin(userRole) && request.status === 'pending' && (
+            <Card className="mt-4 p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-sm font-bold text-[#2F3437]"><UserRound size={15} className="text-olive" /> Ownership</div>
+                <Button size="sm" variant="ghost" icon={<GitBranch size={13} />} onClick={() => setReassignOpen((value) => !value)}>{reassignOpen ? 'Close' : 'Reassign'}</Button>
+              </div>
+              <div className="text-sm text-gray-600">Current owner: <span className="font-semibold text-[#2F3437]">{request.current_owner_name || '-'}</span></div>
+              {reassignOpen && (
+                <div className="mt-4 grid gap-3">
+                  <select value={newOwnerId} onChange={(event) => setNewOwnerId(event.target.value)} className="h-10 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 text-sm outline-none focus:border-olive">
+                    <option value="">Select new owner</option>
+                    {employees.map((employee) => (
+                      <option key={employee.id} value={employee.id}>{employee.name} {employee.role ? `(${labelize(employee.role)})` : ''}</option>
+                    ))}
+                  </select>
+                  <textarea value={reassignReason} onChange={(event) => setReassignReason(event.target.value)} placeholder="Reason for reassignment..." className="min-h-[72px] rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 py-2 text-sm outline-none focus:border-olive" />
+                  <Button size="sm" disabled={reassigning} icon={reassigning ? <Loader2 size={13} className="animate-spin" /> : <GitBranch size={13} />} onClick={submitReassign}>Reassign Request</Button>
+                </div>
+              )}
+            </Card>
+          )}
           <Card className="mt-4 p-4">
             <div className="mb-1 text-xs font-bold uppercase tracking-wide text-gray-400">Reason</div>
             <p className="text-sm leading-6 text-[#2F3437]">{request.reason || '-'}</p>
@@ -496,11 +681,11 @@ function DetailDrawer({ request, userRole, onClose, onRefresh, onAction, onMarkP
               (request.attachments || []).map((item) => (
                 <div key={item.id} className="flex items-center justify-between gap-3 border-b border-[#E5E7EB] px-5 py-3 last:border-b-0">
                   <div>
-                    <div className="text-sm font-bold text-[#2F3437]">{item.file_name}</div>
+                    <div className="text-sm font-bold text-[#2F3437]">{item.original_file_name}</div>
                     <div className="text-xs text-gray-500">{formatFileSize(item.file_size_bytes)} • {formatDateTime(item.created_at)}</div>
                   </div>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="ghost" onClick={() => viewAttachment(item.id)}>View</Button>
+                    <Button size="sm" variant="ghost" onClick={() => downloadAttachment(item.id, item.original_file_name)}>Download</Button>
                     {request.status !== 'approved' && request.status !== 'paid' && <Button size="sm" variant="ghost" icon={<Trash2 size={13} />} onClick={() => deleteAttachment(item.id)}>Delete</Button>}
                   </div>
                 </div>
@@ -511,7 +696,7 @@ function DetailDrawer({ request, userRole, onClose, onRefresh, onAction, onMarkP
                 <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm font-semibold text-olive hover:bg-hover-bg">
                   {uploading ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
                   Upload Receipt
-                  <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden" disabled={uploading} onChange={(event) => uploadReceipt(event.target.files?.[0] || null)} />
+                  <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" className="hidden" disabled={uploading} onChange={(event) => uploadReceipt(event.target.files?.[0] || null)} />
                 </label>
               </div>
             )}
@@ -535,6 +720,20 @@ function DetailDrawer({ request, userRole, onClose, onRefresh, onAction, onMarkP
             </div>
           </Card>
           <Card className="mt-4 overflow-hidden">
+            <CardHeader title="Timeline" icon={<CalendarDays size={15} />} />
+            {timeline.length === 0 ? (
+              <div className="px-5 py-5 text-sm text-gray-500">No timeline events yet.</div>
+            ) : (
+              timeline.map((item) => (
+                <div key={item.id} className="border-b border-[#E5E7EB] px-5 py-3 text-sm last:border-b-0">
+                  <div className="font-semibold text-[#2F3437]">{item.title}</div>
+                  <div className="mt-1 text-xs leading-5 text-gray-500">{item.detail}</div>
+                  <div className="mt-1 text-[11px] text-gray-400">{formatDateTime(item.at)}</div>
+                </div>
+              ))
+            )}
+          </Card>
+          <Card className="mt-4 overflow-hidden">
             <CardHeader title="History" icon={<CalendarDays size={15} />} />
             {(request.history || []).map((item) => (
               <div key={item.id} className="border-b border-[#E5E7EB] px-5 py-3 text-sm last:border-b-0">
@@ -553,17 +752,6 @@ function DetailDrawer({ request, userRole, onClose, onRefresh, onAction, onMarkP
         </div>
       </Card>
       </div>
-      {viewingAttachment && (
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/60 p-6" onClick={() => setViewingAttachment(null)}>
-          <div className="max-h-[90vh] max-w-4xl overflow-hidden rounded-2xl bg-white p-4 shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <div className="mb-3 flex items-center justify-between gap-4">
-              <div className="font-bold text-[#2F3437]">{viewingAttachment.file_name}</div>
-              <button className="rounded-lg p-2 text-gray-400 hover:bg-hover-bg" onClick={() => setViewingAttachment(null)}><X size={18} /></button>
-            </div>
-            <img src={viewingAttachment.data_uri} className="max-h-[78vh] max-w-full rounded-xl object-contain" />
-          </div>
-        </div>
-      )}
     </>,
     document.body
   );
@@ -587,6 +775,7 @@ export function RequestsPage() {
   const [error, setError] = useState('');
   const [modalType, setModalType] = useState<RequestType | null>(null);
   const [detail, setDetail] = useState<EmployeeRequest | null>(null);
+  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -595,6 +784,7 @@ export function RequestsPage() {
 
   const role = roleKey(user?.role);
   const canReview = ['manager', 'super_admin', 'admin', 'hr_admin', 'global_access'].includes(role);
+  const canReassign = isPrivilegedAdmin(user?.role);
   const headers = useMemo(() => ({
     'Content-Type': 'application/json',
     'x-user-id': user?.id || '',
@@ -631,6 +821,25 @@ export function RequestsPage() {
   }, [canReview, dateFrom, dateTo, headers, search, statusFilter, typeFilter, user]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!user || !canReassign) return;
+    const controller = new AbortController();
+    const loadEmployees = async () => {
+      const res = await fetch(`${API_BASE}/employees/?per_page=100`, { headers, signal: controller.signal });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) return;
+      const rows = Array.isArray(body) ? body : body?.employees || body?.items || [];
+      setEmployees(rows.map((item: any) => ({
+        id: item.id,
+        name: `${item.first_name || ''} ${item.last_name || ''}`.trim() || item.work_email || item.id,
+        work_email: item.work_email,
+        role: item.role,
+      })));
+    };
+    loadEmployees().catch(() => undefined);
+    return () => controller.abort();
+  }, [canReassign, headers, user]);
 
   const refreshDetail = async (id: string) => {
     const res = await fetch(`${API_BASE}/requests/${id}`, { headers });
@@ -686,6 +895,7 @@ export function RequestsPage() {
     if (form.attachment) {
       const uploadData = new FormData();
       uploadData.append('file', form.attachment);
+      uploadData.append('document_type', 'EXPENSE_RECEIPT');
       const uploadHeaders = { 'x-user-id': headers['x-user-id'], 'x-user-email': headers['x-user-email'] };
       const uploadRes = await fetch(`${API_BASE}/requests/${body.id}/attachments`, {
         method: 'POST',
@@ -765,6 +975,22 @@ export function RequestsPage() {
     await load();
   };
 
+  const reassign = async (row: EmployeeRequest, ownerId: string, reason: string) => {
+    const res = await fetch(`${API_BASE}/requests/${row.id}/reassign`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ new_owner_id: ownerId, reason }),
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) {
+      showToast({ message: body?.detail || 'Could not reassign request.' });
+      return;
+    }
+    showToast({ message: 'Request reassigned.' });
+    setDetail(body);
+    await load();
+  };
+
   return (
     <PageShell>
       {error && <div className="mb-4 rounded-lg border border-status-error/20 bg-status-error/10 px-4 py-3 text-sm text-status-error">{error}</div>}
@@ -795,12 +1021,12 @@ export function RequestsPage() {
         ) : (
           <>
             <RequestsTable title="My Requests" rows={myRequests} empty="You have not created any requests yet." canCreate onCreate={() => setModalType('wfh')} onView={openDetail} onAction={runAction} />
-            {canReview && <RequestsTable title="Approval Queue" rows={queue} empty="No requests are waiting for your approval." onView={openDetail} onAction={runAction} />}
+            {canReview && <RequestsTable title="Approval Queue" rows={queue} empty="No requests are waiting for your approval." canReassign={canReassign} onReassign={openDetail} onView={openDetail} onAction={runAction} />}
           </>
         )}
       </div>
       {modalType && <RequestModal initialType={modalType} onClose={() => setModalType(null)} onSave={createFromForm} />}
-      {detail && <DetailDrawer request={detail} userRole={user?.role} onClose={() => setDetail(null)} onRefresh={refreshDetail} onAction={runAction} onMarkPaid={markPaid} headers={headers} />}
+      {detail && <DetailDrawer request={detail} userRole={user?.role} employees={employees} onClose={() => setDetail(null)} onRefresh={refreshDetail} onAction={runAction} onMarkPaid={markPaid} onReassign={reassign} headers={headers} />}
     </PageShell>
   );
 }

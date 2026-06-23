@@ -22,6 +22,7 @@ from app.core.database import (
     ensure_time_off_columns,
     ensure_leave_type_policy_columns,
     ensure_allocation_columns,
+    ensure_project_workflow_tables,
     ensure_staffing_fulfillment_columns,
     ensure_employee_request_tables,
     SessionLocal,
@@ -62,6 +63,7 @@ from app.api.admin_time_off import router as admin_time_off_router
 from app.api.client_onboarding import router as client_onboarding_router
 from app.api.audit_logs import router as audit_logs_router
 from app.api.allocations import router as allocations_router
+from app.api.projects import router as projects_router
 from app.api.forecasting import router as forecasting_router
 from app.api.staffing_requests import router as staffing_requests_router
 from app.api.admin_security import router as admin_security_router
@@ -209,6 +211,7 @@ async def lifespan(app: FastAPI):
     ensure_time_off_columns()
     ensure_leave_type_policy_columns()
     ensure_allocation_columns()
+    ensure_project_workflow_tables()
     ensure_staffing_fulfillment_columns()
     ensure_employee_request_tables()
     logger.info("All database tables created")
@@ -258,6 +261,7 @@ app.include_router(admin_time_off_router, prefix="/api/v1")
 app.include_router(client_onboarding_router, prefix="/api/v1")
 app.include_router(audit_logs_router, prefix="/api/v1")
 app.include_router(allocations_router, prefix="/api/v1")
+app.include_router(projects_router, prefix="/api/v1")
 app.include_router(forecasting_router, prefix="/api/v1")
 app.include_router(staffing_requests_router, prefix="/api/v1")
 app.include_router(admin_security_router, prefix="/api/v1")

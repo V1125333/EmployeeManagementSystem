@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.models.allocation import Allocation
 from app.models.employee import Employee
-from app.models.operations import Project
+from app.models.operations import Notification, Project
 from app.schemas.allocation import AllocationCreate, AllocationUpdate
 from app.services.audit_service import changed_fields, log_audit
 
@@ -61,6 +61,14 @@ def _require_employee(db: Session, employee_id: str, label: str) -> Employee:
     if not employee:
         raise HTTPException(status_code=422, detail=f"{label} not found.")
     return employee
+
+
+def _employee_name(employee: Employee | None) -> str | None:
+    if not employee:
+        return None
+    middle_name = getattr(employee, "middle_name", None)
+    parts = [employee.first_name, middle_name, employee.last_name]
+    return " ".join(part.strip() for part in parts if part and part.strip()) or employee.work_email
 
 
 def _validate_project(db: Session, project_id: str | None, project_name: str | None) -> str | None:
@@ -132,20 +140,38 @@ def create_allocation(db: Session, data: AllocationCreate, created_by_id: str, c
     )
     db.add(allocation)
     db.flush()
+    employee = db.query(Employee).filter(Employee.id == allocation.employee_id).first()
+    project = db.query(Project).filter(Project.id == allocation.project_id).first() if allocation.project_id else None
     log_audit(
         db,
         db.query(Employee).filter(Employee.id == created_by_id).first(),
-        action="allocation_created",
-        entity_type="allocation",
-        entity_id=allocation.id,
+        action="project_employee_assigned" if allocation.project_id else "allocation_created",
+        entity_type="project" if allocation.project_id else "allocation",
+        entity_id=allocation.project_id or allocation.id,
         new_values=_values(allocation),
         metadata={
             "employee_id": allocation.employee_id,
             "allocation_id": allocation.id,
+            "project_name": project.name if project else allocation.project_name,
+            "allocation_percentage": allocation.allocation_percentage,
+            "allocation_role": allocation.allocation_role,
             "changed_by": created_by_id,
             "changed_at": datetime.utcnow().isoformat(),
         },
     )
+    if employee:
+        db.add(
+            Notification(
+                user_id=employee.id,
+                title="Project assignment updated",
+                message=f"You have been assigned to {allocation.project_name or 'a project'} as {allocation.allocation_role}.",
+                type="allocation",
+                notification_type="project_assignment",
+                related_entity_type="allocation",
+                related_entity_id=allocation.id,
+                link_url="/profile?tab=allocations",
+            )
+        )
     if commit:
         db.commit()
         db.refresh(allocation)
@@ -271,7 +297,10 @@ def get_upcoming_allocations(db: Session, employee_id: str) -> list[Allocation]:
 
 def serialize_allocation(db: Session, allocation: Allocation) -> dict[str, Any]:
     manager = db.query(Employee).filter(Employee.id == allocation.manager_id).first()
+    employee = db.query(Employee).filter(Employee.id == allocation.employee_id).first()
     return {
         **_values(allocation),
+        "employee_name": _employee_name(employee),
+        "employee_email": employee.work_email if employee else None,
         "manager_name": f"{manager.first_name} {manager.last_name}".strip() if manager else None,
     }

@@ -20,6 +20,8 @@ import { WorkforceForecastPage } from '@/pages/WorkforceForecastPage';
 import { StaffingRequestDetailPage } from '@/pages/StaffingRequestDetailPage';
 import { StaffingRequestsPage } from '@/pages/StaffingRequestsPage';
 import { RequestsPage } from '@/pages/RequestsPage';
+import { ProjectDetailPage } from '@/pages/ProjectDetailPage';
+import { ProjectsPage } from '@/pages/ProjectsPage';
 import {
   OnboardingPage,
   ClientOnboardingPage,
@@ -63,6 +65,8 @@ export default function App() {
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/notifications" element={<EmployeeNotificationsPage />} />
                 <Route path="/bench" element={<BenchPage />} />
+                <Route path="/projects" element={<ProjectsPage />} />
+                <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
                 <Route path="/staffing-requests" element={<StaffingRequestsPage />} />
                 <Route path="/staffing-requests/:requestId" element={<StaffingRequestDetailPage />} />
                 <Route path="/forecasting" element={<WorkforceForecastPage />} />

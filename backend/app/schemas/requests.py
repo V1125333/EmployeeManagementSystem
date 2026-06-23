@@ -1,8 +1,20 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
+
+
+DocumentType = Literal[
+    "EXPENSE_RECEIPT",
+    "MEDICAL_BILL",
+    "FOOD_BILL",
+    "REQUEST_LETTER",
+    "OVERTIME_PROOF",
+    "WFH_SUPPORT",
+    "OTHER",
+]
 
 
 class WFHData(BaseModel):
@@ -75,6 +87,11 @@ class CancelSchema(BaseModel):
     reason: str | None = Field(default=None, max_length=500)
 
 
+class ReassignSchema(BaseModel):
+    new_owner_id: str = Field(..., min_length=1, max_length=36)
+    reason: str = Field(..., min_length=1, max_length=500)
+
+
 class CommentSchema(BaseModel):
     body: str = Field(..., min_length=1, max_length=1000)
     is_internal: bool = False
@@ -82,8 +99,12 @@ class CommentSchema(BaseModel):
 
 class AttachmentOut(BaseModel):
     id: str
-    file_name: str
-    file_size_bytes: int | None
+    request_id: str
+    original_file_name: str
+    file_extension: str | None
     mime_type: str | None
+    file_size_bytes: int | None
+    document_type: str
+    storage_provider: str
     uploaded_by_name: str
     created_at: datetime

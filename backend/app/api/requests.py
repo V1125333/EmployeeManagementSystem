@@ -2,31 +2,36 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, Query, UploadFile
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas.requests import ApproveSchema, CancelSchema, CommentSchema, RejectSchema, RequestCreateSchema, RequestUpdateSchema
+from app.schemas.requests import ApproveSchema, CancelSchema, CommentSchema, ReassignSchema, RejectSchema, RequestCreateSchema, RequestUpdateSchema
+from app.services.attachment_service import (
+    delete_attachment,
+    download_attachment,
+    list_attachments,
+    serialize_attachment,
+    upload_attachment,
+)
 from app.services.requests_service import (
     add_comment,
     approve_request,
     cancel_request,
     create_request,
-    delete_attachment,
     ensure_read_access,
-    get_attachment,
     get_approval_queue,
     get_my_requests,
     get_request,
     get_types,
     mark_expense_paid,
     reject_request,
-    serialize_attachment,
+    reassign_request,
     serialize_comment,
     serialize_request,
     submit_request,
     update_request,
-    upload_attachment,
 )
 from app.services.settings_service import get_current_employee
 
@@ -165,6 +170,19 @@ async def reject_employee_request(
     return serialize_request(db, row, actor, include_detail=True)
 
 
+@router.post("/{request_id}/reassign")
+async def reassign_employee_request(
+    request_id: str,
+    payload: ReassignSchema,
+    db: Session = Depends(get_db),
+    x_user_id: str | None = Header(None, alias="x-user-id"),
+    x_user_email: str | None = Header(None, alias="x-user-email"),
+):
+    actor = actor_from_headers(db, x_user_id, x_user_email)
+    row = reassign_request(db, actor, request_id, payload)
+    return serialize_request(db, row, actor, include_detail=True)
+
+
 @router.post("/{request_id}/comments")
 async def add_request_comment(
     request_id: str,
@@ -182,6 +200,7 @@ async def add_request_comment(
 async def upload_request_attachment(
     request_id: str,
     file: UploadFile = File(...),
+    document_type: str = Form("OTHER"),
     db: Session = Depends(get_db),
     x_user_id: str | None = Header(None, alias="x-user-id"),
     x_user_email: str | None = Header(None, alias="x-user-email"),
@@ -195,12 +214,24 @@ async def upload_request_attachment(
         file.filename or "receipt",
         file.content_type,
         content,
+        document_type,
     )
     return serialize_attachment(db, row)
 
 
-@router.get("/{request_id}/attachments/{attachment_id}")
-async def get_request_attachment(
+@router.get("/{request_id}/attachments")
+async def list_request_attachments(
+    request_id: str,
+    db: Session = Depends(get_db),
+    x_user_id: str | None = Header(None, alias="x-user-id"),
+    x_user_email: str | None = Header(None, alias="x-user-email"),
+):
+    actor = actor_from_headers(db, x_user_id, x_user_email)
+    return [serialize_attachment(db, row) for row in list_attachments(db, actor, request_id)]
+
+
+@router.get("/{request_id}/attachments/{attachment_id}/download")
+async def download_request_attachment(
     request_id: str,
     attachment_id: str,
     db: Session = Depends(get_db),
@@ -208,15 +239,13 @@ async def get_request_attachment(
     x_user_email: str | None = Header(None, alias="x-user-email"),
 ):
     actor = actor_from_headers(db, x_user_id, x_user_email)
-    row = get_attachment(db, actor, attachment_id)
-    if row.request_id != request_id:
-        raise HTTPException(status_code=404, detail="Attachment not found.")
-    return {
-        "id": row.id,
-        "file_name": row.file_name,
-        "mime_type": row.mime_type,
-        "data_uri": row.storage_path,
-    }
+    file_bytes, mime_type, original_name = download_attachment(db, actor, request_id, attachment_id)
+    safe_name = original_name.replace('"', "")
+    return Response(
+        content=file_bytes,
+        media_type=mime_type,
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
+    )
 
 
 @router.delete("/{request_id}/attachments/{attachment_id}")
@@ -228,10 +257,7 @@ async def delete_request_attachment(
     x_user_email: str | None = Header(None, alias="x-user-email"),
 ):
     actor = actor_from_headers(db, x_user_id, x_user_email)
-    row = get_attachment(db, actor, attachment_id)
-    if row.request_id != request_id:
-        raise HTTPException(status_code=404, detail="Attachment not found.")
-    delete_attachment(db, actor, attachment_id)
+    delete_attachment(db, actor, request_id, attachment_id)
     return {"success": True}
 
 

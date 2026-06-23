@@ -14,9 +14,13 @@ class EmployeeRequest(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     employee_id: Mapped[str] = mapped_column(String(36), ForeignKey("employees.id"), nullable=False, index=True)
+    ticket_number: Mapped[str | None] = mapped_column(String(30), unique=True, nullable=True, index=True)
     request_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
+    current_owner_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("employees.id"), nullable=True, index=True)
+    submitted_to_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("employees.id"), nullable=True)
+    pending_since: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     wfh_from_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     wfh_to_date: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -55,6 +59,14 @@ class EmployeeRequest(Base):
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class RequestTicketCounter(Base):
+    __tablename__ = "request_ticket_counters"
+
+    prefix: Mapped[str] = mapped_column(String(10), primary_key=True)
+    year: Mapped[int] = mapped_column(primary_key=True)
+    last_value: Mapped[int] = mapped_column(default=0)
+
+
 class RequestStatusHistory(Base):
     __tablename__ = "request_status_history"
 
@@ -84,10 +96,23 @@ class RequestAttachment(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     request_id: Mapped[str] = mapped_column(String(36), ForeignKey("employee_requests.id"), nullable=False, index=True)
-    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    uploaded_by_id: Mapped[str] = mapped_column(String(36), ForeignKey("employees.id"), nullable=False)
-    file_size_bytes: Mapped[int | None] = mapped_column(nullable=True)
+    uploaded_by_id: Mapped[str] = mapped_column(String(36), ForeignKey("employees.id"), nullable=False, index=True)
+
+    original_file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    stored_file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_extension: Mapped[str | None] = mapped_column(String(20), nullable=True)
     mime_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    file_size_bytes: Mapped[int | None] = mapped_column(nullable=True)
+    checksum_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    storage_provider: Mapped[str] = mapped_column(String(30), nullable=False, default="local")
     storage_path: Mapped[str] = mapped_column(Text, nullable=False)
-    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    file_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    document_type: Mapped[str] = mapped_column(String(50), nullable=False, default="OTHER", index=True)
+
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    deleted_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("employees.id"), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

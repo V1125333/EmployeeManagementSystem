@@ -40,6 +40,18 @@ class Settings:
     REQUESTS_OVERTIME_MAX_DURATION_MINUTES: int = int(os.getenv("REQUESTS_OVERTIME_MAX_DURATION_MINUTES", "720"))
     REQUESTS_WFH_MAX_DAYS: int = int(os.getenv("REQUESTS_WFH_MAX_DAYS", "90"))
 
+    # Storage
+    STORAGE_PROVIDER: str = os.getenv("STORAGE_PROVIDER", "local")
+    LOCAL_UPLOAD_ROOT: str = os.getenv("LOCAL_UPLOAD_ROOT", "uploads")
+    ATTACHMENT_MAX_FILE_SIZE_BYTES: int = int(os.getenv("ATTACHMENT_MAX_FILE_SIZE_BYTES", str(10 * 1024 * 1024)))
+    ATTACHMENT_MAX_FILES_PER_REQUEST: int = int(os.getenv("ATTACHMENT_MAX_FILES_PER_REQUEST", "5"))
+
+    # Future Hetzner/S3 storage
+    HETZNER_BUCKET_NAME: str = os.getenv("HETZNER_BUCKET_NAME", "")
+    HETZNER_ENDPOINT: str = os.getenv("HETZNER_ENDPOINT", "")
+    HETZNER_ACCESS_KEY: str = os.getenv("HETZNER_ACCESS_KEY", "")
+    HETZNER_SECRET_KEY: str = os.getenv("HETZNER_SECRET_KEY", "")
+
     # Account recovery
     RESET_TOKEN_EXPIRY_MINUTES: int = int(os.getenv("RESET_TOKEN_EXPIRY_MINUTES", "15"))
     RESET_MAX_ATTEMPTS: int = int(os.getenv("RESET_MAX_ATTEMPTS", "5"))

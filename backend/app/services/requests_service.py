@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
@@ -13,8 +12,8 @@ from app.core.config import settings
 from app.models.employee import Employee
 from app.models.leave_attendance import LeaveRequest
 from app.models.operations import ActionInboxItem, Notification
-from app.models.requests import EmployeeRequest, RequestAttachment, RequestComment, RequestStatusHistory
-from app.schemas.requests import CommentSchema, RequestCreateSchema, RequestUpdateSchema
+from app.models.requests import EmployeeRequest, RequestAttachment, RequestComment, RequestStatusHistory, RequestTicketCounter
+from app.schemas.requests import CommentSchema, ReassignSchema, RequestCreateSchema, RequestUpdateSchema
 from app.services.audit_service import log_audit, log_authorization_failure
 from app.services.settings_service import is_admin_role, normalize_role
 
@@ -25,8 +24,13 @@ REQUEST_TYPES = {
     "expense": "Expense Reimbursement",
 }
 
-ALLOWED_ATTACHMENT_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
-MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+_TICKET_PREFIX = {
+    "wfh": "WFH",
+    "short_permission": "SP",
+    "overtime": "OT",
+    "expense": "EXP",
+}
+
 STATUSES = {"draft", "pending", "approved", "rejected", "cancelled", "paid"}
 REVIEWER_ROLES = {"manager", "super_admin", "admin", "hr_admin", "global_access"}
 HR_ADMIN_ROLES = {"super_admin", "admin", "hr_admin", "global_access"}
@@ -92,6 +96,24 @@ def _hr_admins(db: Session) -> list[Employee]:
     return [row for row in rows if normalize_role(row.role) in HR_ADMIN_ROLES]
 
 
+def _generate_ticket_number(db: Session, request_type: str) -> str:
+    prefix = _TICKET_PREFIX.get(request_type, "REQ")
+    year = utc_now().year
+    counter = (
+        db.query(RequestTicketCounter)
+        .filter(RequestTicketCounter.prefix == prefix, RequestTicketCounter.year == year)
+        .with_for_update()
+        .first()
+    )
+    if not counter:
+        counter = RequestTicketCounter(prefix=prefix, year=year, last_value=0)
+        db.add(counter)
+        db.flush()
+    counter.last_value += 1
+    db.flush()
+    return f"{prefix}-{year}-{counter.last_value:06d}"
+
+
 def _request_owner(db: Session, request: EmployeeRequest) -> Employee | None:
     return find_employee(db, request.employee_id)
 
@@ -100,6 +122,7 @@ def _can_read(db: Session, actor: Employee, request: EmployeeRequest) -> bool:
     owner = _request_owner(db, request)
     return (
         request.employee_id == actor.id
+        or request.current_owner_id == actor.id
         or request.reviewed_by_id == actor.id
         or _is_admin(actor)
         or _is_direct_report(actor, owner)
@@ -118,7 +141,7 @@ def _can_review(db: Session, actor: Employee, request: EmployeeRequest) -> bool:
     owner = _request_owner(db, request)
     if request.employee_id == actor.id:
         return False
-    return _is_admin(actor) or (_is_reviewer(actor) and _is_direct_report(actor, owner))
+    return _is_admin(actor) or request.current_owner_id == actor.id or (_is_reviewer(actor) and _is_direct_report(actor, owner))
 
 
 def _ensure_review_access(db: Session, actor: Employee, request: EmployeeRequest) -> None:
@@ -132,6 +155,9 @@ def _ensure_review_access(db: Session, actor: Employee, request: EmployeeRequest
 def _snapshot(row: EmployeeRequest) -> dict[str, Any]:
     return {
         "status": row.status,
+        "ticket_number": row.ticket_number,
+        "current_owner_id": row.current_owner_id,
+        "submitted_to_id": row.submitted_to_id,
         "request_type": row.request_type,
         "title": row.title,
         "wfh_from_date": row.wfh_from_date,
@@ -188,7 +214,7 @@ def _transition(
         old_values={"status": old_status},
         new_values={"status": to_status},
         reason=reason,
-        metadata={"reviewer_notes": notes} if notes else None,
+        metadata={**({"reviewer_notes": notes} if notes else {}), "ticket_number": row.ticket_number},
     )
 
 
@@ -231,25 +257,26 @@ def _clear_inbox(db: Session, request_id: str) -> None:
 
 def _notify_approvers(db: Session, row: EmployeeRequest, employee: Employee) -> None:
     recipients: dict[str, Employee] = {}
-    manager = _manager_for_employee(db, employee)
-    if manager:
-        recipients[manager.id] = manager
-    for admin in _hr_admins(db):
-        if admin.id != employee.id:
-            recipients[admin.id] = admin
+    current_owner = find_employee(db, row.current_owner_id)
+    if current_owner:
+        recipients[current_owner.id] = current_owner
+    elif row.status == "pending":
+        for admin in _hr_admins(db):
+            if admin.id != employee.id:
+                recipients[admin.id] = admin
     for recipient in recipients.values():
         _notify(
             db,
             recipient.id,
             "Request awaiting approval",
-            f"{employee_name(employee)} submitted {REQUEST_TYPES[row.request_type]}.",
+            f"{employee_name(employee)} submitted {REQUEST_TYPES[row.request_type]} ({row.ticket_number or row.id}).",
             row.id,
         )
         _inbox(
             db,
             recipient.id,
             f"{REQUEST_TYPES[row.request_type]} approval",
-            f"{employee_name(employee)} submitted a request for review.",
+            f"{employee_name(employee)} submitted {row.ticket_number or 'a request'} for review.",
             row.id,
         )
 
@@ -259,7 +286,7 @@ def _notify_employee(db: Session, row: EmployeeRequest, reviewer: Employee, stat
         db,
         row.employee_id,
         f"Request {status}",
-        f"Your {REQUEST_TYPES[row.request_type]} request was {status} by {employee_name(reviewer)}.",
+        f"Your {REQUEST_TYPES[row.request_type]} request {row.ticket_number or ''} was {status} by {employee_name(reviewer)}.".strip(),
         row.id,
     )
 
@@ -269,7 +296,7 @@ def _notify_expense_paid(db: Session, row: EmployeeRequest) -> None:
         db,
         row.employee_id,
         "Expense reimbursement processed",
-        f"Your expense reimbursement of {row.exp_currency or 'USD'} {_decimal(row.exp_amount):g} has been processed.",
+        f"Your expense reimbursement request {row.ticket_number or ''} has been processed.".strip(),
         row.id,
     )
 
@@ -446,9 +473,13 @@ def _serialize_attachment(row: RequestAttachment) -> dict[str, Any]:
     uploader = getattr(row, "_uploaded_by_name", None)
     return {
         "id": row.id,
-        "file_name": row.file_name,
+        "request_id": row.request_id,
+        "original_file_name": row.original_file_name,
+        "file_extension": row.file_extension,
         "file_size_bytes": row.file_size_bytes,
         "mime_type": row.mime_type,
+        "document_type": row.document_type,
+        "storage_provider": row.storage_provider,
         "uploaded_by_name": uploader,
         "created_at": row.created_at,
     }
@@ -487,19 +518,31 @@ def _serialize_history(db: Session, row: RequestStatusHistory) -> dict[str, Any]
 def serialize_request(db: Session, row: EmployeeRequest, actor: Employee | None = None, include_detail: bool = False) -> dict[str, Any]:
     employee = find_employee(db, row.employee_id)
     reviewer = find_employee(db, row.reviewed_by_id)
+    current_owner = find_employee(db, row.current_owner_id)
+    submitted_to = find_employee(db, row.submitted_to_id)
     start_date, end_date = _start_end_dates(row)
     start_time, end_time = _start_end_times(row)
     amount = _decimal(row.exp_amount)
     manager = _manager_for_employee(db, employee) if employee else None
     pending_with = employee_name(manager) if manager else "HR Admin"
+    days_pending = None
+    if row.pending_since:
+        days_pending = max(0, (utc_now() - row.pending_since).days)
     data = {
         "id": row.id,
         "employee_id": row.employee_id,
         "employee_name": employee_name(employee),
+        "ticket_number": row.ticket_number,
         "request_type": row.request_type,
         "request_type_label": REQUEST_TYPES.get(row.request_type, row.request_type),
         "title": row.title,
         "status": row.status,
+        "current_owner_id": row.current_owner_id,
+        "current_owner_name": employee_name(current_owner) if current_owner else None,
+        "submitted_to_id": row.submitted_to_id,
+        "submitted_to_name": employee_name(submitted_to) if submitted_to else None,
+        "pending_since": row.pending_since,
+        "days_pending": days_pending,
         "start_date": start_date,
         "end_date": end_date,
         "request_date": _request_date(row),
@@ -511,7 +554,7 @@ def serialize_request(db: Session, row: EmployeeRequest, actor: Employee | None 
         "currency": row.exp_currency,
         "category": row.exp_category,
         "reason": _reason(row),
-        "approver_name": pending_with,
+        "approver_name": employee_name(current_owner) if current_owner else pending_with,
         "reviewed_by_id": row.reviewed_by_id,
         "reviewed_by_name": employee_name(reviewer) if reviewer else None,
         "reviewed_at": row.reviewed_at,
@@ -528,6 +571,7 @@ def serialize_request(db: Session, row: EmployeeRequest, actor: Employee | None 
         "can_submit": bool(actor and actor.id == row.employee_id and row.status == "draft"),
         "can_cancel": bool(actor and actor.id == row.employee_id and row.status in {"draft", "pending"}),
         "can_decide": bool(actor and row.status == "pending" and _can_review(db, actor, row)),
+        "can_reassign": bool(actor and row.status == "pending" and _is_admin(actor)),
         "wfh": {"from_date": row.wfh_from_date, "to_date": row.wfh_to_date, "reason": row.wfh_reason, "note": row.wfh_note},
         "short_permission": {"date": row.sp_date, "start_time": row.sp_start_time, "end_time": row.sp_end_time, "reason": row.sp_reason, "duration_minutes": row.sp_duration_minutes},
         "overtime": {"date": row.ot_date, "start_time": row.ot_start_time, "end_time": row.ot_end_time, "project_id": row.ot_project_id, "reason": row.ot_reason, "duration_minutes": row.ot_duration_minutes},
@@ -602,7 +646,14 @@ def get_my_requests(
         query = query.filter(EmployeeRequest.request_type == request_type)
     if search:
         like = f"%{search.strip()}%"
-        query = query.filter(or_(EmployeeRequest.title.ilike(like), EmployeeRequest.reason.ilike(like)))
+        query = query.filter(or_(
+            EmployeeRequest.ticket_number.ilike(like),
+            EmployeeRequest.title.ilike(like),
+            EmployeeRequest.wfh_reason.ilike(like),
+            EmployeeRequest.sp_reason.ilike(like),
+            EmployeeRequest.ot_reason.ilike(like),
+            EmployeeRequest.exp_description.ilike(like),
+        ))
     query = _date_filter(query, date_from, date_to)
     total = query.count()
     rows = query.order_by(EmployeeRequest.updated_at.desc(), EmployeeRequest.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
@@ -633,7 +684,17 @@ def get_approval_queue(
         query = query.filter(EmployeeRequest.request_type == request_type)
     if search:
         like = f"%{search.strip()}%"
-        query = query.filter(or_(Employee.first_name.ilike(like), Employee.last_name.ilike(like), Employee.work_email.ilike(like), EmployeeRequest.title.ilike(like)))
+        query = query.filter(or_(
+            Employee.first_name.ilike(like),
+            Employee.last_name.ilike(like),
+            Employee.work_email.ilike(like),
+            EmployeeRequest.ticket_number.ilike(like),
+            EmployeeRequest.title.ilike(like),
+            EmployeeRequest.wfh_reason.ilike(like),
+            EmployeeRequest.sp_reason.ilike(like),
+            EmployeeRequest.ot_reason.ilike(like),
+            EmployeeRequest.exp_description.ilike(like),
+        ))
     query = _date_filter(query, date_from, date_to)
     total = query.count()
     rows = query.order_by(EmployeeRequest.updated_at.desc(), EmployeeRequest.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
@@ -644,9 +705,11 @@ def create_request(db: Session, actor: Employee, payload: RequestCreateSchema) -
     status = "pending" if payload.submit_immediately else "draft"
     row = EmployeeRequest(
         employee_id=actor.id,
+        ticket_number=_generate_ticket_number(db, payload.request_type),
         request_type=payload.request_type,
         title=REQUEST_TYPES[payload.request_type],
         status="draft",
+        current_owner_id=actor.id,
         created_by=actor.id,
         updated_by=actor.id,
     )
@@ -656,10 +719,25 @@ def create_request(db: Session, actor: Employee, payload: RequestCreateSchema) -
     warning = _validate_request_fields(db, row, block_conflicts=status == "pending")
     if warning:
         setattr(row, "_warning", warning)
-    _transition(db, row, actor, status, "request_created" if status == "draft" else "request_submitted")
+    log_audit(
+        db,
+        actor,
+        "request_created",
+        "employee_request",
+        row.id,
+        new_values=_snapshot(row),
+        metadata={"ticket_number": row.ticket_number},
+    )
+    if status == "pending":
+        manager = _manager_for_employee(db, actor)
+        if not manager:
+            raise HTTPException(status_code=400, detail="No reporting manager found for this employee. Please contact HR.")
+        row.submitted_to_id = manager.id
+        row.current_owner_id = manager.id
+        row.pending_since = utc_now()
+    _transition(db, row, actor, status, "request_submitted" if status == "pending" else "request_created")
     if status == "pending":
         _notify_approvers(db, row, actor)
-    log_audit(db, actor, "request_created", "employee_request", row.id, new_values=_snapshot(row))
     db.commit()
     db.refresh(row)
     return row
@@ -678,7 +756,7 @@ def update_request(db: Session, actor: Employee, request_id: str, payload: Reque
         setattr(row, "_warning", warning)
     row.updated_by = actor.id
     row.updated_at = utc_now()
-    log_audit(db, actor, "request_updated", "employee_request", row.id, old_values=old, new_values=_snapshot(row))
+    log_audit(db, actor, "request_updated", "employee_request", row.id, old_values=old, new_values=_snapshot(row), metadata={"ticket_number": row.ticket_number})
     db.commit()
     db.refresh(row)
     return row
@@ -693,8 +771,15 @@ def submit_request(db: Session, actor: Employee, request_id: str) -> EmployeeReq
     warning = _validate_request_fields(db, row, block_conflicts=True)
     if warning:
         setattr(row, "_warning", warning)
+    employee = find_employee(db, row.employee_id)
+    manager = _manager_for_employee(db, employee) if employee else None
+    if not manager:
+        raise HTTPException(status_code=400, detail="No reporting manager found for this employee. Please contact HR.")
+    row.submitted_to_id = manager.id
+    row.current_owner_id = manager.id
+    row.pending_since = utc_now()
     _transition(db, row, actor, "pending", "request_submitted")
-    _notify_approvers(db, row, actor)
+    _notify_approvers(db, row, employee or actor)
     db.commit()
     db.refresh(row)
     return row
@@ -706,6 +791,8 @@ def cancel_request(db: Session, actor: Employee, request_id: str, reason: str | 
         raise HTTPException(status_code=403, detail="You can cancel only your own requests.")
     if row.status not in {"draft", "pending"}:
         raise HTTPException(status_code=400, detail="Only draft or pending requests can be cancelled.")
+    row.current_owner_id = None
+    row.pending_since = None
     _transition(db, row, actor, "cancelled", "request_cancelled", reason=reason)
     _clear_inbox(db, row.id)
     db.commit()
@@ -719,6 +806,23 @@ def approve_request(db: Session, actor: Employee, request_id: str, notes: str | 
     if row.status != "pending":
         raise HTTPException(status_code=400, detail="Only pending requests can be approved.")
     _transition(db, row, actor, "approved", "request_approved", notes=notes)
+    actor_role = normalize_role(actor.role)
+    if actor_role == "manager":
+        hr_admins = _hr_admins(db)
+        next_owner = next((item for item in hr_admins if item.id != actor.id and item.id != row.employee_id), None)
+        row.current_owner_id = next_owner.id if next_owner else None
+        row.pending_since = utc_now() if next_owner else None
+        if next_owner:
+            _notify(
+                db,
+                next_owner.id,
+                "Request awaiting HR review",
+                f"{row.ticket_number or 'A request'} was approved by {employee_name(actor)} and is ready for HR review.",
+                row.id,
+            )
+    else:
+        row.current_owner_id = None
+        row.pending_since = None
     _clear_inbox(db, row.id)
     _notify_employee(db, row, actor, "approved")
     db.commit()
@@ -731,6 +835,8 @@ def reject_request(db: Session, actor: Employee, request_id: str, reason: str) -
     _ensure_review_access(db, actor, row)
     if row.status != "pending":
         raise HTTPException(status_code=400, detail="Only pending requests can be rejected.")
+    row.current_owner_id = None
+    row.pending_since = None
     _transition(db, row, actor, "rejected", "request_rejected", reason=reason)
     _clear_inbox(db, row.id)
     _notify_employee(db, row, actor, "rejected")
@@ -751,10 +857,52 @@ def add_comment(db: Session, actor: Employee, request_id: str, payload: CommentS
         is_internal=payload.is_internal,
     )
     db.add(comment)
-    log_audit(db, actor, "request_comment_added", "employee_request", row.id, metadata={"internal": payload.is_internal})
+    log_audit(db, actor, "request_comment_added", "employee_request", row.id, metadata={"internal": payload.is_internal, "ticket_number": row.ticket_number})
     db.commit()
     db.refresh(comment)
     return comment
+
+
+def reassign_request(db: Session, actor: Employee, request_id: str, payload: ReassignSchema) -> EmployeeRequest:
+    if not _is_admin(actor):
+        raise HTTPException(status_code=403, detail="Only HR Admin and Super Admin can reassign requests.")
+    row = get_request(db, request_id)
+    if row.status != "pending":
+        raise HTTPException(status_code=400, detail="Only pending requests can be reassigned.")
+    new_owner = find_employee(db, payload.new_owner_id)
+    if not new_owner:
+        raise HTTPException(status_code=404, detail="New owner not found.")
+    old_owner = find_employee(db, row.current_owner_id)
+    old_owner_id = row.current_owner_id
+    row.current_owner_id = new_owner.id
+    row.pending_since = utc_now()
+    row.updated_by = actor.id
+    row.updated_at = utc_now()
+    reason = f"Reassigned from {employee_name(old_owner) if old_owner else 'Unassigned'} to {employee_name(new_owner)}. Reason: {payload.reason}"
+    db.add(RequestStatusHistory(
+        request_id=row.id,
+        from_status=row.status,
+        to_status=row.status,
+        changed_by_id=actor.id,
+        reason=reason,
+    ))
+    log_audit(
+        db,
+        actor,
+        "request_reassigned",
+        "employee_request",
+        row.id,
+        old_values={"current_owner_id": old_owner_id},
+        new_values={"current_owner_id": new_owner.id},
+        reason=payload.reason,
+        metadata={"ticket_number": row.ticket_number, "from_owner_id": old_owner_id, "to_owner_id": new_owner.id},
+    )
+    _clear_inbox(db, row.id)
+    _notify(db, new_owner.id, "Request reassigned to you", f"{row.ticket_number or 'A request'} needs your review.", row.id)
+    _inbox(db, new_owner.id, f"{REQUEST_TYPES[row.request_type]} review", f"{row.ticket_number or 'A request'} was reassigned to you.", row.id)
+    db.commit()
+    db.refresh(row)
+    return row
 
 
 def upload_attachment(
@@ -764,38 +912,11 @@ def upload_attachment(
     file_name: str,
     content_type: str | None,
     file_bytes: bytes,
+    document_type: str = "OTHER",
 ) -> RequestAttachment:
-    row = get_request(db, request_id)
-    ensure_read_access(db, actor, row)
-    if row.status not in {"draft", "pending"}:
-        raise HTTPException(status_code=400, detail="Attachments can only be added to draft or pending requests.")
-    if actor.id != row.employee_id and not _is_admin(actor):
-        raise HTTPException(status_code=403, detail="Not authorized to upload attachments for this request.")
-    if content_type not in ALLOWED_ATTACHMENT_MIME_TYPES:
-        raise HTTPException(status_code=400, detail="Invalid file type. Allowed: JPEG, PNG, WebP, PDF.")
-    if len(file_bytes) > MAX_ATTACHMENT_BYTES:
-        raise HTTPException(status_code=400, detail="File size exceeds 10MB.")
-    data_uri = f"data:{content_type};base64,{base64.b64encode(file_bytes).decode('utf-8')}"
-    attachment = RequestAttachment(
-        request_id=row.id,
-        file_name=file_name,
-        uploaded_by_id=actor.id,
-        file_size_bytes=len(file_bytes),
-        mime_type=content_type,
-        storage_path=data_uri,
-    )
-    db.add(attachment)
-    log_audit(
-        db,
-        actor,
-        "request_attachment_uploaded",
-        "employee_request",
-        row.id,
-        metadata={"file_name": file_name, "file_size_bytes": len(file_bytes), "mime_type": content_type},
-    )
-    db.commit()
-    db.refresh(attachment)
-    return attachment
+    from app.services.attachment_service import upload_attachment as upload_request_attachment
+
+    return upload_request_attachment(db, actor, request_id, file_name, content_type, file_bytes, document_type)
 
 
 def get_attachment(db: Session, actor: Employee, attachment_id: str) -> RequestAttachment:
@@ -812,33 +933,15 @@ def get_attachment(db: Session, actor: Employee, attachment_id: str) -> RequestA
 
 def delete_attachment(db: Session, actor: Employee, attachment_id: str) -> None:
     attachment = get_attachment(db, actor, attachment_id)
-    row = get_request(db, attachment.request_id)
-    if row.status not in {"draft", "pending"}:
-        raise HTTPException(status_code=400, detail="Attachments can only be deleted from draft or pending requests.")
-    if attachment.uploaded_by_id != actor.id and not _can_pay_expenses(actor):
-        raise HTTPException(status_code=403, detail="Not authorized to delete this attachment.")
-    attachment.is_deleted = True
-    log_audit(
-        db,
-        actor,
-        "request_attachment_deleted",
-        "employee_request",
-        row.id,
-        metadata={"attachment_id": attachment.id, "file_name": attachment.file_name},
-    )
-    db.commit()
+    from app.services.attachment_service import delete_attachment as delete_request_attachment
+
+    delete_request_attachment(db, actor, attachment.request_id, attachment_id)
 
 
 def serialize_attachment(db: Session, row: RequestAttachment) -> dict[str, Any]:
-    uploader = find_employee(db, row.uploaded_by_id)
-    return {
-        "id": row.id,
-        "file_name": row.file_name,
-        "file_size_bytes": row.file_size_bytes,
-        "mime_type": row.mime_type,
-        "uploaded_by_name": employee_name(uploader),
-        "created_at": row.created_at,
-    }
+    from app.services.attachment_service import serialize_attachment as serialize_request_attachment
+
+    return serialize_request_attachment(db, row)
 
 
 def mark_expense_paid(db: Session, actor: Employee, request_id: str) -> EmployeeRequest:
@@ -852,21 +955,24 @@ def mark_expense_paid(db: Session, actor: Employee, request_id: str) -> Employee
     if settings.REQUESTS_EXPENSE_RECEIPT_REQUIRED:
         receipt_count = db.query(RequestAttachment).filter(
             RequestAttachment.request_id == row.id,
+            RequestAttachment.document_type == "EXPENSE_RECEIPT",
             RequestAttachment.is_deleted.is_(False),
         ).count()
         if receipt_count == 0:
             raise HTTPException(status_code=400, detail="A receipt is required before this expense can be marked as paid.")
     row.exp_paid_at = utc_now()
     row.exp_paid_by_id = actor.id
+    row.current_owner_id = None
+    row.pending_since = None
     _transition(db, row, actor, "paid", "request_paid")
     _notify_expense_paid(db, row)
     log_audit(
         db,
         actor,
-        "expense_marked_paid",
+        "request_paid",
         "employee_request",
         row.id,
-        metadata={"amount": str(row.exp_amount), "currency": row.exp_currency},
+        metadata={"ticket_number": row.ticket_number},
     )
     db.commit()
     db.refresh(row)

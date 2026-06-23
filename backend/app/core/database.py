@@ -408,6 +408,41 @@ def ensure_allocation_columns():
                     raise
 
 
+def ensure_project_workflow_tables():
+    """Safely align project workflow columns and document tables."""
+    from app.models.operations import Project, ProjectDocument  # noqa: F401
+
+    Base.metadata.create_all(bind=engine)
+    inspector = inspect(engine)
+    table_names = inspector.get_table_names()
+    if "projects" not in table_names:
+        return
+
+    dialect = engine.dialect.name
+    project_columns = {column["name"] for column in inspector.get_columns("projects")}
+    statements = []
+
+    if "project_manager_id" not in project_columns:
+        if dialect == "postgresql":
+            statements.append("ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_manager_id VARCHAR(36) REFERENCES employees(id)")
+        else:
+            statements.append("ALTER TABLE projects ADD COLUMN project_manager_id VARCHAR(36)")
+
+    if dialect == "postgresql":
+        statements.extend([
+            "CREATE INDEX IF NOT EXISTS idx_projects_manager ON projects (project_manager_id)",
+            "CREATE INDEX IF NOT EXISTS idx_pd_project_id ON project_documents (project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_pd_is_deleted ON project_documents (is_deleted)",
+        ])
+
+    if not statements:
+        return
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+
+
 def ensure_staffing_fulfillment_columns():
     """Safely add Phase 7 fulfillment columns for existing local/dev databases."""
     inspector = inspect(engine)
@@ -482,6 +517,7 @@ def ensure_employee_request_tables():
         RequestAttachment,
         RequestComment,
         RequestStatusHistory,
+        RequestTicketCounter,
     )
 
     Base.metadata.create_all(bind=engine)
@@ -500,6 +536,9 @@ def ensure_employee_request_tables():
         "CREATE INDEX IF NOT EXISTS idx_er_status ON employee_requests (status)",
         "CREATE INDEX IF NOT EXISTS idx_er_request_type ON employee_requests (request_type)",
         "CREATE INDEX IF NOT EXISTS idx_er_pending ON employee_requests (status) WHERE status = 'pending'",
+        "CREATE INDEX IF NOT EXISTS idx_er_ticket_number ON employee_requests (ticket_number)",
+        "CREATE INDEX IF NOT EXISTS idx_er_current_owner ON employee_requests (current_owner_id)",
+        "CREATE INDEX IF NOT EXISTS idx_er_pending_since ON employee_requests (pending_since)",
         "CREATE INDEX IF NOT EXISTS idx_rsh_request_id ON request_status_history (request_id)",
         "CREATE INDEX IF NOT EXISTS idx_rc_request_id ON request_comments (request_id)",
         "CREATE INDEX IF NOT EXISTS idx_ra_request_id ON request_attachments (request_id)",
@@ -531,6 +570,10 @@ def ensure_employee_request_tables():
         "reviewed_by_id": "VARCHAR(36)",
         "reviewed_at": "TIMESTAMP",
         "reviewer_notes": "TEXT",
+        "ticket_number": "VARCHAR(30)",
+        "current_owner_id": "VARCHAR(36)",
+        "submitted_to_id": "VARCHAR(36)",
+        "pending_since": "TIMESTAMP",
     }
     history_columns = {
         "from_status": "VARCHAR(20)",

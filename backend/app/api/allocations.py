@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.allocation import Allocation
 from app.models.employee import Employee
+from app.models.operations import Project
 from app.schemas.allocation import AllocationCreate, AllocationOut, AllocationSummaryOut, AllocationUpdate, BenchEmployeeOut
 from app.services.allocation_service import (
     cancel_allocation,
@@ -225,6 +226,26 @@ async def employee_allocations(
     actor = get_current_employee(db, current_user_id, current_user_email)
     _require_read_access(db, actor, employee_id)
     return [serialize_allocation(db, item) for item in get_allocations_by_employee(db, employee_id)]
+
+
+@router.get("/project/{project_id}", response_model=list[AllocationOut])
+async def project_allocations(
+    project_id: str,
+    db: Session = Depends(get_db),
+    current_user_id: str | None = Header(None, alias="x-user-id"),
+    current_user_email: str | None = Header(None, alias="x-user-email"),
+):
+    get_current_employee(db, current_user_id, current_user_email)
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    allocations = (
+        db.query(Allocation)
+        .filter(Allocation.project_id == project_id)
+        .order_by(Allocation.status.asc(), Allocation.start_date.desc(), Allocation.updated_at.desc())
+        .all()
+    )
+    return [serialize_allocation(db, item) for item in allocations]
 
 
 @router.get("/employee/{employee_id}/summary", response_model=AllocationSummaryOut)

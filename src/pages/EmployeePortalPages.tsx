@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Bell,
+  Briefcase,
   BookOpen,
   CalendarCheck, CalendarClock, CalendarPlus, CheckCircle2, ClipboardCheck,
   Clock3, Download, FileText, LogIn, Pencil, Plus,
@@ -26,6 +27,7 @@ const dashboardCache: Record<string, {
   timesheetHistory: TimesheetWeek[];
   leaveApprovalRows: LeaveRequestItem[];
   timesheetApprovalRows: TimesheetApprovalItem[];
+  activeProjects: DashboardAllocation[];
 }> = {};
 
 interface AttendanceRecord {
@@ -92,6 +94,18 @@ interface TimesheetWeek {
   reviewer_notes?: string | null;
   entries: TimesheetEntry[];
   leave_days: TimesheetLeaveDay[];
+}
+
+interface DashboardAllocation {
+  id: string;
+  project_id: string | null;
+  project_name: string | null;
+  manager_name: string | null;
+  allocation_percentage: number;
+  allocation_role: string;
+  status: string;
+  start_date: string;
+  end_date: string | null;
 }
 
 interface TimesheetSummary {
@@ -729,6 +743,7 @@ export function EmployeeDashboardPage() {
   const [timesheetHistory, setTimesheetHistory] = useState<TimesheetWeek[]>(cachedDashboard?.timesheetHistory ?? []);
   const [approvalRows, setApprovalRows] = useState<LeaveRequestItem[]>(cachedDashboard?.leaveApprovalRows ?? []);
   const [timesheetApprovalRows, setTimesheetApprovalRows] = useState<TimesheetApprovalItem[]>(cachedDashboard?.timesheetApprovalRows ?? []);
+  const [activeProjects, setActiveProjects] = useState<DashboardAllocation[]>(cachedDashboard?.activeProjects ?? []);
 
   const headers = useMemo(() => ({
     'Content-Type': 'application/json',
@@ -744,18 +759,21 @@ export function EmployeeDashboardPage() {
       fetch(`${API_BASE}/timesheets/me/history`, { headers }).then((res) => res.ok ? res.json() : null),
       fetch(`${API_BASE}/leaves/approvals`, { headers }).then((res) => res.ok ? res.json() : null),
       fetch(`${API_BASE}/timesheets/approvals`, { headers }).then((res) => res.ok ? res.json() : null),
-    ]).then(([leaveData, timesheetSummaryData, timesheetHistoryData, approvalsData, timesheetApprovalsData]) => {
+      user.id ? fetch(`${API_BASE}/allocations/employee/${user.id}/active`, { headers }).then((res) => res.ok ? res.json() : null) : Promise.resolve(null),
+    ]).then(([leaveData, timesheetSummaryData, timesheetHistoryData, approvalsData, timesheetApprovalsData, activeProjectsData]) => {
       const existingCache = dashboardCacheKey ? dashboardCache[dashboardCacheKey] : undefined;
       const nextLeaveSummary = leaveData || existingCache?.leaveSummary || null;
       const nextTimesheetSummary = timesheetSummaryData || existingCache?.timesheetSummary || null;
       const nextTimesheetHistory = timesheetHistoryData || existingCache?.timesheetHistory || [];
       const nextApprovalRows = approvalsData?.approvals || existingCache?.leaveApprovalRows || [];
       const nextTimesheetApprovalRows = timesheetApprovalsData?.approvals || existingCache?.timesheetApprovalRows || [];
+      const nextActiveProjects = activeProjectsData || existingCache?.activeProjects || [];
       if (leaveData) setLeaveSummary(leaveData);
       if (timesheetSummaryData) setTimesheetSummary(timesheetSummaryData);
       if (timesheetHistoryData) setTimesheetHistory(timesheetHistoryData);
       if (approvalsData?.approvals) setApprovalRows(approvalsData.approvals);
       if (timesheetApprovalsData?.approvals) setTimesheetApprovalRows(timesheetApprovalsData.approvals);
+      if (activeProjectsData) setActiveProjects(activeProjectsData);
       if (dashboardCacheKey) {
         dashboardCache[dashboardCacheKey] = {
           leaveSummary: nextLeaveSummary,
@@ -763,6 +781,7 @@ export function EmployeeDashboardPage() {
           timesheetHistory: nextTimesheetHistory,
           leaveApprovalRows: nextApprovalRows,
           timesheetApprovalRows: nextTimesheetApprovalRows,
+          activeProjects: nextActiveProjects,
         };
       }
     }).catch(() => {
@@ -823,6 +842,26 @@ export function EmployeeDashboardPage() {
         <TimesheetSummaryCard summary={timesheetSummary} loading={!timesheetSummary} onClick={openTimesheetSummary} />
         <MetricCard label="Pending Actions" value={`${pendingActions}`} icon={<ClipboardCheck size={21} />} />
       </div>
+      {activeProjects.length > 0 && (
+        <Card className="mt-5 p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-bold text-[#2F3437]">
+              <Briefcase size={17} className="text-accent" />
+              My Projects
+            </div>
+            <Button size="sm" variant="ghost" onClick={() => navigate('/projects')}>View Projects</Button>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {activeProjects.slice(0, 3).map((allocation) => (
+              <div key={allocation.id} className="rounded-xl border border-[#E5E7EB] bg-warm-bg px-4 py-3">
+                <div className="truncate text-sm font-bold text-[#2F3437]">{allocation.project_name || allocation.project_id || 'Assigned project'}</div>
+                <div className="mt-1 text-xs text-gray-500">{allocation.allocation_role} · {allocation.allocation_percentage}%</div>
+                <div className="mt-2 text-[11px] font-semibold text-gray-400">Manager: {allocation.manager_name || 'Not assigned'}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
       <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-2">
         <Card>
           <CardHeader title="Recent Activity" icon={<CalendarClock size={17} />} />

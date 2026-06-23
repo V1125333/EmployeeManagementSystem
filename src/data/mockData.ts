@@ -97,6 +97,7 @@ export const mainNavItems: NavItem[] = [
   { key: 'employees', label: 'Employees', icon: 'Users', path: '/employees' },
   { key: 'onboarding', label: 'Onboarding Center', icon: 'UserPlus', path: '/onboarding' },
   { key: 'client', label: 'Client Onboarding', icon: 'Briefcase', path: '/client-onboarding' },
+  { key: 'projects', label: 'Projects', icon: 'Briefcase', path: '/projects' },
   { key: 'timeoff', label: 'Time Off & Attendance', icon: 'CalendarDays', path: '/time-off' },
   { key: 'team', label: 'Team Allocation', icon: 'Network', path: '/team-allocation' },
   { key: 'assets', label: 'Assets & Access', icon: 'Package', path: '/assets' },
@@ -127,6 +128,7 @@ export const employeeNavItems: NavItem[] = [
   { key: 'attendance-history', label: 'Attendance History', icon: 'CalendarDays', path: '/employee/attendance' },
   { key: 'requests', label: 'Requests', icon: 'Send', path: '/employee/requests' },
   { key: 'documents', label: 'Documents', icon: 'Files', path: '/employee/documents' },
+  { key: 'projects', label: 'Projects', icon: 'Briefcase', path: '/projects' },
   { key: 'company-handbook', label: 'Company Handbook', icon: 'BookOpen', path: '/employee/company-handbook' },
   { key: 'holidays', label: 'Holidays', icon: 'PartyPopper', path: '/employee/holidays' },
 ];

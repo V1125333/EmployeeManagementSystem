@@ -60,6 +60,7 @@ const searchDestinations: SearchDestination[] = [
   { label: 'Time Off & Attendance', description: 'Leave, attendance, corrections, timesheets, reports', path: '/time-off', keywords: 'time off attendance leave balances corrections timesheets reports policies', roles: ['admin'] },
   { label: 'Onboarding Center', description: 'Employee onboarding workflows', path: '/onboarding', keywords: 'onboarding setup new employee trainee', roles: ['admin'] },
   { label: 'Client Onboarding', description: 'Client onboarding workstreams', path: '/client-onboarding', keywords: 'client onboarding customer implementation', roles: ['admin'] },
+  { label: 'Projects', description: 'Project registry and assignments', path: '/projects', keywords: 'projects assignments allocation client delivery', roles: ['all'] },
   { label: 'Team Allocation', description: 'Project and team allocations', path: '/team-allocation', keywords: 'team allocation project skills staffing resource', roles: ['admin'] },
   { label: 'Bench & Availability', description: 'Resource availability and bench capacity', path: '/bench', keywords: 'bench availability allocation utilization capacity resources', roles: ['admin'] },
   { label: 'Staffing Requests', description: 'Resource demand requests and candidate matching', path: '/staffing-requests', keywords: 'staffing requests resource demand candidates hiring manager headcount', roles: ['admin', 'manager'] },
