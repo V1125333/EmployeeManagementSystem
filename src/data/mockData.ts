@@ -117,6 +117,7 @@ export const resourceNavItems: NavItem[] = [
   { key: 'bench-availability', label: 'Bench & Availability', icon: 'Users', path: '/bench' },
   { key: 'staffing-requests', label: 'Staffing Requests', icon: 'ClipboardList', path: '/staffing-requests' },
   { key: 'workforce-forecasting', label: 'Workforce Forecasting', icon: 'CalendarClock', path: '/forecasting' },
+  { key: 'talent-profiles', label: 'Talent Profiles', icon: 'Award', path: '/talent-profiles' },
 ];
 
 export const employeeNavItems: NavItem[] = [
@@ -128,7 +129,8 @@ export const employeeNavItems: NavItem[] = [
   { key: 'attendance-history', label: 'Attendance History', icon: 'CalendarDays', path: '/employee/attendance' },
   { key: 'requests', label: 'Requests', icon: 'Send', path: '/employee/requests' },
   { key: 'documents', label: 'Documents', icon: 'Files', path: '/employee/documents' },
-  { key: 'projects', label: 'Projects', icon: 'Briefcase', path: '/projects' },
+  { key: 'projects', label: 'My Allocations', icon: 'Briefcase', path: '/projects' },
+  { key: 'career-profile', label: 'My Career Profile', icon: 'Award', path: '/employee/career-profile' },
   { key: 'company-handbook', label: 'Company Handbook', icon: 'BookOpen', path: '/employee/company-handbook' },
   { key: 'holidays', label: 'Holidays', icon: 'PartyPopper', path: '/employee/holidays' },
 ];

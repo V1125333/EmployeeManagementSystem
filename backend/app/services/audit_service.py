@@ -9,7 +9,7 @@ table.
 from __future__ import annotations
 
 import re
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Any
 
@@ -73,7 +73,7 @@ def audit_source(actor: Employee | None, explicit: str | None = None) -> str:
 
 
 def _json_safe(value: Any) -> Any:
-    if isinstance(value, (datetime, date)):
+    if isinstance(value, (datetime, date, time)):
         return value.isoformat()
     if isinstance(value, Decimal):
         return float(value)

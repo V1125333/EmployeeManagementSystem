@@ -35,6 +35,26 @@ def _overlapping_capacity_total(
     return int(query.scalar() or 0)
 
 
+def _has_overlapping_project_assignment(
+    db: Session,
+    employee_id: str,
+    project_id: str,
+    start_date: date,
+    end_date: date | None,
+    allocation_id: str | None = None,
+) -> bool:
+    query = db.query(Allocation.id).filter(
+        Allocation.employee_id == employee_id,
+        Allocation.project_id == project_id,
+        Allocation.status.in_(["active", "upcoming"]),
+        Allocation.start_date <= (end_date or date.max),
+        (Allocation.end_date == None) | (Allocation.end_date >= start_date),  # noqa: E711
+    )
+    if allocation_id:
+        query = query.filter(Allocation.id != allocation_id)
+    return db.query(query.exists()).scalar()
+
+
 def _values(allocation: Allocation) -> dict[str, Any]:
     return {
         "id": allocation.id,
@@ -71,18 +91,25 @@ def _employee_name(employee: Employee | None) -> str | None:
     return " ".join(part.strip() for part in parts if part and part.strip()) or employee.work_email
 
 
-def _validate_project(db: Session, project_id: str | None, project_name: str | None) -> str | None:
+def _validate_project(db: Session, project_id: str | None, project_name: str | None, require_active: bool = False) -> str | None:
     if project_id:
         project = db.query(Project).filter(Project.id == project_id).first()
         if not project:
             raise HTTPException(status_code=422, detail="Project not found.")
+        if require_active and project.status != "active":
+            raise HTTPException(status_code=422, detail="Target project must be active before moving an assignment.")
         return project_name or project.name
     if not project_name or not project_name.strip():
         raise HTTPException(status_code=422, detail="Either project_id or project_name is required.")
     return project_name.strip()
 
 
-def _validate_state(db: Session, state: dict[str, Any], allocation_id: str | None = None) -> None:
+def _validate_state(
+    db: Session,
+    state: dict[str, Any],
+    allocation_id: str | None = None,
+    require_active_project: bool = False,
+) -> None:
     required_fields = [
         "employee_id",
         "manager_id",
@@ -110,9 +137,27 @@ def _validate_state(db: Session, state: dict[str, Any], allocation_id: str | Non
 
     _require_employee(db, state["employee_id"], "Employee")
     _require_employee(db, state["manager_id"], "Manager")
-    state["project_name"] = _validate_project(db, state.get("project_id"), state.get("project_name"))
+    state["project_name"] = _validate_project(
+        db,
+        state.get("project_id"),
+        state.get("project_name"),
+        require_active=require_active_project,
+    )
 
     if state.get("status") in {"active", "upcoming"}:
+        if state.get("project_id") and _has_overlapping_project_assignment(
+            db,
+            employee_id=state["employee_id"],
+            project_id=state["project_id"],
+            start_date=state["start_date"],
+            end_date=state.get("end_date"),
+            allocation_id=allocation_id,
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Employee is already assigned to this project for the selected date range.",
+            )
+
         active_total = _overlapping_capacity_total(
             db,
             employee_id=state["employee_id"],
@@ -186,7 +231,8 @@ def update_allocation(db: Session, allocation_id: str, data: AllocationUpdate, u
     old_values = _values(allocation)
     patch = data.model_dump(exclude_unset=True)
     next_state = {**old_values, **patch}
-    _validate_state(db, next_state, allocation_id=allocation_id)
+    project_changed = "project_id" in patch and patch.get("project_id") != old_values.get("project_id")
+    _validate_state(db, next_state, allocation_id=allocation_id, require_active_project=project_changed)
 
     for field, value in patch.items():
         setattr(allocation, field, value)
@@ -198,22 +244,54 @@ def update_allocation(db: Session, allocation_id: str, data: AllocationUpdate, u
     new_values = _values(allocation)
     changes = changed_fields(old_values, new_values)
     if changes:
+        actor = db.query(Employee).filter(Employee.id == updated_by_id).first()
+        metadata = {
+            "employee_id": allocation.employee_id,
+            "allocation_id": allocation.id,
+            "changed_by": updated_by_id,
+            "changed_at": datetime.utcnow().isoformat(),
+        }
         log_audit(
             db,
-            db.query(Employee).filter(Employee.id == updated_by_id).first(),
-            action="allocation_updated",
+            actor,
+            action="ALLOCATION_UPDATED",
             entity_type="allocation",
             entity_id=allocation.id,
             old_values=old_values,
             new_values=new_values,
             changed_fields_payload=changes,
-            metadata={
-                "employee_id": allocation.employee_id,
-                "allocation_id": allocation.id,
-                "changed_by": updated_by_id,
-                "changed_at": datetime.utcnow().isoformat(),
-            },
+            metadata=metadata,
         )
+        event_fields = [
+            ("allocation_percentage", "ALLOCATION_PERCENTAGE_CHANGED"),
+            ("manager_id", "ALLOCATION_MANAGER_CHANGED"),
+            ("project_id", "ALLOCATION_PROJECT_CHANGED"),
+        ]
+        for field, action in event_fields:
+            if field in changes:
+                log_audit(
+                    db,
+                    actor,
+                    action=action,
+                    entity_type="allocation",
+                    entity_id=allocation.id,
+                    old_values={field: old_values.get(field)},
+                    new_values={field: new_values.get(field)},
+                    changed_fields_payload={field: changes[field]},
+                    metadata=metadata,
+                )
+        if old_values.get("status") != "completed" and new_values.get("status") == "completed":
+            log_audit(
+                db,
+                actor,
+                action="ALLOCATION_ENDED",
+                entity_type="allocation",
+                entity_id=allocation.id,
+                old_values={"status": old_values.get("status"), "end_date": old_values.get("end_date")},
+                new_values={"status": new_values.get("status"), "end_date": new_values.get("end_date")},
+                changed_fields_payload={field: changes[field] for field in ("status", "end_date") if field in changes},
+                metadata=metadata,
+            )
     db.commit()
     db.refresh(allocation)
     return allocation
@@ -232,7 +310,7 @@ def cancel_allocation(db: Session, allocation_id: str, cancelled_by_id: str) -> 
     log_audit(
         db,
         db.query(Employee).filter(Employee.id == cancelled_by_id).first(),
-        action="allocation_cancelled",
+        action="ALLOCATION_REMOVED",
         entity_type="allocation",
         entity_id=allocation.id,
         old_values=old_values,
@@ -298,8 +376,15 @@ def get_upcoming_allocations(db: Session, employee_id: str) -> list[Allocation]:
 def serialize_allocation(db: Session, allocation: Allocation) -> dict[str, Any]:
     manager = db.query(Employee).filter(Employee.id == allocation.manager_id).first()
     employee = db.query(Employee).filter(Employee.id == allocation.employee_id).first()
+    project_name = allocation.project_name
+    if allocation.project_id:
+        from app.models.operations import Project
+        project = db.query(Project).filter(Project.id == allocation.project_id).first()
+        if project:
+            project_name = f"{project.name} ({project.code})"
     return {
         **_values(allocation),
+        "project_name": project_name,
         "employee_name": _employee_name(employee),
         "employee_email": employee.work_email if employee else None,
         "manager_name": f"{manager.first_name} {manager.last_name}".strip() if manager else None,

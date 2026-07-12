@@ -7,6 +7,7 @@ from pydantic import BaseModel
 ForecastStatus = Literal[
     "becoming_available",
     "partially_available",
+    "fully_allocated",
     "fully_available",
     "overallocated",
     "bench_risk",
@@ -30,6 +31,7 @@ class ForecastEmployeeRow(BaseModel):
 class ForecastSummary(BaseModel):
     total_employees: int
     becoming_available_count: int
+    fully_allocated_count: int = 0
     fully_available_count: int
     partially_available_count: int
     bench_risk_count: int

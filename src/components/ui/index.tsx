@@ -12,7 +12,7 @@ export function Card({ children, className, ...props }: CardProps) {
   return (
     <div
       className={cn(
-        'bg-warm-card border border-[#E5E7EB] rounded-card shadow-card',
+        'bg-warm-card border border-[#E7E9EE] rounded-card shadow-card',
         className
       )}
       {...props}
@@ -36,10 +36,10 @@ export function CardHeader({
   badgeColor?: BadgeVariant;
 }) {
   return (
-    <div className="flex items-center justify-between px-5 py-4 border-b border-[#E5E7EB]">
+    <div className="flex items-center justify-between px-5 py-4 border-b border-[#E7E9EE]">
       <div className="flex items-center gap-2">
         {icon && <span className="text-accent">{icon}</span>}
-        <span className="text-sm font-semibold text-[#2F3437] tracking-tight">
+        <span className="text-sm font-semibold text-[#252B3A] tracking-tight">
           {title}
         </span>
       </div>
@@ -71,7 +71,7 @@ export function Avatar({ initials, size = 'md', variant = 'soft', src }: AvatarP
         'rounded-full flex items-center justify-center font-semibold shrink-0 overflow-hidden',
         avatarSizes[size],
         variant === 'filled'
-          ? 'bg-accent text-white'
+          ? 'bg-[#252B3A] text-white'
           : 'bg-accent-light text-accent'
       )}
     >
@@ -96,7 +96,7 @@ const badgeStyles: Record<BadgeVariant, string> = {
   error: 'bg-status-error/10 text-status-error',
   info: 'bg-status-info/10 text-status-info',
   sage: 'bg-sage/10 text-sage',
-  neutral: 'bg-gray-100 text-gray-500',
+  neutral: 'bg-[#F2F4F7] text-gray-500',
 };
 
 export function Badge({
@@ -141,9 +141,9 @@ export function Button({
         'inline-flex items-center gap-1.5 font-semibold rounded-btn transition-all duration-150 cursor-pointer',
         size === 'sm' ? 'px-3 py-1.5 text-xs' : 'px-4 py-2 text-[13px]',
         variant === 'primary' &&
-          'bg-accent text-white shadow-sm hover:bg-accent-dark active:scale-[0.98]',
+          'bg-[#252B3A] text-white shadow-sm hover:bg-[#1B2130] active:scale-[0.98]',
         variant === 'ghost' &&
-          'bg-transparent text-accent border border-[#E5E7EB] hover:bg-hover-bg active:scale-[0.98]',
+          'bg-transparent text-[#252B3A] border border-[#E7E9EE] hover:bg-hover-bg active:scale-[0.98]',
         variant === 'soft' &&
           'bg-accent-light text-accent hover:bg-accent-mid active:scale-[0.98]',
         className

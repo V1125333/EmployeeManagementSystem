@@ -46,7 +46,7 @@ interface ThemeContextValue {
 const defaultPreferences: UserPreferences = {
   user_id: '',
   theme_mode: 'light',
-  accent_color: 'olive',
+  accent_color: 'orange',
   sidebar_collapsed: false,
   compact_mode: false,
   timezone: 'Asia/Kolkata',
@@ -81,7 +81,7 @@ function effectiveTheme(mode: ThemeMode) {
 function applyTheme(preferences: UserPreferences) {
   document.documentElement.dataset.theme = effectiveTheme(preferences.theme_mode);
   document.documentElement.dataset.themeMode = preferences.theme_mode;
-  document.documentElement.dataset.accent = preferences.accent_color;
+  document.documentElement.dataset.accent = 'orange';
   document.documentElement.dataset.compact = String(preferences.compact_mode);
 }
 

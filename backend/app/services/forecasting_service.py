@@ -66,9 +66,11 @@ def classify_forecast(
         if forecast_allocation < current_allocation:
             return "becoming_available"
         return "partially_available"
+    if forecast_allocation == 100:
+        return "fully_allocated"
     if forecast_allocation < current_allocation:
         return "becoming_available"
-    return "partially_available"
+    return "overallocated"
 
 
 def get_workforce_forecast(
@@ -148,6 +150,7 @@ def get_workforce_forecast(
 
     counts = {
         "becoming_available": 0,
+        "fully_allocated": 0,
         "fully_available": 0,
         "partially_available": 0,
         "bench_risk": 0,
@@ -162,7 +165,8 @@ def get_workforce_forecast(
             "bench_risk": 1,
             "becoming_available": 2,
             "partially_available": 3,
-            "fully_available": 4,
+            "fully_allocated": 4,
+            "fully_available": 5,
         }[item.forecast_status],
         item.next_allocation_end_date or date.max,
         item.employee_name.lower(),
@@ -175,6 +179,7 @@ def get_workforce_forecast(
         summary=ForecastSummary(
             total_employees=len(employee_rows),
             becoming_available_count=counts["becoming_available"],
+            fully_allocated_count=counts["fully_allocated"],
             fully_available_count=counts["fully_available"],
             partially_available_count=counts["partially_available"],
             bench_risk_count=counts["bench_risk"],

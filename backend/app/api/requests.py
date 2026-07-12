@@ -23,6 +23,7 @@ from app.services.requests_service import (
     ensure_read_access,
     get_approval_queue,
     get_my_requests,
+    get_request_policies,
     get_request,
     get_types,
     mark_expense_paid,
@@ -45,6 +46,16 @@ def actor_from_headers(db: Session, x_user_id: str | None, x_user_email: str | N
 @router.get("/types")
 async def request_types():
     return get_types()
+
+
+@router.get("/policies")
+async def request_policies(
+    db: Session = Depends(get_db),
+    x_user_id: str | None = Header(None, alias="x-user-id"),
+    x_user_email: str | None = Header(None, alias="x-user-email"),
+):
+    actor = actor_from_headers(db, x_user_id, x_user_email)
+    return get_request_policies(actor)
 
 
 @router.post("")

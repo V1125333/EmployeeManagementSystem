@@ -240,13 +240,25 @@ def clear_login_attempts(db: Session, employee: Employee) -> None:
     db.commit()
 
 
-def unlock_account(db: Session, employee: Employee, admin: Employee, notes: str | None = None) -> None:
+def generate_temporary_password() -> str:
+    alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+    return "RK-" + "".join(secrets.choice(alphabet) for _ in range(12))
+
+
+def unlock_account(db: Session, employee: Employee, admin: Employee, notes: str | None = None) -> str:
+    temporary_password = generate_temporary_password()
     employee.account_locked = False
     employee.failed_login_attempts = 0
     employee.unlocked_at = datetime.utcnow()
     employee.unlocked_by_user_id = admin.id
+    employee.password_hash = hash_password(temporary_password)
+    employee.password_changed_at = datetime.utcnow()
     employee.force_password_change = True
+    employee.failed_reset_attempts = 0
+    employee.locked_until = None
+    db.query(PasswordResetSession).filter(PasswordResetSession.employee_id == employee.id).delete(synchronize_session=False)
     db.commit()
+    return temporary_password
 
 
 def validate_password_strength(password: str) -> tuple[bool, str]:
@@ -322,6 +334,7 @@ def check_email(db: Session, email: str) -> dict:
         "employee_id": employee.id,
         "role": employee.role,
         "profile_image_url": employee.profile_image_url,
+        "force_password_change": bool(employee.force_password_change),
     }
 
 
@@ -443,6 +456,12 @@ def verify_login_password(db: Session, email: str, password: str, ip_address: st
         return {**generic, "attempts_remaining": attempts_remaining}
 
     employee.failed_login_attempts = 0
+    if employee.force_password_change:
+        db.commit()
+        _audit(db, employee, "temporary_password_verified", employee.id, metadata={"ip_address": ip_address})
+        result = _login_response(employee)
+        result["message"] = "Temporary password verified. Create a new password."
+        return result
     db.query(LoginChallengeSession).filter(
         LoginChallengeSession.employee_id == employee.id,
         LoginChallengeSession.used_at.is_(None),
@@ -659,8 +678,13 @@ def admin_reset_password(db: Session, actor: Employee, employee_id: str, reason:
     if actor.id == employee.id:
         raise HTTPException(status_code=400, detail="Use the password change flow for your own account.")
 
-    alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
-    temporary_password = "RK-" + "".join(secrets.choice(alphabet) for _ in range(12))
+    temporary_password = generate_temporary_password()
+    employee.account_locked = False
+    employee.locked_at = None
+    employee.locked_reason = None
+    employee.unlocked_at = datetime.utcnow()
+    employee.unlocked_by_user_id = actor.id
+    employee.failed_login_attempts = 0
     employee.password_hash = hash_password(temporary_password)
     employee.password_changed_at = datetime.utcnow()
     employee.force_password_change = True
@@ -683,15 +707,18 @@ def admin_reset_password(db: Session, actor: Employee, employee_id: str, reason:
     }
 
 
-def force_change_password(db: Session, employee: Employee, current_password: str, new_password: str, confirm_password: str) -> dict:
+def force_change_password(db: Session, employee: Employee, current_password: str | None, new_password: str, confirm_password: str) -> dict:
     """Change a temporary/admin-reset password after login."""
-    if not employee.password_hash or not verify_password(current_password, employee.password_hash):
-        _audit(db, employee, "forced_password_change_failed", employee.id, reason="Invalid current password")
-        return {"success": False, "message": "Current password is incorrect."}
+    if not employee.force_password_change:
+        return {"success": False, "message": "Password change is not required for this account."}
+    if current_password:
+        if not employee.password_hash or not verify_password(current_password, employee.password_hash):
+            _audit(db, employee, "forced_password_change_failed", employee.id, reason="Invalid current password")
+            return {"success": False, "message": "Current password is incorrect."}
+        if current_password == new_password:
+            return {"success": False, "message": "New password must be different from the temporary password."}
     if new_password != confirm_password:
         return {"success": False, "message": "Passwords do not match."}
-    if current_password == new_password:
-        return {"success": False, "message": "New password must be different from the temporary password."}
     valid, message = validate_password_strength(new_password)
     if not valid:
         return {"success": False, "message": message}
@@ -779,7 +806,7 @@ def approve_unlock(db: Session, admin: Employee, request_id: str, admin_notes: s
         raise HTTPException(status_code=404, detail="Employee not found.")
     if target.id == admin.id:
         raise HTTPException(status_code=403, detail="You cannot approve your own unlock request.")
-    unlock_account(db, target, admin, admin_notes)
+    temporary_password = unlock_account(db, target, admin, admin_notes)
     row.status = "approved"
     row.reviewed_by_user_id = admin.id
     row.reviewed_at = datetime.utcnow()
@@ -788,7 +815,11 @@ def approve_unlock(db: Session, admin: Employee, request_id: str, admin_notes: s
     notify_employee_unlocked(db, target, admin)
     db.commit()
     _audit(db, admin, "account_unlock_approved", target.id, reason=admin_notes, metadata={"request_id": row.id})
-    return {"success": True, "message": "Account unlocked. Employee will be asked to change password after login."}
+    return {
+        "success": True,
+        "message": "Account unlocked. Share the temporary password with the employee; they must change it on next login.",
+        "temporary_password": temporary_password,
+    }
 
 
 def reject_unlock(db: Session, admin: Employee, request_id: str, admin_notes: str | None = None) -> dict:
@@ -827,8 +858,12 @@ def direct_unlock(db: Session, admin: Employee, employee_id: str, admin_notes: s
         raise HTTPException(status_code=404, detail="Employee not found.")
     if target.id == admin.id:
         raise HTTPException(status_code=403, detail="You cannot unlock your own account.")
-    unlock_account(db, target, admin, admin_notes)
+    temporary_password = unlock_account(db, target, admin, admin_notes)
     notify_employee_unlocked(db, target, admin)
     db.commit()
     _audit(db, admin, "account_directly_unlocked", target.id, reason=admin_notes)
-    return {"success": True, "message": "Account unlocked directly."}
+    return {
+        "success": True,
+        "message": "Account unlocked directly. Share the temporary password with the employee; they must change it on next login.",
+        "temporary_password": temporary_password,
+    }

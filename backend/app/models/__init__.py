@@ -32,6 +32,8 @@ from app.models.staffing_request import StaffingRequest, StaffingRequestCandidat
 # Tables 16-19+: projects, allocations, announcements, notifications, activity_log
 from app.models.operations import (
     Project,
+    ProjectDocument,
+    CompanyHoliday,
     TimesheetEntry,
     Announcement,
     AnnouncementAudience,

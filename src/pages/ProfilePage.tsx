@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Mail, Phone, MapPin, Calendar, Briefcase, Building2, User, Shield,
   Heart, Home, Clock, Pencil, Camera, Trash2, Save, X, Loader2,
 } from 'lucide-react';
 import { Card, Badge, Button } from '@/components/ui';
 import { AuditTimeline } from '@/components/audit/AuditTimeline';
+import { CareerProfilePanel } from '@/components/career/CareerProfilePanel';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/utils/cn';
@@ -72,6 +74,8 @@ interface AllocationSummaryRecord {
   active_projects_count: number;
   next_end_date: string | null;
 }
+
+type ProfileTab = 'overview' | 'allocations' | 'activity' | 'career';
 
 const roleLabels: Record<string, string> = {
   super_admin: 'Super Admin',
@@ -156,6 +160,10 @@ function formatAllocationStatus(value: string) {
   return value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function projectDisplayName(allocation: AllocationRecord) {
+  return allocation.project_name || 'Project not named';
+}
+
 function capacityTone(value: number) {
   if (value >= 50) return 'bg-status-success text-status-success border-status-success/20';
   if (value >= 20) return 'bg-status-warning text-status-warning border-status-warning/20';
@@ -166,19 +174,41 @@ function normalizeRole(role: string | undefined) {
   return role === 'Global Access' ? 'super_admin' : role || '';
 }
 
+function normalizedRoleKey(role: string | undefined) {
+  return normalizeRole(role).toLowerCase().replace(/\s+/g, '_');
+}
+
+function canEditEmployeeProfile(userRole: string | undefined, viewerId: string | undefined, targetId: string | undefined) {
+  const isOwnProfile = Boolean(viewerId && targetId && viewerId === targetId);
+  const role = normalizedRoleKey(userRole);
+  return isOwnProfile || ['super_admin', 'admin', 'hr_admin', 'global_access'].includes(role);
+}
+
+function canViewEmployeeActivity(userRole: string | undefined) {
+  return ['super_admin', 'admin', 'hr_admin', 'global_access'].includes(normalizedRoleKey(userRole));
+}
+
 function validateForm(form: ProfileForm) {
   const nextErrors: Partial<Record<keyof ProfileForm | 'image', string>> = {};
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const phonePattern = /^[0-9+()\-\s]{7,20}$/;
   const phoneDigits = form.phone.replace(/\D/g, '');
-  const emergencyDigits = form.emergency_contact_phone.replace(/\D/g, '');
+  const emergencyName = form.emergency_contact_name.trim();
+  const emergencyPhone = form.emergency_contact_phone.trim();
+  const emergencyRelation = form.emergency_contact_relation.trim();
+  const emergencyDigits = emergencyPhone.replace(/\D/g, '');
+  const hasEmergencyContact = Boolean(emergencyName || emergencyPhone || emergencyRelation);
 
   if (!form.full_name.trim()) nextErrors.full_name = 'Full name is required';
   if (form.full_name.trim().split(/\s+/).length < 2) nextErrors.full_name = 'Enter first and last name';
   if (form.personal_email && !emailPattern.test(form.personal_email)) nextErrors.personal_email = 'Enter a valid email';
   if (!form.phone.trim()) nextErrors.phone = 'Phone number is required';
   if (form.phone && (!phonePattern.test(form.phone) || phoneDigits.length < 7)) nextErrors.phone = 'Enter a valid phone number';
-  if (form.emergency_contact_phone && (!phonePattern.test(form.emergency_contact_phone) || emergencyDigits.length < 7)) {
+
+  if (hasEmergencyContact && !emergencyName) nextErrors.emergency_contact_name = 'Emergency contact name is required';
+  if (hasEmergencyContact && !emergencyPhone) nextErrors.emergency_contact_phone = 'Emergency contact phone is required';
+  if (hasEmergencyContact && !emergencyRelation) nextErrors.emergency_contact_relation = 'Relationship is required';
+  if (emergencyPhone && (!phonePattern.test(emergencyPhone) || emergencyDigits.length < 7)) {
     nextErrors.emergency_contact_phone = 'Enter a valid emergency phone';
   }
 
@@ -252,6 +282,9 @@ function Field({
 export function ProfilePage() {
   const { user, updateUser } = useAuth();
   const { showToast } = useToast();
+  const [searchParams] = useSearchParams();
+  const employeeIdParam = searchParams.get('employee_id');
+  const requestedTab = searchParams.get('tab');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [form, setForm] = useState<ProfileForm | null>(null);
@@ -263,14 +296,17 @@ export function ProfilePage() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'allocations' | 'activity'>('overview');
+  const [confirmRemoveEmergency, setConfirmRemoveEmergency] = useState(false);
+  const [activeTab, setActiveTab] = useState<ProfileTab>(
+    requestedTab === 'allocations' || requestedTab === 'activity' || requestedTab === 'career' ? requestedTab : 'overview'
+  );
   const [allocations, setAllocations] = useState<AllocationRecord[]>([]);
   const [allocationSummary, setAllocationSummary] = useState<AllocationSummaryRecord | null>(null);
   const [allocationsLoading, setAllocationsLoading] = useState(false);
   const [allocationsError, setAllocationsError] = useState('');
 
   const loadProfile = async () => {
-    if (!user?.email) {
+    if (!user?.email && !employeeIdParam) {
       setLoading(false);
       setError('No email found');
       return;
@@ -279,13 +315,22 @@ export function ProfilePage() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${API_BASE}/auth/me/${encodeURIComponent(user.email)}`);
+      const res = employeeIdParam
+        ? await fetch(`${API_BASE}/employees/${encodeURIComponent(employeeIdParam)}`, {
+          headers: {
+            'x-user-id': user?.id || '',
+            'x-user-role': normalizeRole(user?.role),
+            'x-user-email': user?.email || '',
+          },
+        })
+        : await fetch(`${API_BASE}/auth/me/${encodeURIComponent(user?.email || '')}`);
       const data = await res.json();
-      if (data.success && data.employee) {
-        setProfile(data.employee);
-        setForm(profileToForm(data.employee));
+      const nextProfile = employeeIdParam ? data : data.employee;
+      if (res.ok && nextProfile && (employeeIdParam || data.success)) {
+        setProfile(nextProfile);
+        setForm(profileToForm(nextProfile));
       } else {
-        setError(data.message || 'Profile not found');
+        setError(data.detail || data.message || 'Profile not found');
       }
     } catch {
       setError('Cannot connect to server');
@@ -296,7 +341,13 @@ export function ProfilePage() {
 
   useEffect(() => {
     loadProfile();
-  }, [user?.email]);
+  }, [employeeIdParam, user?.email, user?.id, user?.role]);
+
+  useEffect(() => {
+    if (requestedTab === 'allocations' || requestedTab === 'activity' || requestedTab === 'overview' || requestedTab === 'career') {
+      setActiveTab(requestedTab);
+    }
+  }, [requestedTab]);
 
   const loadAllocations = async (employeeId: string) => {
     setAllocationsLoading(true);
@@ -357,19 +408,49 @@ export function ProfilePage() {
       removeImage
     )
   );
+  const hasSavedEmergencyContact = Boolean(
+    profile && (
+      profile.emergency_contact_name?.trim() ||
+      profile.emergency_contact_phone?.trim() ||
+      profile.emergency_contact_relation?.trim()
+    )
+  );
+  const canEditProfile = canEditEmployeeProfile(user?.role, user?.id, profile?.id);
+  const canViewActivity = canViewEmployeeActivity(user?.role);
+  const visibleTabs = useMemo(
+    () => [
+      { key: 'overview' as const, label: 'Overview' },
+      { key: 'allocations' as const, label: 'Allocations' },
+      ...(canViewActivity ? [{ key: 'activity' as const, label: 'Activity' }] : []),
+      { key: 'career' as const, label: 'Career Profile' },
+    ],
+    [canViewActivity]
+  );
+
+  useEffect(() => {
+    if (activeTab === 'activity' && !canViewActivity) {
+      setActiveTab('overview');
+    }
+  }, [activeTab, canViewActivity]);
 
   const updateForm = (key: keyof ProfileForm, value: string) => {
     setForm((current) => current ? { ...current, [key]: value } : current);
     setErrors((current) => ({ ...current, [key]: undefined }));
+    if (key.startsWith('emergency_contact_')) setConfirmRemoveEmergency(false);
   };
 
   const startEdit = () => {
     if (!profile) return;
+    if (!canEditProfile) {
+      showToast({ message: 'Managers can view employee profiles, but only the employee or HR/admin can edit them.' });
+      return;
+    }
     setForm(profileToForm(profile));
     setImageFile(null);
     setImagePreview(null);
     setRemoveImage(false);
     setErrors({});
+    setConfirmRemoveEmergency(false);
     setEditMode(true);
   };
 
@@ -379,11 +460,16 @@ export function ProfilePage() {
     setImagePreview(null);
     setRemoveImage(false);
     setErrors({});
+    setConfirmRemoveEmergency(false);
     setEditMode(false);
   };
 
   const chooseImage = (file: File | undefined) => {
     if (!file) return;
+    if (!canEditProfile) {
+      showToast({ message: 'Only the employee or HR/admin can update this profile photo.' });
+      return;
+    }
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
     if (!allowedTypes.includes(file.type)) {
       setErrors((current) => ({ ...current, image: 'Use JPEG, PNG, WebP, or GIF' }));
@@ -402,6 +488,10 @@ export function ProfilePage() {
   };
 
   const handleRemoveImage = () => {
+    if (!canEditProfile) {
+      showToast({ message: 'Only the employee or HR/admin can remove this profile photo.' });
+      return;
+    }
     if (imagePreview?.startsWith('blob:')) URL.revokeObjectURL(imagePreview);
     setImageFile(null);
     setImagePreview(null);
@@ -411,6 +501,10 @@ export function ProfilePage() {
 
   const saveProfile = async () => {
     if (!profile || !form || !dirty) return;
+    if (!canEditProfile) {
+      showToast({ message: 'Only the employee or HR/admin can save profile changes.' });
+      return;
+    }
     const nextErrors = validateForm(form);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
@@ -476,18 +570,73 @@ export function ProfilePage() {
       setImageFile(null);
       setImagePreview(null);
       setRemoveImage(false);
+      setConfirmRemoveEmergency(false);
       setEditMode(false);
-      updateUser({
-        name: `${nextProfile.first_name} ${nextProfile.last_name}`.trim(),
-        initials: makeInitials(`${nextProfile.first_name} ${nextProfile.last_name}`),
-        profileImageUrl: nextProfile.profile_image_url || null,
-      });
+      if (nextProfile.id === user?.id || nextProfile.work_email === user?.email) {
+        updateUser({
+          name: `${nextProfile.first_name} ${nextProfile.last_name}`.trim(),
+          initials: makeInitials(`${nextProfile.first_name} ${nextProfile.last_name}`),
+          profileImageUrl: nextProfile.profile_image_url || null,
+        });
+      }
+      window.dispatchEvent(new CustomEvent('reknew:actions-updated'));
       showToast({ message: 'Profile updated successfully' });
     } catch (err) {
       setErrors((current) => ({
         ...current,
         image: err instanceof Error ? err.message : 'Unable to save profile',
       }));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeEmergencyContact = async () => {
+    if (!profile || !form) return;
+    if (!canEditProfile) {
+      showToast({ message: 'Only the employee or HR/admin can remove emergency contact details.' });
+      return;
+    }
+
+    const headers = {
+      'Content-Type': 'application/json',
+      'x-user-id': user?.id || profile.id,
+      'x-user-role': normalizeRole(user?.role),
+      'x-user-email': user?.email || profile.work_email,
+      'x-user-name': user?.name || form.full_name,
+    };
+
+    setSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/employees/${profile.id}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          emergency_contact_name: null,
+          emergency_contact_phone: null,
+          emergency_contact_relation: null,
+        }),
+      });
+      const result = await res.json();
+      if (!res.ok || !result.success) {
+        throw new Error(result.detail || result.message || 'Unable to remove emergency contact');
+      }
+
+      const nextProfile = result.employee || {
+        ...profile,
+        emergency_contact_name: null,
+        emergency_contact_phone: null,
+        emergency_contact_relation: null,
+      };
+      setProfile(nextProfile);
+      setForm(profileToForm(nextProfile));
+      setErrors({});
+      setConfirmRemoveEmergency(false);
+      setEditMode(false);
+      window.dispatchEvent(new CustomEvent('reknew:actions-updated'));
+      showToast({ message: 'Emergency contact removed.' });
+    } catch (err) {
+      showToast({ message: err instanceof Error ? err.message : 'Unable to remove emergency contact.' });
     } finally {
       setSaving(false);
     }
@@ -531,12 +680,12 @@ export function ProfilePage() {
             <div className="relative w-24 h-24 shrink-0">
               <button
                 type="button"
-                disabled={!editMode}
-                onClick={() => editMode && fileInputRef.current?.click()}
+                disabled={!editMode || !canEditProfile}
+                onClick={() => editMode && canEditProfile && fileInputRef.current?.click()}
                 className={cn(
                   'w-24 h-24 rounded-full overflow-hidden bg-olive text-white flex items-center justify-center text-2xl font-bold',
                   'ring-4 ring-olive/10 transition-all duration-200',
-                  editMode && 'hover:ring-olive/25 cursor-pointer'
+                  editMode && canEditProfile && 'hover:ring-olive/25 cursor-pointer'
                 )}
               >
                 {currentImage ? (
@@ -544,7 +693,7 @@ export function ProfilePage() {
                 ) : (
                   initials
                 )}
-                {editMode && (
+                {editMode && canEditProfile && (
                   <span className="absolute inset-0 rounded-full bg-black/35 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
                     <Camera size={22} />
                   </span>
@@ -557,7 +706,7 @@ export function ProfilePage() {
                 className="hidden"
                 onChange={(event) => chooseImage(event.target.files?.[0])}
               />
-              {editMode && currentImage && (
+              {editMode && canEditProfile && currentImage && (
                 <button
                   type="button"
                   onClick={handleRemoveImage}
@@ -584,7 +733,7 @@ export function ProfilePage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {editMode ? (
+            {canEditProfile && (editMode ? (
               <>
                 <Button variant="ghost" icon={<X size={14} />} onClick={cancelEdit} disabled={saving}>Cancel</Button>
                 <Button icon={saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} onClick={saveProfile} disabled={!dirty || saving}>
@@ -593,21 +742,17 @@ export function ProfilePage() {
               </>
             ) : (
               <Button icon={<Pencil size={14} />} onClick={startEdit}>Edit Profile</Button>
-            )}
+            ))}
           </div>
         </div>
       </Card>
 
       <div className="mb-5 flex border-b border-[#E5E7EB]">
-        {[
-          { key: 'overview', label: 'Overview' },
-          { key: 'allocations', label: 'Allocations' },
-          { key: 'activity', label: 'Activity' },
-        ].map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab.key}
             type="button"
-            onClick={() => setActiveTab(tab.key as 'overview' | 'allocations' | 'activity')}
+            onClick={() => setActiveTab(tab.key)}
             className={cn(
               'border-b-2 px-4 py-3 text-[13px] font-bold transition-colors',
               activeTab === tab.key
@@ -671,19 +816,63 @@ export function ProfilePage() {
           </div>
           <div className="px-6 py-2">
             {editMode ? (
-              <div className="grid grid-cols-1 gap-4 py-4 md:grid-cols-2">
-                <Field label="Contact Name" value={form.emergency_contact_name} onChange={(v) => updateForm('emergency_contact_name', v)} />
-                <Field label="Contact Phone" value={form.emergency_contact_phone} onChange={(v) => updateForm('emergency_contact_phone', v)} error={errors.emergency_contact_phone} />
-                <div className="md:col-span-2">
-                  <Field label="Relationship" value={form.emergency_contact_relation} onChange={(v) => updateForm('emergency_contact_relation', v)} />
+              <div className="space-y-4 py-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <Field label="Contact Name *" value={form.emergency_contact_name} onChange={(v) => updateForm('emergency_contact_name', v)} error={errors.emergency_contact_name} />
+                  <Field label="Contact Phone *" value={form.emergency_contact_phone} onChange={(v) => updateForm('emergency_contact_phone', v)} error={errors.emergency_contact_phone} />
+                  <div className="md:col-span-2">
+                    <Field label="Relationship *" value={form.emergency_contact_relation} onChange={(v) => updateForm('emergency_contact_relation', v)} error={errors.emergency_contact_relation} />
+                  </div>
                 </div>
+                {hasSavedEmergencyContact && (
+                  <div className="rounded-xl border border-status-error/20 bg-status-error/[0.04] p-3">
+                    {confirmRemoveEmergency ? (
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <div className="text-[13px] font-semibold text-[#2F3437]">Remove emergency contact?</div>
+                          <div className="text-[12px] text-gray-500">This clears the saved contact name, phone, and relationship.</div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button variant="ghost" size="sm" onClick={() => setConfirmRemoveEmergency(false)} disabled={saving}>Cancel</Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="border-status-error/25 text-status-error hover:bg-status-error/[0.06]"
+                            icon={saving ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                            onClick={removeEmergencyContact}
+                            disabled={saving}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmRemoveEmergency(true)}
+                        className="inline-flex items-center gap-2 text-[13px] font-semibold text-status-error transition hover:text-status-error/80"
+                      >
+                        <Trash2 size={14} />
+                        Remove Emergency Contact
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
-            ) : (
+            ) : hasSavedEmergencyContact ? (
               <>
                 <InfoRow icon={<Heart size={15} />} label="Contact Name" value={profile.emergency_contact_name} />
                 <InfoRow icon={<Phone size={15} />} label="Contact Phone" value={profile.emergency_contact_phone} />
                 <InfoRow icon={<User size={15} />} label="Relationship" value={profile.emergency_contact_relation} />
               </>
+            ) : (
+              <div className="flex min-h-[180px] flex-col items-center justify-center text-center">
+                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-warm-bg text-olive">
+                  <Heart size={20} />
+                </div>
+                <div className="text-[14px] font-semibold text-[#2F3437]">No emergency contact on file.</div>
+                <div className="mt-1 text-[13px] text-gray-500">Edit your profile to add an emergency contact.</div>
+              </div>
             )}
           </div>
         </Card>
@@ -788,7 +977,7 @@ export function ProfilePage() {
                 <tbody>
                   {allocations.map((allocation) => (
                     <tr key={allocation.id} className="border-t border-[#E5E7EB] text-[14px] text-[#2F3437]">
-                      <td className="px-6 py-4 font-semibold">{allocation.project_name || allocation.project_id || 'Project not set'}</td>
+                      <td className="px-6 py-4 font-semibold">{projectDisplayName(allocation)}</td>
                       <td className="px-4 py-4 text-gray-600">{allocation.allocation_role}</td>
                       <td className="px-4 py-4 font-semibold">{allocation.allocation_percentage}%</td>
                       <td className="px-4 py-4 text-gray-600">{allocation.manager_name || 'Not assigned'}</td>
@@ -812,6 +1001,19 @@ export function ProfilePage() {
 
       {activeTab === 'activity' && (
         <AuditTimeline entityType="employee" entityId={profile.id} maxItems={12} />
+      )}
+
+      {activeTab === 'career' && (
+        <CareerProfilePanel
+          employee={{
+            id: profile.id,
+            name: `${profile.first_name} ${profile.last_name}`.trim(),
+            email: profile.work_email,
+            designation: profile.designation,
+            department: profile.department,
+          }}
+          editable={!employeeIdParam || profile.id === user?.id || profile.work_email === user?.email}
+        />
       )}
     </div>
   );

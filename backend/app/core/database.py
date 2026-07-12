@@ -348,6 +348,35 @@ def ensure_leave_type_policy_columns():
             connection.execute(text(statement))
 
 
+def ensure_holiday_tables():
+    """Create holiday tables and align leave requests for floating/optional holidays."""
+    from app.models.operations import CompanyHoliday  # noqa: F401
+    from app.models.leave_attendance import LeaveRequest  # noqa: F401
+
+    Base.metadata.create_all(bind=engine)
+    inspector = inspect(engine)
+    dialect = engine.dialect.name
+    statements = []
+
+    if "leave_requests" in inspector.get_table_names():
+        existing_columns = {column["name"] for column in inspector.get_columns("leave_requests")}
+        if "holiday_id" not in existing_columns:
+            if dialect == "postgresql":
+                statements.append("ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS holiday_id VARCHAR(36)")
+            else:
+                statements.append("ALTER TABLE leave_requests ADD COLUMN holiday_id VARCHAR(36)")
+
+    if dialect == "postgresql" and "company_holidays" in inspector.get_table_names():
+        statements.extend([
+            "CREATE INDEX IF NOT EXISTS idx_holidays_date ON company_holidays (holiday_date)",
+            "CREATE INDEX IF NOT EXISTS idx_holidays_type ON company_holidays (holiday_type)",
+        ])
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+
+
 def ensure_allocation_columns():
     """Safely align allocations table with the resource allocation foundation."""
     from app.models.allocation import Allocation  # noqa: F401
@@ -384,6 +413,8 @@ def ensure_allocation_columns():
     if dialect == "postgresql":
         statements.extend([
             "ALTER TABLE allocations ALTER COLUMN project_id DROP NOT NULL",
+            "UPDATE allocations SET is_active = TRUE WHERE is_active IS NULL" if "is_active" in existing_columns else None,
+            "ALTER TABLE allocations ALTER COLUMN is_active SET DEFAULT TRUE" if "is_active" in existing_columns else None,
             "UPDATE allocations SET status = 'active' WHERE status IS NULL",
             f"UPDATE allocations SET allocation_role = COALESCE(allocation_role, {role_source}, 'Team Member') WHERE allocation_role IS NULL",
             "UPDATE allocations SET billing_type = COALESCE(billing_type, 'billable') WHERE billing_type IS NULL",
@@ -401,6 +432,8 @@ def ensure_allocation_columns():
 
     with engine.begin() as connection:
         for statement in statements:
+            if not statement:
+                continue
             try:
                 connection.execute(text(statement))
             except Exception:
@@ -531,7 +564,8 @@ def ensure_employee_request_tables():
         if table in inspector.get_table_names()
     }
 
-    statements = [
+    statements = []
+    index_statements = [
         "CREATE INDEX IF NOT EXISTS idx_er_employee_id ON employee_requests (employee_id)",
         "CREATE INDEX IF NOT EXISTS idx_er_status ON employee_requests (status)",
         "CREATE INDEX IF NOT EXISTS idx_er_request_type ON employee_requests (request_type)",
@@ -588,11 +622,21 @@ def ensure_employee_request_tables():
     }
     attachment_columns = {
         "uploaded_by_id": "VARCHAR(36)",
+        "original_file_name": "VARCHAR(255)",
+        "stored_file_name": "VARCHAR(255)",
+        "file_extension": "VARCHAR(20)",
         "file_size_bytes": "INTEGER",
         "mime_type": "VARCHAR(120)",
+        "checksum_sha256": "VARCHAR(64)",
+        "storage_provider": "VARCHAR(30) DEFAULT 'local'",
         "storage_path": "TEXT",
+        "file_url": "TEXT",
+        "document_type": "VARCHAR(50) DEFAULT 'OTHER'",
         "is_deleted": "BOOLEAN DEFAULT FALSE",
+        "deleted_at": "TIMESTAMP",
+        "deleted_by_id": "VARCHAR(36)",
         "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        "updated_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
     }
 
     for column, definition in request_columns.items():
@@ -616,6 +660,9 @@ def ensure_employee_request_tables():
     if "performed_by" in legacy_history_columns:
         statements.append("ALTER TABLE request_status_history ALTER COLUMN performed_by DROP NOT NULL")
         statements.append("UPDATE request_status_history SET changed_by_id = COALESCE(changed_by_id, performed_by) WHERE changed_by_id IS NULL AND performed_by IS NOT NULL")
+    if "performed_at" in legacy_history_columns:
+        statements.append("ALTER TABLE request_status_history ALTER COLUMN performed_at DROP NOT NULL")
+        statements.append("UPDATE request_status_history SET created_at = COALESCE(created_at, performed_at) WHERE created_at IS NULL AND performed_at IS NOT NULL")
     if "new_status" in legacy_history_columns:
         statements.append("ALTER TABLE request_status_history ALTER COLUMN new_status DROP NOT NULL")
         statements.append("UPDATE request_status_history SET to_status = COALESCE(to_status, new_status) WHERE to_status IS NULL AND new_status IS NOT NULL")
@@ -635,6 +682,20 @@ def ensure_employee_request_tables():
     if "uploaded_by" in legacy_attachment_columns:
         statements.append("ALTER TABLE request_attachments ALTER COLUMN uploaded_by DROP NOT NULL")
         statements.append("UPDATE request_attachments SET uploaded_by_id = COALESCE(uploaded_by_id, uploaded_by) WHERE uploaded_by_id IS NULL AND uploaded_by IS NOT NULL")
+    if "file_name" in legacy_attachment_columns:
+        statements.append("ALTER TABLE request_attachments ALTER COLUMN file_name DROP NOT NULL")
+        statements.append("UPDATE request_attachments SET original_file_name = COALESCE(original_file_name, file_name) WHERE original_file_name IS NULL AND file_name IS NOT NULL")
+    statements.extend([
+        "UPDATE request_attachments SET original_file_name = COALESCE(original_file_name, stored_file_name, storage_path, id || '_attachment') WHERE original_file_name IS NULL",
+        "UPDATE request_attachments SET stored_file_name = COALESCE(stored_file_name, storage_path, id || '_attachment') WHERE stored_file_name IS NULL",
+        "UPDATE request_attachments SET storage_provider = COALESCE(storage_provider, 'local') WHERE storage_provider IS NULL",
+        "UPDATE request_attachments SET document_type = COALESCE(document_type, 'OTHER') WHERE document_type IS NULL",
+        "UPDATE request_attachments SET is_deleted = COALESCE(is_deleted, FALSE) WHERE is_deleted IS NULL",
+        "UPDATE request_attachments SET created_at = COALESCE(created_at, CURRENT_TIMESTAMP) WHERE created_at IS NULL",
+        "UPDATE request_attachments SET updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP) WHERE updated_at IS NULL",
+    ])
+
+    statements.extend(index_statements)
 
     with engine.begin() as connection:
         for statement in statements:

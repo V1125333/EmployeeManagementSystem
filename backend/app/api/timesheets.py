@@ -20,6 +20,11 @@ from app.schemas.compliance import ComplianceReport
 from app.services.audit_service import log_audit, log_authorization_failure
 from app.services.compliance_service import calculate_compliance
 from app.services.settings_service import get_current_employee
+from app.services.work_calendar_service import (
+    company_holiday_dates,
+    is_employee_working_day,
+    payable_leave_dates,
+)
 
 router = APIRouter(prefix="/timesheets", tags=["Timesheets"])
 
@@ -32,12 +37,22 @@ ENTRY_CODES = [
     {"code": "ADM", "label": "Admin", "requires_project": False},
 ]
 
-GENERIC_PROJECTS = [
-    {"id": None, "name": "Proof of Concept", "code": "POC"},
-    {"id": None, "name": "Break / Non-working", "code": "BRK"},
-    {"id": None, "name": "Training", "code": "TRN"},
-    {"id": None, "name": "Meetings", "code": "MTG"},
-    {"id": None, "name": "Admin", "code": "ADM"},
+INTERNAL_ACTIVITIES = [
+    {"id": None, "name": "Proof of Concept", "code": "POC", "group": "INTERNAL ACTIVITIES"},
+    {"id": None, "name": "Training", "code": "TRN", "group": "INTERNAL ACTIVITIES"},
+    {"id": None, "name": "Meetings", "code": "MTG", "group": "INTERNAL ACTIVITIES"},
+    {"id": None, "name": "Admin", "code": "ADM", "group": "INTERNAL ACTIVITIES"},
+    {"id": None, "name": "Break / Non-working", "code": "BRK", "group": "INTERNAL ACTIVITIES"},
+]
+
+LEAVE_ACTIVITIES = [
+    {
+        "id": None,
+        "name": "Approved leave is shown automatically",
+        "code": "LEAVE_INFO",
+        "group": "LEAVE ACTIVITIES",
+        "disabled": True,
+    },
 ]
 
 
@@ -146,6 +161,45 @@ def is_admin(role: str | None) -> bool:
     return normalized in {"super_admin", "admin", "hr_admin", "global_access"}
 
 
+def can_view_all_projects(role: str | None) -> bool:
+    normalized = (role or "").lower().replace(" ", "_")
+    return is_admin(role) or normalized in {"manager", "hr"}
+
+
+def can_log_admin_activity(role: str | None) -> bool:
+    normalized = (role or "").lower().replace(" ", "_")
+    return is_admin(role) or normalized in {"manager", "hr"}
+
+
+def selectable_entry_codes(employee: Employee) -> list[dict]:
+    allowed = {"PRJ", "POC", "BRK", "TRN", "MTG"}
+    if can_log_admin_activity(employee.role):
+        allowed.add("ADM")
+    return [item for item in ENTRY_CODES if item["code"] in allowed]
+
+
+def internal_activities_for(employee: Employee) -> list[dict]:
+    return [
+        item for item in INTERNAL_ACTIVITIES
+        if item["code"] != "ADM" or can_log_admin_activity(employee.role)
+    ]
+
+
+def project_allocation_for_date(
+    db: Session,
+    employee_id: str,
+    project_id: str,
+    target_date: date,
+) -> Allocation | None:
+    return db.query(Allocation).filter(
+        Allocation.employee_id == employee_id,
+        Allocation.project_id == project_id,
+        Allocation.status == "active",
+        Allocation.start_date <= target_date,
+        or_(Allocation.end_date.is_(None), Allocation.end_date >= target_date),
+    ).order_by(Allocation.allocation_percentage.desc()).first()
+
+
 def create_notification(
     db: Session,
     user_id: str,
@@ -166,6 +220,10 @@ def create_notification(
 
 
 def manager_for_employee(db: Session, employee: Employee) -> Employee | None:
+    if employee.manager_id:
+        manager = db.query(Employee).filter(Employee.id == employee.manager_id).first()
+        if manager and manager.id != employee.id:
+            return manager
     if not employee.reporting_manager:
         return None
     manager_name = employee.reporting_manager.strip().lower()
@@ -185,6 +243,30 @@ def can_view_timesheet_compliance(actor: Employee, employee: Employee) -> bool:
     return employee.reporting_manager == employee_name(actor)
 
 
+def project_manager_ids_for_timesheet(db: Session, employee_id: str, entries: list[TimesheetEntry]) -> set[str]:
+    manager_ids: set[str] = set()
+    for entry in entries:
+        if not entry.project_id or entry.entry_code == "BRK":
+            continue
+        allocation = project_allocation_for_date(db, employee_id, entry.project_id, entry.work_date)
+        if allocation and allocation.manager_id and allocation.manager_id != employee_id:
+            manager_ids.add(allocation.manager_id)
+    return manager_ids
+
+
+def can_review_timesheet(db: Session, reviewer: Employee, employee: Employee, entries: list[TimesheetEntry]) -> bool:
+    if employee.id == reviewer.id:
+        return False
+    if is_admin(reviewer.role):
+        return True
+    project_manager_ids = project_manager_ids_for_timesheet(db, employee.id, entries)
+    if project_manager_ids:
+        return reviewer.id in project_manager_ids
+    if employee.manager_id and employee.manager_id == reviewer.id:
+        return True
+    return employee.reporting_manager == employee_name(reviewer)
+
+
 def reviewer_name_for_entries(db: Session, entries: list[TimesheetEntry]) -> str | None:
     reviewer_id = next((entry.reviewed_by for entry in entries if entry.reviewed_by), None)
     if not reviewer_id:
@@ -199,12 +281,20 @@ def serialize_employee_week(
     entries: list[TimesheetEntry],
     requested_time_zone: str = "UTC",
 ) -> TimesheetWeekResponse:
+    target_week_end = week_end(week_start)
+    non_working_dates = {
+        week_start + timedelta(days=offset)
+        for offset in range(7)
+        if not is_employee_working_day(employee, week_start + timedelta(days=offset))
+    }
+    non_working_dates.update(company_holiday_dates(db, employee, week_start, target_week_end, {"public", "company"}))
     return serialize_week(
         week_start,
         entries,
         employee.workforce_type,
         requested_time_zone,
-        leave_days_for_week(db, employee.id, week_start),
+        leave_days_for_week(db, employee, week_start),
+        non_working_dates=non_working_dates,
         submitted_to=employee.reporting_manager,
         reviewed_by_name=reviewer_name_for_entries(db, entries),
     )
@@ -304,12 +394,14 @@ def serialize_week(
     workforce_type: str = "",
     requested_time_zone: str = "UTC",
     leave_days: list[LeaveDayResponse] | None = None,
+    non_working_dates: set[date] | None = None,
     submitted_to: str | None = None,
     reviewed_by_name: str | None = None,
 ) -> TimesheetWeekResponse:
     leave_days = leave_days or []
+    non_working_dates = non_working_dates or set()
     leave_dates = {item.date for item in leave_days}
-    entries = [entry for entry in entries if entry.work_date.weekday() not in {5, 6}]
+    entries = [entry for entry in entries if entry.work_date not in non_working_dates]
     entries = [entry for entry in entries if entry.work_date not in leave_dates]
     statuses = {entry.status for entry in entries}
     status = "not_started"
@@ -372,13 +464,29 @@ def serialize_week(
     )
 
 
-def validate_code(payload: TimesheetEntryPayload) -> None:
+def validate_entry_payload(db: Session, employee: Employee, payload: TimesheetEntryPayload) -> None:
     valid_codes = {item["code"] for item in ENTRY_CODES}
     code = payload.entry_code.upper()
     if code not in valid_codes:
         raise HTTPException(status_code=400, detail=f"Unsupported timesheet code: {payload.entry_code}")
+    if code == "ADM" and not can_log_admin_activity(employee.role):
+        raise HTTPException(status_code=403, detail="Admin activity can only be logged by manager, HR, or admin roles.")
     if code == "PRJ" and not payload.project_id:
         raise HTTPException(status_code=400, detail="Project work requires a project selection.")
+    if code == "PRJ" and payload.project_id:
+        project = db.query(Project).filter(
+            Project.id == payload.project_id,
+            Project.status.in_(["active", "planning"]),
+        ).first()
+        if not project:
+            raise HTTPException(status_code=400, detail="Invalid project selection.")
+        if not can_view_all_projects(employee.role):
+            allocation = project_allocation_for_date(db, employee.id, payload.project_id, payload.work_date)
+            if not allocation:
+                raise HTTPException(
+                    status_code=400,
+                    detail="You can only log time against projects assigned to you for that date.",
+                )
     if payload.end_time <= payload.start_time:
         raise HTTPException(status_code=400, detail="End time must be after start time. Split overnight work into separate days.")
 
@@ -423,13 +531,13 @@ def overtime_by_payload(entries: list[TimesheetEntryPayload], policy: dict) -> d
     return overtime
 
 
-def leave_days_for_week(db: Session, employee_id: str, target_week_start: date) -> list[LeaveDayResponse]:
+def leave_days_for_week(db: Session, employee: Employee, target_week_start: date) -> list[LeaveDayResponse]:
     target_week_end = week_end(target_week_start)
     requests = db.query(LeaveRequest, LeaveType).join(
         LeaveType,
         LeaveType.id == LeaveRequest.leave_type_id,
     ).filter(
-        LeaveRequest.employee_id == employee_id,
+        LeaveRequest.employee_id == employee.id,
         LeaveRequest.status.in_(["pending", "approved"]),
         LeaveRequest.start_date <= target_week_end,
         LeaveRequest.end_date >= target_week_start,
@@ -440,19 +548,18 @@ def leave_days_for_week(db: Session, employee_id: str, target_week_start: date) 
         current = max(request.start_date, target_week_start)
         end = min(request.end_date, target_week_end)
         hours = 4.0 if request.is_half_day else 8.0
-        while current <= end:
+        for current in payable_leave_dates(db, employee, leave_type, current, end):
             leave_days.append(LeaveDayResponse(
                 date=current,
                 status=request.status,
                 leave_type=leave_type.name,
                 hours=hours,
             ))
-            current += timedelta(days=1)
     return leave_days
 
 
-def locked_leave_dates(db: Session, employee_id: str, target_week_start: date) -> set[date]:
-    return {item.date for item in leave_days_for_week(db, employee_id, target_week_start)}
+def locked_leave_dates(db: Session, employee: Employee, target_week_start: date) -> set[date]:
+    return {item.date for item in leave_days_for_week(db, employee, target_week_start)}
 
 
 def assert_no_leave_conflicts(entries: list[TimesheetEntryPayload], leave_dates: set[date]) -> None:
@@ -465,13 +572,22 @@ def assert_no_leave_conflicts(entries: list[TimesheetEntryPayload], leave_dates:
         )
 
 
-def assert_no_weekend_entries(entries: list[TimesheetEntryPayload]) -> None:
-    blocked = sorted({entry.work_date for entry in entries if entry.work_date.weekday() in {5, 6}})
+def assert_no_non_working_entries(db: Session, employee: Employee, entries: list[TimesheetEntryPayload]) -> None:
+    if not entries:
+        return
+    start_date = min(entry.work_date for entry in entries)
+    end_date = max(entry.work_date for entry in entries)
+    holidays = company_holiday_dates(db, employee, start_date, end_date, {"public", "company"})
+    blocked = sorted({
+        entry.work_date
+        for entry in entries
+        if not is_employee_working_day(employee, entry.work_date) or entry.work_date in holidays
+    })
     if blocked:
         formatted = ", ".join(day.isoformat() for day in blocked)
         raise HTTPException(
             status_code=400,
-            detail=f"Timesheet entries cannot be added on Saturday or Sunday: {formatted}.",
+            detail=f"Timesheet entries cannot be added on non-working days or company holidays: {formatted}.",
         )
 
 
@@ -484,27 +600,61 @@ def load_week_entries(db: Session, employee_id: str, target_week_start: date) ->
 
 @router.get("/me/options")
 async def my_timesheet_options(
+    week_start: date | None = Query(default=None),
     db: Session = Depends(get_db),
     x_user_id: str | None = Header(default=None),
     x_user_email: str | None = Header(default=None),
 ):
     employee = get_employee(db, x_user_id, x_user_email)
-    today = date.today()
-    allocated_projects = db.query(Project).join(Allocation, Allocation.project_id == Project.id).filter(
+    window_start = week_start or date.today()
+    window_end = week_end(window_start)
+    project_options: list[dict] = []
+
+    assigned_rows = db.query(Project, Allocation).join(
+        Allocation,
+        Allocation.project_id == Project.id,
+    ).filter(
         Allocation.employee_id == employee.id,
         Allocation.status == "active",
-        Allocation.start_date <= today,
-        or_(Allocation.end_date.is_(None), Allocation.end_date >= today),
-    ).order_by(Project.name.asc()).all()
+        Allocation.start_date <= window_end,
+        or_(Allocation.end_date.is_(None), Allocation.end_date >= window_start),
+        Project.status.in_(["active", "planning"]),
+    ).order_by(Project.name.asc(), Allocation.allocation_percentage.desc()).all()
 
-    active_projects = db.query(Project).filter(Project.status.in_(["active", "planning"])).order_by(Project.name.asc()).all()
-    projects = allocated_projects or active_projects
+    seen_project_ids: set[str] = set()
+    for project, allocation in assigned_rows:
+        if project.id in seen_project_ids:
+            continue
+        seen_project_ids.add(project.id)
+        project_options.append({
+            "id": project.id,
+            "name": project.name,
+            "code": project.code,
+            "group": "PROJECTS",
+            "allocation_percentage": allocation.allocation_percentage,
+            "allocation_role": allocation.allocation_role,
+            "allocation_start_date": allocation.start_date,
+            "allocation_end_date": allocation.end_date,
+        })
+
+    if can_view_all_projects(employee.role):
+        active_projects = db.query(Project).filter(
+            Project.status.in_(["active", "planning"]),
+        ).order_by(Project.name.asc()).all()
+        for project in active_projects:
+            if project.id in seen_project_ids:
+                continue
+            project_options.append({
+                "id": project.id,
+                "name": project.name,
+                "code": project.code,
+                "group": "PROJECTS",
+                "allocation_percentage": None,
+            })
+
     return {
-        "entry_codes": ENTRY_CODES,
-        "projects": [
-            {"id": project.id, "name": project.name, "code": project.code}
-            for project in projects
-        ] + GENERIC_PROJECTS,
+        "entry_codes": selectable_entry_codes(employee),
+        "projects": project_options + internal_activities_for(employee) + LEAVE_ACTIVITIES,
         "requires_timesheet": employee.workforce_type.lower() not in {"unpaid intern", "volunteer"},
         "workforce_type": employee.workforce_type,
     }
@@ -550,9 +700,9 @@ async def save_my_timesheet_week(
     }
 
     for entry in payload.entries:
-        validate_code(entry)
-    assert_no_weekend_entries(payload.entries)
-    assert_no_leave_conflicts(payload.entries, locked_leave_dates(db, employee.id, payload.week_start))
+        validate_entry_payload(db, employee, entry)
+    assert_no_non_working_entries(db, employee, payload.entries)
+    assert_no_leave_conflicts(payload.entries, locked_leave_dates(db, employee, payload.week_start))
     policy = work_policy(employee.workforce_type, payload.time_zone)
     overtime_map = overtime_by_payload(payload.entries, policy)
 
@@ -623,10 +773,14 @@ async def submit_my_timesheet_week(
         entry.status = "submitted"
         entry.submitted_at = now
         entry.updated_at = now
-    manager = manager_for_employee(db, employee)
     notification_targets = []
-    if manager:
-        notification_targets.append(manager)
+    project_manager_ids = project_manager_ids_for_timesheet(db, employee.id, entries)
+    if project_manager_ids:
+        notification_targets.extend(db.query(Employee).filter(Employee.id.in_(project_manager_ids)).all())
+    else:
+        manager = manager_for_employee(db, employee)
+        if manager:
+            notification_targets.append(manager)
     notification_targets.extend(db.query(Employee).filter(Employee.role.in_(["super_admin", "admin", "hr_admin", "global_access"])).all())
     seen_targets = set()
     for target in notification_targets:
@@ -731,8 +885,8 @@ async def copy_my_timesheet_week(
         )
         for entry in source_entries
     ]
-    assert_no_weekend_entries(copied_payloads)
-    assert_no_leave_conflicts(copied_payloads, locked_leave_dates(db, employee.id, payload.target_week_start))
+    assert_no_non_working_entries(db, employee, copied_payloads)
+    assert_no_leave_conflicts(copied_payloads, locked_leave_dates(db, employee, payload.target_week_start))
 
     db.query(TimesheetEntry).filter(
         TimesheetEntry.employee_id == employee.id,
@@ -941,13 +1095,12 @@ async def timesheet_approvals(
     ).filter(
         TimesheetEntry.status == "submitted",
     )
-    if not is_admin(reviewer.role):
-        query = query.filter(Employee.reporting_manager == employee_name(reviewer))
     rows = query.group_by(TimesheetEntry.employee_id, TimesheetEntry.week_start).order_by(TimesheetEntry.week_start.desc()).all()
     approvals = []
     for employee_id, target_week_start in rows:
         employee = db.query(Employee).filter(Employee.id == employee_id).first()
-        if employee:
+        entries = load_week_entries(db, employee_id, target_week_start) if employee else []
+        if employee and can_review_timesheet(db, reviewer, employee, entries):
             approvals.append(serialize_timesheet_approval(db, employee, target_week_start))
     return {"approvals": approvals}
 
@@ -976,7 +1129,8 @@ async def decide_timesheet(
         )
         db.commit()
         raise HTTPException(status_code=403, detail="You cannot review your own timesheet.")
-    if not is_admin(reviewer.role) and employee.reporting_manager != employee_name(reviewer):
+    entries = load_week_entries(db, employee.id, week_start)
+    if not can_review_timesheet(db, reviewer, employee, entries):
         log_authorization_failure(
             db,
             reviewer,
@@ -988,7 +1142,6 @@ async def decide_timesheet(
         db.commit()
         raise HTTPException(status_code=403, detail="Not authorized to review this timesheet.")
 
-    entries = load_week_entries(db, employee.id, week_start)
     if not entries:
         raise HTTPException(status_code=404, detail="Timesheet not found.")
     if not all(entry.status == "submitted" for entry in entries):

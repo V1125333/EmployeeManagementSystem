@@ -11,27 +11,27 @@ export default {
           dark: 'var(--color-accent-dark)',
         },
         olive: {
-          DEFAULT: '#66785F',
-          light: '#f3f5ef',
-          mid: '#dde3d4',
-          dark: '#4d5c47',
+          DEFAULT: '#F5A23A',
+          light: '#FFF4E8',
+          mid: '#F9D7A6',
+          dark: '#D97706',
         },
         sage: {
-          DEFAULT: '#A3B18A',
-          light: '#c2ceab',
+          DEFAULT: '#252B3A',
+          light: '#E7E9EE',
         },
         warm: {
           bg: '#F7F6F2',
           card: '#FEFEFC',
         },
         hover: {
-          bg: '#EEF1E8',
+          bg: '#FFF7ED',
         },
         status: {
-          success: '#7BAE7F',
-          warning: '#D6A85F',
-          error: '#D97C7C',
-          info: '#7E9BB7',
+          success: '#1F9D55',
+          warning: '#F5A23A',
+          error: '#DC2626',
+          info: '#2563EB',
         },
       },
       fontFamily: {
@@ -43,7 +43,7 @@ export default {
       },
       boxShadow: {
         card: '0 1px 3px rgba(47,52,55,0.04), 0 1px 2px rgba(47,52,55,0.02)',
-        'card-md': '0 4px 12px rgba(47,52,55,0.06), 0 1px 3px rgba(47,52,55,0.04)',
+        'card-md': '0 8px 24px rgba(37,43,58,0.08), 0 1px 3px rgba(37,43,58,0.04)',
       },
     },
   },

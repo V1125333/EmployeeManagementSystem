@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from dataclasses import asdict, dataclass
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -22,6 +23,75 @@ REQUEST_TYPES = {
     "short_permission": "Short Permission",
     "overtime": "Overtime",
     "expense": "Expense Reimbursement",
+}
+
+
+@dataclass(frozen=True)
+class RequestPolicy:
+    request_type: str
+    label: str
+    allow_past_dates: bool
+    allow_future_dates: bool
+    allow_today: bool = True
+    maximum_past_days: int | None = None
+    maximum_future_days: int | None = None
+    allow_dates_before_joining: bool = False
+    maximum_pre_joining_days: int | None = None
+    requires_manager_approval: bool = True
+    requires_hr_approval: bool = False
+    requires_finance_approval: bool = False
+    requires_attachment: bool = False
+    requires_comments: bool = True
+    maximum_attachment_size: int = 10 * 1024 * 1024
+    accepted_file_types: tuple[str, ...] = (".pdf", ".jpg", ".jpeg", ".png", ".webp", ".doc", ".docx")
+    invalid_past_message: str = "This request type cannot be created for past dates."
+    invalid_future_message: str = "This request type cannot be created for future dates."
+    past_window_message: str = "Selected date is outside the allowed request period."
+    future_window_message: str = "Selected date is outside the allowed future request period."
+    pre_joining_message: str = "Selected date is outside the allowed pre-joining request period."
+
+
+REQUEST_POLICIES: dict[str, RequestPolicy] = {
+    "wfh": RequestPolicy(
+        request_type="wfh",
+        label="Work From Home",
+        allow_past_dates=False,
+        allow_future_dates=True,
+        maximum_future_days=None,
+        invalid_past_message="Work From Home requests cannot be created for past dates.",
+    ),
+    "short_permission": RequestPolicy(
+        request_type="short_permission",
+        label="Short Permission",
+        allow_past_dates=False,
+        allow_future_dates=True,
+        maximum_future_days=None,
+        invalid_past_message="Short permission cannot be requested for a past date.",
+    ),
+    "overtime": RequestPolicy(
+        request_type="overtime",
+        label="Overtime",
+        allow_past_dates=True,
+        allow_future_dates=False,
+        allow_today=False,
+        maximum_past_days=30,
+        invalid_future_message="Overtime claims can only be submitted after the work is completed.",
+        past_window_message="Overtime must be submitted within 30 days of the work date.",
+    ),
+    "expense": RequestPolicy(
+        request_type="expense",
+        label="Expense Reimbursement",
+        allow_past_dates=True,
+        allow_future_dates=False,
+        maximum_past_days=90,
+        allow_dates_before_joining=True,
+        maximum_pre_joining_days=14,
+        requires_hr_approval=True,
+        requires_attachment=settings.REQUESTS_EXPENSE_RECEIPT_REQUIRED,
+        invalid_future_message="Expense reimbursement cannot be created for a future expense date.",
+        past_window_message="Expense reimbursement must be submitted within 90 days of the expense date.",
+        pre_joining_message="Selected date is outside the allowed reimbursement period.",
+    ),
 }
 
 _TICKET_PREFIX = {
@@ -62,6 +132,10 @@ def employee_name(employee: Employee | None) -> str:
     return " ".join(part.strip() for part in parts if part and part.strip()) or employee.work_email
 
 
+def _name_key(value: str | None) -> str:
+    return " ".join((value or "").lower().replace(",", " ").split())
+
+
 def find_employee(db: Session, employee_id: str | None) -> Employee | None:
     if not employee_id:
         return None
@@ -81,14 +155,34 @@ def _is_reviewer(actor: Employee) -> bool:
 
 
 def _is_direct_report(actor: Employee, employee: Employee | None) -> bool:
-    return bool(employee and employee.manager_id == actor.id and employee.id != actor.id)
+    if not employee or employee.id == actor.id:
+        return False
+    if employee.manager_id == actor.id:
+        return True
+    manager_ref = _name_key(employee.reporting_manager)
+    return bool(manager_ref and manager_ref in {_name_key(employee_name(actor)), _name_key(actor.work_email)})
 
 
 def _manager_for_employee(db: Session, employee: Employee) -> Employee | None:
     manager = find_employee(db, employee.manager_id)
     if manager and manager.id != employee.id:
         return manager
+    manager_ref = _name_key(employee.reporting_manager)
+    if manager_ref:
+        managers = db.query(Employee).filter(Employee.id != employee.id).all()
+        for candidate in managers:
+            if manager_ref in {_name_key(employee_name(candidate)), _name_key(candidate.work_email)}:
+                return candidate
     return None
+
+
+def _ensure_employee_can_submit_hr_request(db: Session, employee: Employee) -> Employee:
+    if not employee.is_active or employee.employment_status != "active":
+        raise HTTPException(status_code=400, detail="Only active employees can submit requests.")
+    manager = _manager_for_employee(db, employee)
+    if not manager:
+        raise HTTPException(status_code=400, detail="No Reporting Manager has been assigned. Please contact HR.")
+    return manager
 
 
 def _hr_admins(db: Session) -> list[Employee]:
@@ -301,6 +395,15 @@ def _notify_expense_paid(db: Session, row: EmployeeRequest) -> None:
     )
 
 
+def _serialize_policy(policy: RequestPolicy, employee: Employee | None = None) -> dict[str, Any]:
+    data = asdict(policy)
+    data["accepted_file_types"] = list(policy.accepted_file_types)
+    min_date, max_date = _policy_bounds(policy, employee)
+    data["min_date"] = min_date
+    data["max_date"] = max_date
+    return data
+
+
 def _reason(row: EmployeeRequest) -> str | None:
     if row.request_type == "wfh":
         return row.wfh_reason
@@ -323,6 +426,91 @@ def _request_date(row: EmployeeRequest) -> date | None:
     if row.request_type == "expense":
         return row.exp_date
     return None
+
+
+def _employee_joining_date(employee: Employee | None) -> date | None:
+    if not employee:
+        return None
+    return getattr(employee, "date_of_joining", None) or getattr(employee, "joining_date", None)
+
+
+def _policy_for(request_type: str) -> RequestPolicy:
+    policy = REQUEST_POLICIES.get(request_type)
+    if not policy:
+        raise HTTPException(status_code=400, detail="Unsupported request type.")
+    return policy
+
+
+def _policy_bounds(policy: RequestPolicy, employee: Employee | None, today: date | None = None) -> tuple[date | None, date | None]:
+    today = today or date.today()
+    joining_date = _employee_joining_date(employee)
+    min_date = today - timedelta(days=policy.maximum_past_days) if policy.allow_past_dates and policy.maximum_past_days is not None else None
+    if not policy.allow_past_dates:
+        min_date = today
+    if joining_date:
+        joining_floor = joining_date
+        if policy.allow_dates_before_joining:
+            pre_joining_days = policy.maximum_pre_joining_days or 0
+            joining_floor = joining_date - timedelta(days=pre_joining_days)
+        min_date = max(filter(None, [min_date, joining_floor]), default=joining_floor)
+    max_date = today + timedelta(days=policy.maximum_future_days) if policy.allow_future_dates and policy.maximum_future_days is not None else None
+    if not policy.allow_future_dates:
+        max_date = today if policy.allow_today else today - timedelta(days=1)
+    if not policy.allow_past_dates and not policy.allow_today:
+        min_date = today + timedelta(days=1)
+    return min_date, max_date
+
+
+def _validate_date_against_policy(policy: RequestPolicy, employee: Employee | None, value: date, label: str) -> None:
+    today = date.today()
+    if value < today and not policy.allow_past_dates:
+        raise HTTPException(status_code=400, detail=policy.invalid_past_message)
+    if value > today and not policy.allow_future_dates:
+        raise HTTPException(status_code=400, detail=policy.invalid_future_message)
+    if value == today and not policy.allow_today:
+        raise HTTPException(status_code=400, detail=policy.invalid_future_message)
+
+    joining_date = _employee_joining_date(employee)
+    if joining_date and value < joining_date:
+        if not policy.allow_dates_before_joining:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{label} cannot be requested before your joining date ({joining_date.strftime('%b %d, %Y')}).",
+            )
+        earliest_pre_joining = joining_date - timedelta(days=policy.maximum_pre_joining_days or 0)
+        if value < earliest_pre_joining:
+            raise HTTPException(status_code=400, detail=policy.pre_joining_message)
+
+    min_date, max_date = _policy_bounds(policy, employee, today)
+    if min_date and value < min_date:
+        raise HTTPException(status_code=400, detail=policy.past_window_message)
+    if max_date and value > max_date:
+        raise HTTPException(status_code=400, detail=policy.future_window_message)
+
+
+def _validate_request_dates_by_policy(row: EmployeeRequest, employee: Employee | None) -> None:
+    policy = _policy_for(row.request_type)
+    start_date, end_date = _start_end_dates(row)
+    if not start_date:
+        return
+    _validate_date_against_policy(policy, employee, start_date, policy.label)
+    if end_date and end_date != start_date:
+        _validate_date_against_policy(policy, employee, end_date, policy.label)
+
+
+def _min_forward_request_date(employee: Employee | None) -> date:
+    today = date.today()
+    joining_date = _employee_joining_date(employee)
+    return max(today, joining_date) if joining_date else today
+
+
+def _validate_not_before_joining(employee: Employee | None, request_date: date | None, label: str) -> None:
+    joining_date = _employee_joining_date(employee)
+    if joining_date and request_date and request_date < joining_date:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{label} cannot be requested before your joining date ({joining_date.strftime('%b %d, %Y')}).",
+        )
 
 
 def _start_end_dates(row: EmployeeRequest) -> tuple[date | None, date | None]:
@@ -439,12 +627,13 @@ def _leave_overlap_warning(db: Session, row: EmployeeRequest) -> str | None:
 
 
 def _validate_request_fields(db: Session, row: EmployeeRequest, block_conflicts: bool = True) -> str | None:
-    today = date.today()
+    employee = find_employee(db, row.employee_id)
     if row.request_type == "wfh":
         if not row.wfh_from_date or not row.wfh_to_date:
             raise HTTPException(status_code=400, detail="WFH requests require From Date and To Date.")
         if row.wfh_to_date < row.wfh_from_date:
             raise HTTPException(status_code=400, detail="To Date must be on or after From Date.")
+        _validate_request_dates_by_policy(row, employee)
         if (row.wfh_to_date - row.wfh_from_date).days + 1 > settings.REQUESTS_WFH_MAX_DAYS:
             raise HTTPException(status_code=400, detail=f"WFH requests cannot exceed {settings.REQUESTS_WFH_MAX_DAYS} days.")
         if block_conflicts and _check_wfh_overlap(db, row.employee_id, row.wfh_from_date, row.wfh_to_date, row.id):
@@ -452,6 +641,7 @@ def _validate_request_fields(db: Session, row: EmployeeRequest, block_conflicts:
     elif row.request_type == "short_permission":
         if not row.sp_date or not row.sp_duration_minutes:
             raise HTTPException(status_code=400, detail="Short permission requires date, start time, and end time.")
+        _validate_request_dates_by_policy(row, employee)
         if row.sp_duration_minutes > settings.REQUESTS_SP_MAX_DURATION_MINUTES:
             raise HTTPException(status_code=400, detail=f"Short permission cannot exceed {settings.REQUESTS_SP_MAX_DURATION_MINUTES} minutes.")
         if block_conflicts and _check_sp_overlap(db, row.employee_id, row.sp_date, row.id):
@@ -459,13 +649,13 @@ def _validate_request_fields(db: Session, row: EmployeeRequest, block_conflicts:
     elif row.request_type == "overtime":
         if not row.ot_date or not row.ot_duration_minutes:
             raise HTTPException(status_code=400, detail="Overtime requests require date, start time, and end time.")
+        _validate_request_dates_by_policy(row, employee)
         if row.ot_duration_minutes > settings.REQUESTS_OVERTIME_MAX_DURATION_MINUTES:
             raise HTTPException(status_code=400, detail=f"Overtime cannot exceed {settings.REQUESTS_OVERTIME_MAX_DURATION_MINUTES} minutes.")
     elif row.request_type == "expense":
         if not row.exp_date or not row.exp_amount:
             raise HTTPException(status_code=400, detail="Expense requests require date and amount.")
-        if row.exp_date > today:
-            raise HTTPException(status_code=400, detail="Expense date cannot be in the future.")
+        _validate_request_dates_by_policy(row, employee)
     return _leave_overlap_warning(db, row)
 
 
@@ -607,6 +797,15 @@ def get_types() -> list[dict[str, str]]:
     return [{"value": key, "label": value} for key, value in REQUEST_TYPES.items()]
 
 
+def get_request_policies(actor: Employee) -> dict[str, Any]:
+    return {
+        "policies": {
+            key: _serialize_policy(policy, actor)
+            for key, policy in REQUEST_POLICIES.items()
+        }
+    }
+
+
 def get_request(db: Session, request_id: str) -> EmployeeRequest:
     row = db.query(EmployeeRequest).filter(EmployeeRequest.id == request_id).first()
     if not row:
@@ -677,7 +876,15 @@ def get_approval_queue(
     if _is_admin(actor):
         query = query.filter(EmployeeRequest.employee_id != actor.id)
     else:
-        query = query.filter(Employee.manager_id == actor.id, EmployeeRequest.employee_id != actor.id)
+        query = query.filter(
+            EmployeeRequest.employee_id != actor.id,
+            or_(
+                EmployeeRequest.current_owner_id == actor.id,
+                Employee.manager_id == actor.id,
+                Employee.reporting_manager == employee_name(actor),
+                Employee.reporting_manager == actor.work_email,
+            ),
+        )
     if status and status != "all":
         query = query.filter(EmployeeRequest.status == status)
     if request_type and request_type != "all":
@@ -729,9 +936,7 @@ def create_request(db: Session, actor: Employee, payload: RequestCreateSchema) -
         metadata={"ticket_number": row.ticket_number},
     )
     if status == "pending":
-        manager = _manager_for_employee(db, actor)
-        if not manager:
-            raise HTTPException(status_code=400, detail="No reporting manager found for this employee. Please contact HR.")
+        manager = _ensure_employee_can_submit_hr_request(db, actor)
         row.submitted_to_id = manager.id
         row.current_owner_id = manager.id
         row.pending_since = utc_now()
@@ -772,9 +977,9 @@ def submit_request(db: Session, actor: Employee, request_id: str) -> EmployeeReq
     if warning:
         setattr(row, "_warning", warning)
     employee = find_employee(db, row.employee_id)
-    manager = _manager_for_employee(db, employee) if employee else None
-    if not manager:
-        raise HTTPException(status_code=400, detail="No reporting manager found for this employee. Please contact HR.")
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+    manager = _ensure_employee_can_submit_hr_request(db, employee)
     row.submitted_to_id = manager.id
     row.current_owner_id = manager.id
     row.pending_since = utc_now()
@@ -805,14 +1010,36 @@ def approve_request(db: Session, actor: Employee, request_id: str, notes: str | 
     _ensure_review_access(db, actor, row)
     if row.status != "pending":
         raise HTTPException(status_code=400, detail="Only pending requests can be approved.")
-    _transition(db, row, actor, "approved", "request_approved", notes=notes)
+    policy = _policy_for(row.request_type)
     actor_role = normalize_role(actor.role)
-    if actor_role == "manager":
+    if actor_role == "manager" and policy.requires_hr_approval:
         hr_admins = _hr_admins(db)
         next_owner = next((item for item in hr_admins if item.id != actor.id and item.id != row.employee_id), None)
-        row.current_owner_id = next_owner.id if next_owner else None
-        row.pending_since = utc_now() if next_owner else None
         if next_owner:
+            old_owner_id = row.current_owner_id
+            row.current_owner_id = next_owner.id
+            row.pending_since = utc_now()
+            row.updated_by = actor.id
+            row.updated_at = utc_now()
+            db.add(RequestStatusHistory(
+                request_id=row.id,
+                from_status=row.status,
+                to_status=row.status,
+                changed_by_id=actor.id,
+                reason=notes or "Manager approved; routed to HR.",
+            ))
+            log_audit(
+                db,
+                actor,
+                "request_manager_approved",
+                "employee_request",
+                row.id,
+                old_values={"current_owner_id": old_owner_id},
+                new_values={"current_owner_id": next_owner.id, "status": row.status},
+                reason=notes,
+                metadata={"ticket_number": row.ticket_number},
+            )
+            _clear_inbox(db, row.id)
             _notify(
                 db,
                 next_owner.id,
@@ -820,6 +1047,20 @@ def approve_request(db: Session, actor: Employee, request_id: str, notes: str | 
                 f"{row.ticket_number or 'A request'} was approved by {employee_name(actor)} and is ready for HR review.",
                 row.id,
             )
+            _inbox(
+                db,
+                next_owner.id,
+                f"{REQUEST_TYPES[row.request_type]} HR review",
+                f"{row.ticket_number or 'A request'} was approved by {employee_name(actor)} and needs HR review.",
+                row.id,
+            )
+            db.commit()
+            db.refresh(row)
+            return row
+    _transition(db, row, actor, "approved", "request_approved", notes=notes)
+    if actor_role == "manager":
+        row.current_owner_id = None
+        row.pending_since = None
     else:
         row.current_owner_id = None
         row.pending_since = None

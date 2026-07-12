@@ -21,6 +21,7 @@ from app.core.database import (
     ensure_timesheet_columns,
     ensure_time_off_columns,
     ensure_leave_type_policy_columns,
+    ensure_holiday_tables,
     ensure_allocation_columns,
     ensure_project_workflow_tables,
     ensure_staffing_fulfillment_columns,
@@ -35,7 +36,7 @@ from app.models import (
     LeaveType, LeaveBalance, LeaveRequest, Attendance, AttendanceCorrection,
     OnboardingTask, Training, TrainingEnrollment,
     Channel, ChannelMember, Message, MessageReaction,
-    Project, Allocation, Announcement, AnnouncementAudience, AnnouncementAcknowledgment,
+    Project, ProjectDocument, CompanyHoliday, Allocation, Announcement, AnnouncementAudience, AnnouncementAcknowledgment,
     AnnouncementRead, Notification, ActionInboxItem, ActivityLog,
     StaffingRequest, StaffingRequestCandidate,
     UserSettings, SupportTicket, UserPreferences,
@@ -68,6 +69,7 @@ from app.api.forecasting import router as forecasting_router
 from app.api.staffing_requests import router as staffing_requests_router
 from app.api.admin_security import router as admin_security_router
 from app.api.requests import router as requests_router
+from app.api.holidays import router as holidays_router
 
 _log_level = logging.DEBUG if os.getenv("APP_ENV", "development") == "development" else logging.INFO
 logging.basicConfig(
@@ -123,20 +125,24 @@ def seed_designations(db):
 
 
 def seed_leave_types(db):
-    """Seed default leave types if table is empty."""
-    if db.query(LeaveType).count() > 0:
-        return
+    """Seed default leave types and add newer policy types if missing."""
     leave_types = [
         ("Casual Leave", "CL", 12, True, True, 5, 1, True, None, None),
-        ("Sick Leave", "SL", 10, True, False, 0, 2, False, 30, None),
+        ("Sick Leave", "SL", 10, True, False, 0, 2, True, None, None),
         ("Earned Leave", "EL", 15, True, True, 10, 3, True, None, None),
         ("Maternity Leave", "ML", 180, True, False, 0, 4, True, None, None),
         ("Paternity Leave", "PL", 15, True, False, 0, 5, True, None, None),
         ("Compensatory Off", "CO", 0, True, False, 0, 6, True, None, None),
         ("Loss of Pay", "LOP", 0, False, False, 0, 7, True, None, None),
         ("Bereavement Leave", "BL", 5, True, False, 0, 8, True, 30, "Future bereavement leave is unusual. Please confirm the dates before submitting."),
+        ("Floating Holiday", "FL", 1, True, False, 0, 9, True, None, None),
+        ("Optional Holiday", "OH", 1, True, False, 0, 10, True, None, None),
     ]
+    created = 0
     for name, code, days, paid, carry, max_carry, order, allow_future, past_limit, future_warning in leave_types:
+        existing = db.query(LeaveType).filter(LeaveType.code == code).first()
+        if existing:
+            continue
         db.add(LeaveType(
             name=name, code=code, default_days_per_year=days,
             is_paid=paid, is_carry_forward=carry,
@@ -145,8 +151,45 @@ def seed_leave_types(db):
             past_date_limit_days=past_limit,
             future_date_warning=future_warning,
         ))
+        created += 1
     db.commit()
-    logger.info(f"Seeded {len(leave_types)} leave types")
+    if created:
+        logger.info(f"Seeded {created} leave types")
+
+
+def seed_company_holidays(db):
+    """Seed region-aware company holidays if missing."""
+    holidays = [
+        ("New Year's Day", date(2026, 1, 1), "public", "all"),
+        ("Independence Day", date(2026, 7, 4), "public", "US"),
+        ("Thanksgiving", date(2026, 11, 26), "public", "US"),
+        ("Christmas Day", date(2026, 12, 25), "public", "all"),
+        ("Republic Day", date(2026, 1, 26), "public", "IN"),
+        ("Holi", date(2026, 3, 25), "public", "IN"),
+        ("Diwali", date(2026, 11, 8), "floating", "IN"),
+        ("Dussehra", date(2026, 10, 28), "optional", "IN"),
+        ("UAE National Day", date(2026, 12, 2), "public", "AE"),
+        ("Eid Al Fitr", date(2026, 3, 31), "floating", "AE"),
+        ("Company Foundation Day", date(2026, 9, 15), "company", "all"),
+    ]
+    created = 0
+    for name, holiday_date, holiday_type, regions in holidays:
+        existing = db.query(CompanyHoliday).filter(
+            CompanyHoliday.name == name,
+            CompanyHoliday.holiday_date == holiday_date,
+        ).first()
+        if existing:
+            continue
+        db.add(CompanyHoliday(
+            name=name,
+            holiday_date=holiday_date,
+            holiday_type=holiday_type,
+            regions=regions,
+        ))
+        created += 1
+    db.commit()
+    if created:
+        logger.info(f"Seeded {created} company holidays")
 
 
 def seed_default_channels(db):
@@ -210,6 +253,7 @@ async def lifespan(app: FastAPI):
     ensure_timesheet_columns()
     ensure_time_off_columns()
     ensure_leave_type_policy_columns()
+    ensure_holiday_tables()
     ensure_allocation_columns()
     ensure_project_workflow_tables()
     ensure_staffing_fulfillment_columns()
@@ -221,6 +265,7 @@ async def lifespan(app: FastAPI):
         seed_departments(db)
         seed_designations(db)
         seed_leave_types(db)
+        seed_company_holidays(db)
         seed_default_channels(db)
         seed_admin(db)
         logger.info("Database seeding complete")
@@ -266,6 +311,7 @@ app.include_router(forecasting_router, prefix="/api/v1")
 app.include_router(staffing_requests_router, prefix="/api/v1")
 app.include_router(admin_security_router, prefix="/api/v1")
 app.include_router(requests_router, prefix="/api/v1")
+app.include_router(holidays_router, prefix="/api/v1")
 
 
 

@@ -42,6 +42,7 @@ export function LoginPage() {
   const [resetHasMfa, setResetHasMfa] = useState(false);
   const [loginChallengeToken, setLoginChallengeToken] = useState('');
   const [unlockReason, setUnlockReason] = useState('');
+  const [requiresTemporaryPassword, setRequiresTemporaryPassword] = useState(false);
 
   // QR code data from API
   const [qrBase64, setQrBase64] = useState('');
@@ -67,6 +68,7 @@ export function LoginPage() {
     setResetHasMfa(false);
     setLoginChallengeToken('');
     setUnlockReason('');
+    setRequiresTemporaryPassword(false);
   };
 
   const goBack = () => {
@@ -109,6 +111,7 @@ export function LoginPage() {
       } else {
         setEmail(normalizedEmail);
         setIsFirstLogin(false);
+        setRequiresTemporaryPassword(Boolean(data.force_password_change));
         setStep('login_password');
       }
     } catch {
@@ -247,6 +250,11 @@ export function LoginPage() {
             : '';
           setError(`${data.message || 'Invalid email or password.'}${attempts}`);
         }
+        return;
+      }
+      if (data.force_password_change && data.employee) {
+        setUserFromApi({ ...data.employee, force_password_change: true });
+        navigate('/force-change-password', { replace: true });
         return;
       }
       setLoginChallengeToken(data.login_challenge_token || '');
@@ -668,29 +676,38 @@ export function LoginPage() {
           {step === 'login_password' && (
             <>
               <div className="text-center mb-6">
-                <h2 className="text-2xl font-bold text-[#2F3437] tracking-tight mb-1.5">Welcome back</h2>
-                <p className="text-sm text-gray-500">{email}</p>
+                <h2 className="text-2xl font-bold text-[#2F3437] tracking-tight mb-1.5">{requiresTemporaryPassword ? 'Temporary password' : 'Welcome back'}</h2>
+                <p className="text-sm text-gray-500">
+                  {requiresTemporaryPassword ? 'Enter the temporary password shared by your administrator.' : email}
+                </p>
               </div>
               {error && <div className="mb-5 px-4 py-3 rounded-xl bg-status-error/5 border border-status-error/15 text-[13px] text-status-error font-medium">{error}</div>}
               <form onSubmit={handleLoginPassword}>
-                <label className="block text-[13px] font-semibold text-[#2F3437] mb-2">Password</label>
+                <label className="block text-[13px] font-semibold text-[#2F3437] mb-2">{requiresTemporaryPassword ? 'Temporary password' : 'Password'}</label>
                 <div className="relative mb-6">
                   <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"><Lock size={16} /></div>
-                  <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" required className={cn(inputClass, 'pl-10 pr-11')} autoFocus />
+                  <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={requiresTemporaryPassword ? 'Enter temporary password' : 'Enter your password'} required className={cn(inputClass, 'pl-10 pr-11')} autoFocus />
                   <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={startForgotPassword}
-                  className="mb-5 text-[13px] font-semibold text-olive transition-colors hover:text-olive-dark"
-                >
-                  Forgot password?
-                </button>
+                {!requiresTemporaryPassword && (
+                  <button
+                    type="button"
+                    onClick={startForgotPassword}
+                    className="mb-5 text-[13px] font-semibold text-olive transition-colors hover:text-olive-dark"
+                  >
+                    Forgot password?
+                  </button>
+                )}
+                {requiresTemporaryPassword && (
+                  <div className="mb-5 rounded-xl bg-warm-bg px-4 py-3 text-[12px] leading-5 text-gray-500">
+                    After this step you will create a new password. You will not need the temporary password again.
+                  </div>
+                )}
                 <button type="submit" disabled={loading} className={cn('w-full py-3.5 rounded-xl text-[15px] font-semibold text-white flex items-center justify-center gap-2 transition-all', loading ? 'bg-olive/60 cursor-not-allowed' : 'bg-olive hover:bg-olive-dark active:scale-[0.99] shadow-sm')}>
                   {loading && <Loader2 size={16} className="animate-spin" />}
-                  {loading ? 'Signing in...' : 'Continue'}
+                  {loading ? 'Checking...' : requiresTemporaryPassword ? 'Set New Password' : 'Continue'}
                 </button>
               </form>
             </>

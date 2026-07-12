@@ -23,6 +23,16 @@ def numeric(value) -> float:
     return float(value or 0)
 
 
+def has_complete_emergency_contact(employee: Employee | None) -> bool:
+    if not employee:
+        return False
+    return all([
+        bool((employee.emergency_contact_name or "").strip()),
+        bool((employee.emergency_contact_phone or "").strip()),
+        bool((employee.emergency_contact_relation or "").strip()),
+    ])
+
+
 def current_employee(db: Session, user_id: str | None, user_email: str | None) -> Employee | None:
     employee = None
     if user_id:
@@ -155,7 +165,30 @@ async def get_inbox(
             ActionInboxItem.assigned_to_user_id == employee.id,
             ActionInboxItem.status == "pending",
         ).order_by(ActionInboxItem.created_at.desc()).all()
-        items.extend(serialize_action_item(item) for item in stored_items)
+        stale_profile_items = [
+            item for item in stored_items
+            if item.item_type == "profile_update"
+            and item.related_entity_type == "employee"
+            and item.related_entity_id == employee.id
+            and has_complete_emergency_contact(employee)
+        ]
+        if stale_profile_items:
+            for item in stale_profile_items:
+                item.status = "completed"
+                item.updated_at = datetime.utcnow()
+            db.query(Notification).filter(
+                Notification.user_id == employee.id,
+                Notification.notification_type == "profile_update",
+                Notification.related_entity_type == "employee",
+                Notification.related_entity_id == employee.id,
+            ).delete(synchronize_session=False)
+            db.commit()
+
+        items.extend(
+            serialize_action_item(item)
+            for item in stored_items
+            if item.status == "pending"
+        )
 
     if role in MANAGER_ROLES:
         items.extend(manager_action_items(db, employee))

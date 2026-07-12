@@ -4,7 +4,7 @@ import {
   Network, Package, Settings, Shield, FileText,
   PanelLeftClose, PanelLeftOpen, Award, Files, CalendarPlus,
   WalletCards, ClipboardCheck, Clock3, LogIn, Send, PartyPopper,
-  BookOpen, CalendarClock, ClipboardList,
+  BookOpen, CalendarClock, ClipboardList, Bot,
 } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { mainNavItems, adminNavItems, employeeNavItems, resourceNavItems } from '@/data/mockData';
@@ -17,6 +17,7 @@ const iconMap: Record<string, React.ElementType> = {
   Network, Package, Settings, Shield, FileText, Award, Files,
   CalendarPlus, WalletCards, ClipboardCheck, Clock3, LogIn, Send,
   PartyPopper, BookOpen, CalendarClock, ClipboardList,
+  Bot,
 };
 
 function isAdminRole(role?: string) {
@@ -28,6 +29,11 @@ function isManagerRole(role?: string) {
   return (role || '').toLowerCase().replace(/\s+/g, '_') === 'manager';
 }
 
+function canReviewApprovals(role?: string) {
+  const normalized = (role || '').toLowerCase().replace(/\s+/g, '_');
+  return ['manager', 'super_admin', 'admin', 'hr_admin', 'global_access'].includes(normalized);
+}
+
 export function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -35,6 +41,12 @@ export function Sidebar() {
   const { sidebarCollapsed: collapsed, saveAppearancePatch } = useTheme();
   const showAdminNavigation = isAdminRole(user?.role);
   const showManagerResources = isManagerRole(user?.role);
+  const employeeNavigation = employeeNavItems.filter((item) => (
+    item.key !== 'leave-approvals' || canReviewApprovals(user?.role)
+  ));
+  const careerNavigationKeys = new Set(['projects', 'career-profile']);
+  const primaryEmployeeNavigation = employeeNavigation.filter((item) => !careerNavigationKeys.has(item.key));
+  const careerEmployeeNavigation = employeeNavigation.filter((item) => careerNavigationKeys.has(item.key));
   const currentUser = user || {
     name: 'User',
     role: 'Employee',
@@ -56,21 +68,22 @@ export function Sidebar() {
   const NavButton = ({ item }: { item: typeof mainNavItems[0] }) => {
     const active = location.pathname === item.path;
     const IconComp = iconMap[item.icon] || LayoutDashboard;
+    const displayLabel = item.key === 'projects' && showManagerResources ? 'Projects' : item.label;
 
     return (
       <button
         onClick={() => navigate(item.path)}
-        title={collapsed ? item.label : undefined}
+        title={collapsed ? displayLabel : undefined}
         className={cn(
           'w-full flex items-center gap-2.5 rounded-lg text-[13.5px] font-medium transition-all duration-150 mb-0.5',
           collapsed ? 'justify-center px-0 py-2.5' : 'px-3.5 py-2.5',
           active
-            ? 'bg-accent text-white'
-            : 'text-gray-500 hover:bg-hover-bg hover:text-[#2F3437]'
+            ? 'bg-[#252B3A] text-white shadow-sm'
+            : 'text-gray-500 hover:bg-hover-bg hover:text-[#252B3A]'
         )}
       >
-        <IconComp size={18} className="shrink-0" />
-        {!collapsed && <span className="truncate">{item.label}</span>}
+        <IconComp size={18} className={cn('shrink-0', active && 'text-accent')} />
+        {!collapsed && <span className="truncate">{displayLabel}</span>}
       </button>
     );
   };
@@ -89,20 +102,12 @@ export function Sidebar() {
           collapsed ? 'justify-center px-2 py-5' : 'justify-between px-5 py-5'
         )}
       >
-        <div className={cn('flex items-center gap-2.5 overflow-hidden', collapsed && 'hidden')}>
-          <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center text-white font-extrabold text-sm shrink-0">
-            R
-          </div>
-          {!collapsed && (
-            <div className="min-w-0">
-              <div className="text-[15px] font-bold text-[#2F3437] tracking-tight leading-tight">
-                Reknew <span className="text-accent">Orbit</span>
-              </div>
-              <div className="text-[10px] text-gray-400 font-medium tracking-wide">
-                Employee Management
-              </div>
-            </div>
-          )}
+        <div className={cn('flex items-center overflow-hidden', collapsed && 'hidden')}>
+          <img
+            src="/reknew-orbit.png"
+            alt="Reknew Orbit"
+            className="h-10 w-[166px] object-contain object-left"
+          />
         </div>
 
         {/* Collapse button — only when expanded */}
@@ -112,10 +117,14 @@ export function Sidebar() {
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           className={cn(
             'h-8 w-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-hover-bg hover:text-accent transition-all duration-150',
-            collapsed && 'border border-[#E5E7EB] bg-white'
+            collapsed && 'h-10 w-10 border border-[#E5E7EB] bg-white p-1'
           )}
         >
-          {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+          {collapsed ? (
+            <img src="/reknew-logo-icon.png" alt="" className="h-full w-full object-contain" />
+          ) : (
+            <PanelLeftClose size={16} />
+          )}
         </button>
       </div>
 
@@ -156,9 +165,24 @@ export function Sidebar() {
           </>
         ) : (
           <>
-            {employeeNavItems.map((item) => (
+            {primaryEmployeeNavigation.map((item) => (
               <NavButton key={item.key} item={item} />
             ))}
+            {careerEmployeeNavigation.length > 0 && (
+              <>
+                <div className={cn('my-3', collapsed ? 'px-1' : 'px-3.5')}>
+                  {!collapsed && (
+                    <div className="text-[10px] font-bold text-gray-400 tracking-widest uppercase">
+                      Career & Work
+                    </div>
+                  )}
+                  {collapsed && <div className="h-px bg-[#E5E7EB]" />}
+                </div>
+                {careerEmployeeNavigation.map((item) => (
+                  <NavButton key={item.key} item={item} />
+                ))}
+              </>
+            )}
             {showManagerResources && (
               <>
                 <div className={cn('my-3', collapsed ? 'px-1' : 'px-3.5')}>

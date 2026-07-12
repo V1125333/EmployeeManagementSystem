@@ -9,7 +9,6 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 export function ForceChangePasswordPage() {
   const navigate = useNavigate();
   const { user, isAuthenticated, updateUser, logout } = useAuth();
-  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -46,7 +45,6 @@ export function ForceChangePasswordPage() {
           'x-user-email': user.email,
         },
         body: JSON.stringify({
-          current_password: currentPassword,
           new_password: newPassword,
           confirm_password: confirmPassword,
         }),
@@ -72,9 +70,9 @@ export function ForceChangePasswordPage() {
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-olive/10">
             <ShieldCheck size={23} className="text-olive" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-[#2F3437]">Change temporary password</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-[#2F3437]">Create new password</h1>
           <p className="mt-2 text-sm leading-6 text-gray-500">
-            Your password was reset by an administrator. Create a new password before continuing.
+            Temporary password verified. Create a new password before continuing.
           </p>
         </div>
 
@@ -86,7 +84,6 @@ export function ForceChangePasswordPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {[
-            ['Current temporary password', currentPassword, setCurrentPassword],
             ['New password', newPassword, setNewPassword],
             ['Confirm new password', confirmPassword, setConfirmPassword],
           ].map(([label, value, setter]) => (

@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Response, UploadFile
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -28,6 +30,10 @@ router = APIRouter(prefix="/projects", tags=["Projects"])
 
 def _is_project_admin(actor: Employee) -> bool:
     return normalize_role(actor.role) in {"super_admin", "hr_admin", "admin", "global_access"}
+
+
+def _is_manager(actor: Employee) -> bool:
+    return normalize_role(actor.role) == "manager"
 
 
 def _require_project_admin(db: Session, actor: Employee, action: str) -> None:
@@ -67,6 +73,30 @@ def _employee_payload(employee: Employee) -> dict:
     }
 
 
+def _is_direct_manager(actor: Employee, employee: Employee | None) -> bool:
+    if not employee:
+        return False
+    actor_name = _employee_name(actor)
+    return bool(
+        (employee.manager_id and employee.manager_id == actor.id)
+        or (employee.reporting_manager and employee.reporting_manager == actor_name)
+    )
+
+
+def _active_employee_project_allocation_query(db: Session, actor: Employee, project_id: str | None = None):
+    today = date.today()
+    query = db.query(Allocation).filter(
+        Allocation.employee_id == actor.id,
+        Allocation.status == "active",
+        Allocation.project_id.isnot(None),
+        Allocation.start_date <= today,
+        or_(Allocation.end_date.is_(None), Allocation.end_date >= today),
+    )
+    if project_id:
+        query = query.filter(Allocation.project_id == project_id)
+    return query
+
+
 @router.get("/", response_model=dict)
 async def projects_index(
     search: str | None = Query(None),
@@ -77,9 +107,24 @@ async def projects_index(
     current_user_id: str | None = Header(None, alias="x-user-id"),
     current_user_email: str | None = Header(None, alias="x-user-email"),
 ):
-    get_current_employee(db, current_user_id, current_user_email)
-    projects, total = list_projects(db, search=search, status=status, limit=limit, offset=offset)
+    actor = get_current_employee(db, current_user_id, current_user_email)
+    projects, total = list_projects(db, actor=actor, search=search, status=status, limit=limit, offset=offset)
     return {"projects": projects, "total": total, "limit": limit, "offset": offset}
+
+
+@router.get("/my-allocations", response_model=list[AllocationOut])
+async def my_active_allocations(
+    db: Session = Depends(get_db),
+    current_user_id: str | None = Header(None, alias="x-user-id"),
+    current_user_email: str | None = Header(None, alias="x-user-email"),
+):
+    actor = get_current_employee(db, current_user_id, current_user_email)
+    allocations = (
+        _active_employee_project_allocation_query(db, actor)
+        .order_by(Allocation.start_date.desc(), Allocation.updated_at.desc())
+        .all()
+    )
+    return [serialize_allocation(db, allocation) for allocation in allocations]
 
 
 @router.post("/", response_model=ProjectOut)
@@ -137,8 +182,13 @@ async def project_detail(
     current_user_id: str | None = Header(None, alias="x-user-id"),
     current_user_email: str | None = Header(None, alias="x-user-email"),
 ):
-    get_current_employee(db, current_user_id, current_user_email)
-    return get_project(db, project_id)
+    actor = get_current_employee(db, current_user_id, current_user_email)
+    project = get_project(db, project_id)
+    if _is_project_admin(actor) or _is_manager(actor):
+        return project
+    if _active_employee_project_allocation_query(db, actor, project_id).first():
+        return project
+    raise HTTPException(status_code=403, detail="Not authorized to view this project.")
 
 
 @router.patch("/{project_id}", response_model=ProjectOut)
@@ -174,14 +224,25 @@ async def project_allocations(
     current_user_id: str | None = Header(None, alias="x-user-id"),
     current_user_email: str | None = Header(None, alias="x-user-email"),
 ):
-    get_current_employee(db, current_user_id, current_user_email)
+    actor = get_current_employee(db, current_user_id, current_user_email)
     get_project(db, project_id)
-    allocations = (
-        db.query(Allocation)
-        .filter(Allocation.project_id == project_id)
-        .order_by(Allocation.status.asc(), Allocation.start_date.desc(), Allocation.updated_at.desc())
-        .all()
-    )
+    query = db.query(Allocation).filter(Allocation.project_id == project_id)
+    if _is_project_admin(actor):
+        pass
+    elif _is_manager(actor):
+        employees = {employee.id: employee for employee in db.query(Employee).all()}
+        managed_ids = [employee_id for employee_id, employee in employees.items() if _is_direct_manager(actor, employee)]
+        query = query.filter(Allocation.employee_id.in_(managed_ids))
+    else:
+        query = query.filter(
+            Allocation.employee_id == actor.id,
+            Allocation.status == "active",
+            Allocation.start_date <= date.today(),
+            or_(Allocation.end_date.is_(None), Allocation.end_date >= date.today()),
+        )
+    allocations = query.order_by(Allocation.status.asc(), Allocation.start_date.desc(), Allocation.updated_at.desc()).all()
+    if not allocations and not (_is_project_admin(actor) or _is_manager(actor)):
+        raise HTTPException(status_code=403, detail="Not authorized to view this project's allocations.")
     return [serialize_allocation(db, allocation) for allocation in allocations]
 
 

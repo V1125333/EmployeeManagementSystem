@@ -26,7 +26,7 @@ router = APIRouter(prefix="/allocations", tags=["Allocations"])
 
 
 def _is_hr_admin(actor: Employee) -> bool:
-    return normalize_role(actor.role) in {"super_admin", "hr_admin", "global_access"}
+    return normalize_role(actor.role) in {"super_admin", "hr_admin", "admin", "global_access"}
 
 
 def _is_manager(actor: Employee) -> bool:

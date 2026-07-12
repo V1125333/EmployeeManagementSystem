@@ -57,6 +57,7 @@ class LeaveRequest(Base):
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     total_days: Mapped[float] = mapped_column(Numeric(4, 1), nullable=False)
+    holiday_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     is_half_day: Mapped[bool] = mapped_column(Boolean, default=False)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="pending")  # pending, approved, rejected, cancelled

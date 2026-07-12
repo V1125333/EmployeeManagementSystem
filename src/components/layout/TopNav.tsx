@@ -176,6 +176,15 @@ export function TopNav() {
   }, [headers]);
 
   useEffect(() => {
+    const refreshActions = () => {
+      loadInbox();
+      loadNotifications();
+    };
+    window.addEventListener('reknew:actions-updated', refreshActions);
+    return () => window.removeEventListener('reknew:actions-updated', refreshActions);
+  }, [headers]);
+
+  useEffect(() => {
     const handleClick = (event: MouseEvent) => {
       const target = event.target as Node;
       if (!wrapperRef.current?.contains(target)) {

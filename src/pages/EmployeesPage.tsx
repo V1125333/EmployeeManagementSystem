@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   Search, Filter, UserPlus, Download, ChevronDown, ChevronLeft, ChevronRight,
   Mail, Phone, MapPin, Calendar, Briefcase, Building2, User, Shield, X,
-  Pencil, Loader2, Plane, KeyRound, History, CheckCircle2, Bell, RotateCcw, Copy,
+  Pencil, Loader2, Plane, KeyRound, History, CheckCircle2, Bell, RotateCcw, Copy, Award,
 } from 'lucide-react';
 import { Card, CardHeader, Badge, Button, Avatar } from '@/components/ui';
 import { Drawer } from '@/components/ui/Drawer';
@@ -11,6 +11,7 @@ import { AddEmployeeDrawer } from '@/components/dashboard/AddEmployeeDrawer';
 import { countriesForDialCode } from '@/data/countryCodes';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/hooks/useAuth';
+import { CareerProfilePanel } from '@/components/career/CareerProfilePanel';
 import { cn } from '@/utils/cn';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
@@ -310,6 +311,7 @@ function ExecutiveEmployeeDetail({
     contact: true,
     emergency: true,
     employment: true,
+    career: false,
     access: true,
     leave: true,
     audit: true,
@@ -319,6 +321,8 @@ function ExecutiveEmployeeDetail({
   const [sendingEmergencyReminder, setSendingEmergencyReminder] = useState(false);
   const [resettingPassword, setResettingPassword] = useState(false);
   const [temporaryPassword, setTemporaryPassword] = useState('');
+  const [passwordResetModalOpen, setPasswordResetModalOpen] = useState(false);
+  const [passwordResetReason, setPasswordResetReason] = useState('');
 
   useEffect(() => {
     if (!open || !employee) return;
@@ -408,9 +412,8 @@ function ExecutiveEmployeeDetail({
     }
   };
   const handleAdminResetPassword = async () => {
-    const reason = window.prompt(`Enter a reason for resetting ${fullName}'s password:`);
-    if (!reason) return;
-    if (reason.trim().length < 3) {
+    const reason = passwordResetReason.trim();
+    if (reason.length < 3) {
       showToast({ message: 'Reset reason must be at least 3 characters.' });
       return;
     }
@@ -430,6 +433,8 @@ function ExecutiveEmployeeDetail({
         throw new Error(result.detail || result.message || 'Unable to reset password.');
       }
       setTemporaryPassword(result.temporary_password || '');
+      setPasswordResetModalOpen(false);
+      setPasswordResetReason('');
       showToast({ message: 'Temporary password generated.' });
     } catch (err) {
       showToast({ message: err instanceof Error ? err.message : 'Unable to reset password.' });
@@ -441,6 +446,12 @@ function ExecutiveEmployeeDetail({
     if (!temporaryPassword) return;
     await navigator.clipboard.writeText(temporaryPassword);
     showToast({ message: 'Temporary password copied.' });
+  };
+
+  const openPasswordResetModal = () => {
+    setTemporaryPassword('');
+    setPasswordResetReason(`Admin temporary password issued for ${fullName}`);
+    setPasswordResetModalOpen(true);
   };
 
   const Metric = ({ label, value, tone = 'neutral' }: { label: string; value: string | number; tone?: 'neutral' | 'good' | 'warn' | 'bad' }) => (
@@ -582,6 +593,19 @@ function ExecutiveEmployeeDetail({
               </div>
             </Panel>
 
+            <Panel id="career" title="Career Profile" icon={<Award size={15} />}>
+              <CareerProfilePanel
+                employee={{
+                  id: data.id,
+                  name: fullName,
+                  email: data.work_email,
+                  designation: data.designation,
+                  department: data.department,
+                }}
+                editable={false}
+              />
+            </Panel>
+
             <Panel id="access" title="Access & Security" icon={<KeyRound size={15} />}>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <Metric label="Access Role" value={formatRole(accessRole)} />
@@ -607,9 +631,9 @@ function ExecutiveEmployeeDetail({
                       size="sm"
                       icon={resettingPassword ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
                       disabled={resettingPassword}
-                      onClick={handleAdminResetPassword}
+                      onClick={openPasswordResetModal}
                     >
-                      {resettingPassword ? 'Resetting' : 'Reset Password'}
+                      Generate Password
                     </Button>
                   </div>
                   {temporaryPassword && (
@@ -668,6 +692,51 @@ function ExecutiveEmployeeDetail({
           </>
         )}
       </div>
+      {passwordResetModalOpen && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/45 px-4">
+          <div className="w-full max-w-[520px] overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-[0_28px_90px_rgba(17,24,39,0.24)]">
+            <div className="flex items-start justify-between border-b border-[#E5E7EB] px-6 py-5">
+              <div>
+                <div className="text-lg font-bold text-[#2F3437]">Generate temporary password</div>
+                <div className="mt-1 text-sm text-gray-500">{fullName} · {data.work_email}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => !resettingPassword && setPasswordResetModalOpen(false)}
+                className="rounded-lg p-1.5 text-gray-400 transition hover:bg-hover-bg hover:text-[#2F3437]"
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="space-y-4 px-6 py-5">
+              <label className="block">
+                <span className="mb-2 block text-[13px] font-semibold text-[#2F3437]">Admin reason</span>
+                <textarea
+                  value={passwordResetReason}
+                  onChange={(event) => setPasswordResetReason(event.target.value.slice(0, 500))}
+                  className="min-h-[112px] w-full resize-none rounded-xl border border-[#E5E7EB] bg-warm-bg px-3.5 py-3 text-sm font-medium text-[#2F3437] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10"
+                  placeholder="Example: Employee account locked; identity verified by HR"
+                  autoFocus
+                />
+              </label>
+              <div className="rounded-xl bg-warm-bg px-4 py-3 text-xs leading-5 text-gray-500">
+                This will unlock the employee account if it is locked, generate a temporary password, and force the employee to create a new password on next login.
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" onClick={() => setPasswordResetModalOpen(false)} disabled={resettingPassword}>Cancel</Button>
+                <Button
+                  icon={resettingPassword ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                  onClick={handleAdminResetPassword}
+                  disabled={resettingPassword}
+                >
+                  {resettingPassword ? 'Generating...' : 'Generate Temporary Password'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </Drawer>
   );
 }

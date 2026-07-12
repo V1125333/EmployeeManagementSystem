@@ -4,7 +4,7 @@
 
 @layer base {
   body {
-    @apply bg-warm-bg text-[#2F3437] font-sans antialiased;
+    @apply bg-warm-bg text-[#252B3A] font-sans antialiased;
   }
 
   ::-webkit-scrollbar {
@@ -14,7 +14,7 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    @apply bg-olive-mid rounded-full;
+    @apply bg-accent-mid rounded-full;
   }
 }
 

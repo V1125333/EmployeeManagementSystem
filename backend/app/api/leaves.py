@@ -14,16 +14,18 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.employee import Employee
 from app.models.leave_attendance import LeaveBalance, LeaveRequest, LeaveType
+from app.models.operations import CompanyHoliday
 from app.services.audit_service import log_audit, log_authorization_failure
 from app.services.settings_service import get_current_employee
+from app.services.work_calendar_service import payable_leave_day_count, region_from_location
 
 router = APIRouter(prefix="/leaves", tags=["Leaves"])
 
 
 DEFAULT_LEAVE_DATE_POLICIES = {
     "SL": {
-        "allow_future_dates": False,
-        "past_date_limit_days": 30,
+        "allow_future_dates": True,
+        "past_date_limit_days": None,
         "future_date_warning": None,
     },
     "BL": {
@@ -71,12 +73,103 @@ def validate_leave_date_policy(leave_type: LeaveType, start_date: date, end_date
             )
 
 
+def employee_joining_date(employee: Employee) -> date | None:
+    return employee.date_of_joining or employee.joining_date
+
+
+def min_request_date(employee: Employee) -> date:
+    today = date.today()
+    joining_date = employee_joining_date(employee)
+    return max(today, joining_date) if joining_date else today
+
+
+def validate_forward_leave_dates(employee: Employee, start_date: date, end_date: date) -> None:
+    if end_date < start_date:
+        raise HTTPException(status_code=400, detail="End date must be on or after start date.")
+    minimum = min_request_date(employee)
+    joining_date = employee_joining_date(employee)
+    if joining_date and (start_date < joining_date or end_date < joining_date):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Leave cannot be applied before your joining date ({joining_date.strftime('%b %d, %Y')}).",
+        )
+    today = date.today()
+    if start_date < today or end_date < today:
+        raise HTTPException(status_code=400, detail="Cannot apply leave for a past date.")
+    if start_date < minimum:
+        raise HTTPException(status_code=400, detail="Selected leave dates are not available for your profile.")
+    max_advance_date = today + timedelta(days=90)
+    if start_date > max_advance_date:
+        raise HTTPException(status_code=400, detail="Leave cannot be applied more than 90 days in advance.")
+
+
+def ensure_no_leave_overlap(
+    db: Session,
+    employee_id: str,
+    start_date: date,
+    end_date: date,
+    exclude_request_id: str | None = None,
+) -> None:
+    query = db.query(LeaveRequest).filter(
+        LeaveRequest.employee_id == employee_id,
+        LeaveRequest.status.in_(["pending", "approved"]),
+        LeaveRequest.start_date <= end_date,
+        LeaveRequest.end_date >= start_date,
+    )
+    if exclude_request_id:
+        query = query.filter(LeaveRequest.id != exclude_request_id)
+    if query.first():
+        raise HTTPException(status_code=409, detail="You already have a leave request for this period.")
+
+
+def effective_available_days(db: Session, balance: LeaveBalance, employee_id: str, leave_type_id: str, year: int) -> tuple[float, float, float, float]:
+    total = decimal_to_float(balance.total_days) + decimal_to_float(balance.carry_forward_days)
+    used = decimal_to_float(balance.used_days)
+    pending = pending_days(db, employee_id, leave_type_id, year)
+    effective = round(max(total - used - pending, 0), 1)
+    return total, used, pending, effective
+
+
+def ensure_effective_balance(
+    db: Session,
+    employee_id: str,
+    leave_type: LeaveType,
+    requested_days: float,
+    year: int,
+) -> None:
+    balance = db.query(LeaveBalance).filter(
+        LeaveBalance.employee_id == employee_id,
+        LeaveBalance.leave_type_id == leave_type.id,
+        LeaveBalance.year == year,
+    ).with_for_update().first()
+    if not balance:
+        balance = LeaveBalance(
+            employee_id=employee_id,
+            leave_type_id=leave_type.id,
+            year=year,
+            total_days=leave_type.default_days_per_year,
+            used_days=0,
+            carry_forward_days=0,
+        )
+        db.add(balance)
+        db.flush()
+    total, used, pending, effective = effective_available_days(db, balance, employee_id, leave_type.id, year)
+    if requested_days > effective:
+        if effective <= 0 and pending > 0:
+            raise HTTPException(status_code=400, detail=f"No balance available - {pending:g} days are pending approval.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"You only have {effective:g} effective days available ({pending:g} days are pending approval).",
+        )
+
+
 class LeaveRequestPayload(BaseModel):
     leave_type_id: str
     start_date: date
     end_date: date
     reason: str = Field(..., min_length=1, max_length=200)
     action: str = Field(default="submit", pattern="^(draft|submit)$")
+    holiday_id: str | None = None
 
 
 class LeaveDecisionPayload(BaseModel):
@@ -93,18 +186,53 @@ def is_admin(role: str | None) -> bool:
     return normalized in {"super_admin", "admin", "hr_admin", "global_access"}
 
 
-def leave_days(start_date: date, end_date: date) -> float:
+def leave_days(db: Session, employee: Employee, leave_type: LeaveType, start_date: date, end_date: date) -> float:
     if end_date < start_date:
         raise HTTPException(status_code=400, detail="To Date must be on or after From Date.")
-    total = 0
-    current = start_date
-    while current <= end_date:
-        if current.weekday() < 5:
-            total += 1
-        current += timedelta(days=1)
+    total = payable_leave_day_count(db, employee, leave_type, start_date, end_date)
     if total <= 0:
-        raise HTTPException(status_code=400, detail="Leave requests must include at least one weekday.")
+        raise HTTPException(status_code=400, detail="Leave requests must include at least one working day.")
     return float(total)
+
+
+def holiday_visible_to_employee(holiday: CompanyHoliday, employee: Employee) -> bool:
+    region = region_from_location(employee.work_location)
+    regions = {item.strip().upper() for item in (holiday.regions or "all").split(",") if item.strip()}
+    return "ALL" in regions or region.upper() in regions
+
+
+def validate_holiday_leave(
+    db: Session,
+    employee: Employee,
+    leave_type: LeaveType,
+    payload: LeaveRequestPayload,
+    exclude_request_id: str | None = None,
+) -> CompanyHoliday | None:
+    code = (leave_type.code or "").upper()
+    if code not in {"FL", "OH"}:
+        return None
+    if not payload.holiday_id:
+        raise HTTPException(status_code=400, detail=f"{leave_type.name} requires selecting a holiday.")
+    holiday = db.query(CompanyHoliday).filter(
+        CompanyHoliday.id == payload.holiday_id,
+        CompanyHoliday.is_active == True,
+        CompanyHoliday.holiday_type.in_(["floating", "optional"]),
+    ).first()
+    if not holiday or not holiday_visible_to_employee(holiday, employee):
+        raise HTTPException(status_code=400, detail="Selected holiday is not available for your region.")
+    if payload.start_date != holiday.holiday_date or payload.end_date != holiday.holiday_date:
+        raise HTTPException(status_code=400, detail="Floating or optional holiday dates must match the selected holiday.")
+    existing_query = db.query(LeaveRequest).filter(
+        LeaveRequest.employee_id == employee.id,
+        LeaveRequest.holiday_id == holiday.id,
+        LeaveRequest.status.in_(["pending", "approved"]),
+    )
+    if exclude_request_id:
+        existing_query = existing_query.filter(LeaveRequest.id != exclude_request_id)
+    existing = existing_query.first()
+    if existing:
+        raise HTTPException(status_code=400, detail="This holiday has already been requested or used.")
+    return holiday
 
 
 def get_employee(db: Session, user_id: str | None, user_email: str | None) -> Employee:
@@ -174,6 +302,7 @@ def serialize_request(db: Session, request: LeaveRequest, leave_type: LeaveType 
         "start_date": request.start_date,
         "end_date": request.end_date,
         "total_days": decimal_to_float(request.total_days),
+        "holiday_id": request.holiday_id,
         "reason": request.reason,
         "status": request.status,
         "reporting_manager": manager_name,
@@ -182,6 +311,7 @@ def serialize_request(db: Session, request: LeaveRequest, leave_type: LeaveType 
         "reviewed_at": request.reviewed_at,
         "reviewer_notes": request.reviewer_notes,
         "created_at": request.created_at,
+        "updated_at": request.updated_at,
     }
 
 
@@ -195,13 +325,15 @@ def summary_for_employee(db: Session, employee: Employee) -> dict:
         total = decimal_to_float(balance.total_days) + decimal_to_float(balance.carry_forward_days)
         used = decimal_to_float(balance.used_days)
         pending = pending_days(db, employee.id, leave_type.id, year)
+        effective = round(max(total - used - pending, 0), 1)
         balances.append({
             "leave_type_id": leave_type.id,
             "type": leave_type.name,
             "code": leave_type.code,
             "date_policy": leave_date_policy(leave_type),
             "total": total,
-            "available": "On request" if total <= 0 and not leave_type.is_paid else round(max(total - used, 0), 1),
+            "available": "On request" if total <= 0 and not leave_type.is_paid else effective,
+            "effective_available": "On request" if total <= 0 and not leave_type.is_paid else effective,
             "used": round(used, 1),
             "pending": pending,
             "is_paid": leave_type.is_paid,
@@ -223,6 +355,8 @@ def summary_for_employee(db: Session, employee: Employee) -> dict:
     db.commit()
     return {
         "reporting_manager": employee.reporting_manager,
+        "joining_date": employee_joining_date(employee),
+        "min_request_date": min_request_date(employee),
         "balances": balances,
         "requests": [serialize_request(db, request, employee=employee) for request in requests],
     }
@@ -252,13 +386,14 @@ async def create_my_leave_request(
     if not leave_type_applies_to_employee(leave_type, employee):
         raise HTTPException(status_code=400, detail="This leave type is not applicable to your profile.")
 
-    total_days = leave_days(payload.start_date, payload.end_date)
+    selected_holiday = validate_holiday_leave(db, employee, leave_type, payload)
+    validate_forward_leave_dates(employee, payload.start_date, payload.end_date)
+    total_days = leave_days(db, employee, leave_type, payload.start_date, payload.end_date)
     validate_leave_date_policy(leave_type, payload.start_date, payload.end_date)
+    ensure_no_leave_overlap(db, employee.id, payload.start_date, payload.end_date)
     if payload.action == "submit":
-        balance = ensure_balance(db, employee.id, leave_type, payload.start_date.year)
-        available = decimal_to_float(balance.total_days) + decimal_to_float(balance.carry_forward_days) - decimal_to_float(balance.used_days)
-        if leave_type.is_paid and total_days > available:
-            raise HTTPException(status_code=400, detail="Selected leave days exceed your available balance.")
+        if leave_type.is_paid:
+            ensure_effective_balance(db, employee.id, leave_type, total_days, payload.start_date.year)
 
     now = datetime.utcnow()
     request = LeaveRequest(
@@ -267,6 +402,7 @@ async def create_my_leave_request(
         start_date=payload.start_date,
         end_date=payload.end_date,
         total_days=total_days,
+        holiday_id=selected_holiday.id if selected_holiday else None,
         reason=payload.reason.strip(),
         status="draft" if payload.action == "draft" else "pending",
         created_at=now,
@@ -286,6 +422,7 @@ async def create_my_leave_request(
             "start_date": payload.start_date,
             "end_date": payload.end_date,
             "total_days": total_days,
+            "holiday_id": selected_holiday.id if selected_holiday else None,
             "status": request.status,
         },
         reason=payload.reason.strip(),
@@ -319,19 +456,21 @@ async def update_my_leave_request(
     if not leave_type_applies_to_employee(leave_type, employee):
         raise HTTPException(status_code=400, detail="This leave type is not applicable to your profile.")
 
-    total_days = leave_days(payload.start_date, payload.end_date)
+    selected_holiday = validate_holiday_leave(db, employee, leave_type, payload, exclude_request_id=request.id)
+    validate_forward_leave_dates(employee, payload.start_date, payload.end_date)
+    total_days = leave_days(db, employee, leave_type, payload.start_date, payload.end_date)
     validate_leave_date_policy(leave_type, payload.start_date, payload.end_date)
+    ensure_no_leave_overlap(db, employee.id, payload.start_date, payload.end_date, exclude_request_id=request.id)
     if payload.action == "submit":
-        balance = ensure_balance(db, employee.id, leave_type, payload.start_date.year)
-        available = decimal_to_float(balance.total_days) + decimal_to_float(balance.carry_forward_days) - decimal_to_float(balance.used_days)
-        if leave_type.is_paid and total_days > available:
-            raise HTTPException(status_code=400, detail="Selected leave days exceed your available balance.")
+        if leave_type.is_paid:
+            ensure_effective_balance(db, employee.id, leave_type, total_days, payload.start_date.year)
 
     old_values = {
         "leave_type_id": request.leave_type_id,
         "start_date": request.start_date,
         "end_date": request.end_date,
         "total_days": request.total_days,
+        "holiday_id": request.holiday_id,
         "reason": request.reason,
         "status": request.status,
     }
@@ -339,6 +478,7 @@ async def update_my_leave_request(
     request.start_date = payload.start_date
     request.end_date = payload.end_date
     request.total_days = total_days
+    request.holiday_id = selected_holiday.id if selected_holiday else None
     request.reason = payload.reason.strip()
     request.status = "draft" if payload.action == "draft" else "pending"
     request.updated_at = datetime.utcnow()
@@ -354,6 +494,7 @@ async def update_my_leave_request(
             "start_date": request.start_date,
             "end_date": request.end_date,
             "total_days": request.total_days,
+            "holiday_id": request.holiday_id,
             "reason": request.reason,
             "status": request.status,
         },
@@ -390,6 +531,43 @@ async def delete_my_leave_request(
         reason="Employee deleted draft leave request.",
     )
     db.delete(request)
+    db.commit()
+    return summary_for_employee(db, employee)
+
+
+@router.post("/me/requests/{request_id}/withdraw")
+async def withdraw_my_leave_request(
+    request_id: str,
+    db: Session = Depends(get_db),
+    x_user_id: str | None = Header(default=None),
+    x_user_email: str | None = Header(default=None),
+):
+    employee = get_employee(db, x_user_id, x_user_email)
+    request = db.query(LeaveRequest).filter(
+        LeaveRequest.id == request_id,
+        LeaveRequest.employee_id == employee.id,
+    ).first()
+    if not request:
+        raise HTTPException(status_code=404, detail="Leave request not found.")
+    if request.status != "pending":
+        raise HTTPException(status_code=400, detail="Only pending leave requests can be withdrawn.")
+
+    old_values = serialize_request(db, request, employee=employee)
+    request.status = "cancelled"
+    request.updated_at = datetime.utcnow()
+    log_audit(
+        db,
+        employee,
+        action="leave.withdrawn",
+        entity_type="leave_request",
+        entity_id=request.id,
+        old_values=old_values,
+        new_values={
+            "status": request.status,
+            "updated_at": request.updated_at,
+        },
+        reason="Employee withdrew pending leave request.",
+    )
     db.commit()
     return summary_for_employee(db, employee)
 

@@ -2,6 +2,7 @@ import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  AlertCircle,
   Banknote,
   BriefcaseBusiness,
   CalendarDays,
@@ -110,6 +111,34 @@ interface ListResponse {
   per_page: number;
 }
 
+interface RequestPolicy {
+  request_type: RequestType;
+  label: string;
+  allow_past_dates: boolean;
+  allow_future_dates: boolean;
+  allow_today: boolean;
+  maximum_past_days?: number | null;
+  maximum_future_days?: number | null;
+  allow_dates_before_joining: boolean;
+  maximum_pre_joining_days?: number | null;
+  requires_manager_approval: boolean;
+  requires_hr_approval: boolean;
+  requires_finance_approval: boolean;
+  requires_attachment: boolean;
+  requires_comments: boolean;
+  maximum_attachment_size: number;
+  accepted_file_types: string[];
+  min_date?: string | null;
+  max_date?: string | null;
+  invalid_past_message: string;
+  invalid_future_message: string;
+  past_window_message: string;
+  future_window_message: string;
+  pre_joining_message: string;
+}
+
+type RequestPolicyMap = Partial<Record<RequestType, RequestPolicy>>;
+
 interface FormState {
   request_type: RequestType;
   start_date: string;
@@ -125,6 +154,11 @@ interface FormState {
   reason: string;
   action: 'draft' | 'submit';
   attachment: File | null;
+}
+
+interface RequestActionIntent {
+  row: EmployeeRequest;
+  action: 'cancel' | 'reject';
 }
 
 const requestTypes: Array<{ type: RequestType; label: string; description: string; icon: React.ReactNode }> = [
@@ -349,12 +383,31 @@ function RequestsTable({
   );
 }
 
-function RequestModal({ initialType, lockedType = true, onClose, onSave }: { initialType: RequestType; lockedType?: boolean; onClose: () => void; onSave: (form: FormState) => Promise<void> }) {
+function RequestModal({
+  initialType,
+  lockedType = true,
+  policies,
+  onClose,
+  onSave,
+}: {
+  initialType: RequestType;
+  lockedType?: boolean;
+  policies: RequestPolicyMap;
+  onClose: () => void;
+  onSave: (form: FormState) => Promise<void>;
+}) {
   const [form, setForm] = useState<FormState>(() => emptyForm(initialType));
   const [saving, setSaving] = useState(false);
   const [fileError, setFileError] = useState('');
+  const [formError, setFormError] = useState('');
+  const activePolicy = policies[form.request_type];
+  const maxAttachmentBytes = activePolicy?.maximum_attachment_size || MAX_RECEIPT_BYTES;
+  const acceptedFileTypes = activePolicy?.accepted_file_types?.join(',') || '.pdf,.jpg,.jpeg,.png,.webp,.doc,.docx';
 
-  const setField = (field: keyof FormState, value: string | File | null) => setForm((prev) => ({ ...prev, [field]: value }));
+  const setField = (field: keyof FormState, value: string | File | null) => {
+    setFormError('');
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
   const previewUrl = useMemo(() => form.attachment && form.attachment.type.startsWith('image/') ? URL.createObjectURL(form.attachment) : '', [form.attachment]);
 
   useEffect(() => () => {
@@ -362,9 +415,12 @@ function RequestModal({ initialType, lockedType = true, onClose, onSave }: { ini
   }, [previewUrl]);
 
   const submit = async (action: 'draft' | 'submit') => {
+    setFormError('');
     setSaving(true);
     try {
       await onSave({ ...form, action });
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Could not save request. Please review and try again.');
     } finally {
       setSaving(false);
     }
@@ -381,11 +437,17 @@ function RequestModal({ initialType, lockedType = true, onClose, onSave }: { ini
           <button onClick={onClose} className="rounded-lg p-2 text-gray-400 hover:bg-hover-bg"><X size={18} /></button>
         </div>
         <div className="max-h-[calc(90vh-150px)] overflow-y-auto p-6">
+          {formError && (
+            <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <AlertCircle size={16} className="mt-0.5 shrink-0" />
+              <span>{formError}</span>
+            </div>
+          )}
           <div className="grid gap-4 md:grid-cols-2">
             {!lockedType && (
               <label className="grid gap-1 text-sm font-semibold text-[#2F3437]">
                 Request Type
-                <select value={form.request_type} onChange={(event) => setForm(emptyForm(event.target.value as RequestType))} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 outline-none focus:border-olive">
+                <select value={form.request_type} onChange={(event) => { setFormError(''); setForm(emptyForm(event.target.value as RequestType)); }} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 outline-none focus:border-olive">
                   {requestTypes.map((item) => <option key={item.type} value={item.type}>{item.label}</option>)}
                 </select>
               </label>
@@ -398,13 +460,13 @@ function RequestModal({ initialType, lockedType = true, onClose, onSave }: { ini
             )}
             {form.request_type === 'wfh' ? (
               <>
-                <label className="grid gap-1 text-sm font-semibold text-[#2F3437]">From Date<input type="date" value={form.start_date} onChange={(event) => setField('start_date', event.target.value)} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 outline-none focus:border-olive" /></label>
-                <label className="grid gap-1 text-sm font-semibold text-[#2F3437]">To Date<input type="date" value={form.end_date} onChange={(event) => setField('end_date', event.target.value)} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 outline-none focus:border-olive" /></label>
+                <label className="grid gap-1 text-sm font-semibold text-[#2F3437]">From Date<input type="date" min={activePolicy?.min_date || undefined} max={activePolicy?.max_date || undefined} value={form.start_date} onChange={(event) => setField('start_date', event.target.value)} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 outline-none focus:border-olive" /></label>
+                <label className="grid gap-1 text-sm font-semibold text-[#2F3437]">To Date<input type="date" min={form.start_date || activePolicy?.min_date || undefined} max={activePolicy?.max_date || undefined} value={form.end_date} onChange={(event) => setField('end_date', event.target.value)} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 outline-none focus:border-olive" /></label>
               </>
             ) : (
               <label className="grid gap-1 text-sm font-semibold text-[#2F3437]">
                 Date
-                <input type="date" value={form.request_date} onChange={(event) => setField('request_date', event.target.value)} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 outline-none focus:border-olive" />
+                <input type="date" min={activePolicy?.min_date || undefined} max={activePolicy?.max_date || undefined} value={form.request_date} onChange={(event) => setField('request_date', event.target.value)} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 outline-none focus:border-olive" />
               </label>
             )}
             {form.request_type === 'short_permission' && (
@@ -428,13 +490,13 @@ function RequestModal({ initialType, lockedType = true, onClose, onSave }: { ini
                   <div className="rounded-lg border border-dashed border-[#D9DED3] bg-warm-bg p-3 text-sm text-gray-500">
                     <input
                       type="file"
-                      accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
+                      accept={acceptedFileTypes}
                       onChange={(event) => {
                         const file = event.target.files?.[0] || null;
                         setFileError('');
-                        if (file && file.size > MAX_RECEIPT_BYTES) {
+                        if (file && file.size > maxAttachmentBytes) {
                           setField('attachment', null);
-                          setFileError('File size exceeds 10MB.');
+                          setFileError(`File size exceeds ${formatFileSize(maxAttachmentBytes)}.`);
                           event.target.value = '';
                           return;
                         }
@@ -457,6 +519,14 @@ function RequestModal({ initialType, lockedType = true, onClose, onSave }: { ini
                   </div>
                 </label>
               </>
+            )}
+            {activePolicy && (
+              <div className="rounded-lg border border-olive/15 bg-olive/5 px-3 py-2 text-xs leading-5 text-gray-600 md:col-span-2">
+                Valid dates
+                {activePolicy.min_date ? ` from ${formatDate(activePolicy.min_date)}` : ''}
+                {activePolicy.max_date ? ` through ${formatDate(activePolicy.max_date)}` : ''}
+                . Approval starts with your Reporting Manager{activePolicy.requires_hr_approval ? ', then moves to HR review.' : '.'}
+              </div>
             )}
             <label className="grid gap-1 text-sm font-semibold text-[#2F3437] md:col-span-2">
               Reason
@@ -494,6 +564,82 @@ function WorkflowProgressTracker({ request }: { request: EmployeeRequest }) {
         ))}
       </div>
     </Card>
+  );
+}
+
+function ActionReasonModal({
+  intent,
+  submitting,
+  error,
+  onClose,
+  onConfirm,
+}: {
+  intent: RequestActionIntent;
+  submitting: boolean;
+  error: string;
+  onClose: () => void;
+  onConfirm: (reason: string) => Promise<void>;
+}) {
+  const [reason, setReason] = useState('');
+  const isReject = intent.action === 'reject';
+  const title = isReject ? 'Reject request' : 'Cancel request';
+  const helper = isReject
+    ? 'This reason will be visible to the employee and saved in the request history.'
+    : 'This reason is saved for audit history. Use a short, clear explanation.';
+  const canSubmit = isReject ? reason.trim().length > 0 : true;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/35 p-6 backdrop-blur-sm">
+      <Card className="w-full max-w-lg overflow-hidden shadow-[0_24px_80px_rgba(31,41,55,0.24)]">
+        <div className="flex items-start justify-between border-b border-[#E5E7EB] px-6 py-5">
+          <div>
+            <h2 className="text-lg font-bold text-[#2F3437]">{title}</h2>
+            <p className="mt-1 text-sm text-gray-500">{intent.row.ticket_number || intent.row.request_type_label}</p>
+          </div>
+          <button onClick={onClose} disabled={submitting} className="rounded-lg p-2 text-gray-400 hover:bg-hover-bg disabled:cursor-not-allowed disabled:opacity-50">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="p-6">
+          <div className="mb-4 rounded-xl border border-[#E5E7EB] bg-warm-bg p-4">
+            <div className="text-sm font-bold text-[#2F3437]">{intent.row.request_type_label}</div>
+            <div className="mt-1 text-sm text-gray-500">{summarize(intent.row)}</div>
+          </div>
+          {error && (
+            <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <AlertCircle size={16} className="mt-0.5 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+          <label className="grid gap-2 text-sm font-semibold text-[#2F3437]">
+            {isReject ? 'Rejection reason' : 'Cancellation reason'}
+            <textarea
+              value={reason}
+              maxLength={500}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder={isReject ? 'Explain why this request is being rejected.' : 'Optional: add why this request is being cancelled.'}
+              className="min-h-[120px] rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 py-3 text-sm outline-none focus:border-olive"
+              autoFocus
+            />
+          </label>
+          <div className="mt-2 flex items-start justify-between gap-3 text-xs text-gray-500">
+            <span>{helper}</span>
+            <span>{reason.length}/500</span>
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 border-t border-[#E5E7EB] px-6 py-4">
+          <Button variant="ghost" disabled={submitting} onClick={onClose}>Keep Request</Button>
+          <Button
+            disabled={submitting || !canSubmit}
+            icon={submitting ? <Loader2 size={14} className="animate-spin" /> : isReject ? <X size={14} /> : <Trash2 size={14} />}
+            onClick={() => onConfirm(reason.trim())}
+          >
+            {submitting ? 'Saving' : isReject ? 'Reject Request' : 'Cancel Request'}
+          </Button>
+        </div>
+      </Card>
+    </div>,
+    document.body
   );
 }
 
@@ -781,6 +927,10 @@ export function RequestsPage() {
   const [search, setSearch] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [policies, setPolicies] = useState<RequestPolicyMap>({});
+  const [actionIntent, setActionIntent] = useState<RequestActionIntent | null>(null);
+  const [actionSubmitting, setActionSubmitting] = useState(false);
+  const [actionError, setActionError] = useState('');
 
   const role = roleKey(user?.role);
   const canReview = ['manager', 'super_admin', 'admin', 'hr_admin', 'global_access'].includes(role);
@@ -821,6 +971,18 @@ export function RequestsPage() {
   }, [canReview, dateFrom, dateTo, headers, search, statusFilter, typeFilter, user]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!user) return;
+    const controller = new AbortController();
+    const loadPolicies = async () => {
+      const res = await fetch(`${API_BASE}/requests/policies`, { headers, signal: controller.signal });
+      const body = await res.json().catch(() => null);
+      if (res.ok) setPolicies(body?.policies || {});
+    };
+    loadPolicies().catch(() => undefined);
+    return () => controller.abort();
+  }, [headers, user]);
 
   useEffect(() => {
     if (!user || !canReassign) return;
@@ -888,8 +1050,7 @@ export function RequestsPage() {
     const res = await fetch(`${API_BASE}/requests`, { method: 'POST', headers, body: JSON.stringify(payload) });
     const body = await res.json().catch(() => null);
     if (!res.ok) {
-      showToast({ message: body?.detail || 'Could not save request.' });
-      return;
+      throw new Error(body?.detail || 'Could not save request.');
     }
     let finalBody = body as EmployeeRequest;
     if (form.attachment) {
@@ -904,9 +1065,8 @@ export function RequestsPage() {
       });
       const uploadBody = await uploadRes.json().catch(() => null);
       if (!uploadRes.ok) {
-        showToast({ message: uploadBody?.detail || 'Request saved, but receipt upload failed.' });
         await load();
-        return;
+        throw new Error(uploadBody?.detail || 'Request saved, but receipt upload failed.');
       }
       if (shouldSubmit) {
         const submitRes = await fetch(`${API_BASE}/requests/${body.id}/submit`, {
@@ -916,9 +1076,8 @@ export function RequestsPage() {
         });
         const submitBody = await submitRes.json().catch(() => null);
         if (!submitRes.ok) {
-          showToast({ message: submitBody?.detail || 'Receipt uploaded, but request could not be submitted.' });
           await load();
-          return;
+          throw new Error(submitBody?.detail || 'Receipt uploaded, but request could not be submitted.');
         }
         finalBody = submitBody;
       }
@@ -935,13 +1094,14 @@ export function RequestsPage() {
   };
 
   const runAction = async (row: EmployeeRequest, action: 'submit' | 'cancel' | 'approve' | 'reject') => {
-    const reason = action === 'reject' || action === 'cancel' ? window.prompt(`${labelize(action)} reason:`) : null;
-    if ((action === 'reject' || action === 'cancel') && !reason?.trim()) return;
+    if (action === 'cancel' || action === 'reject') {
+      setActionError('');
+      setActionIntent({ row, action });
+      return;
+    }
     const payload = action === 'approve'
       ? { notes: null }
-      : action === 'reject'
-        ? { reason: reason?.trim() }
-        : { reason: reason?.trim() || null };
+      : { reason: null };
     const res = await fetch(`${API_BASE}/requests/${row.id}/${action}`, {
       method: 'POST',
       headers,
@@ -955,6 +1115,38 @@ export function RequestsPage() {
     showToast({ message: `Request ${action}d.` });
     setDetail(body);
     await load();
+  };
+
+  const confirmActionIntent = async (reason: string) => {
+    if (!actionIntent) return;
+    if (actionIntent.action === 'reject' && !reason.trim()) return;
+    setActionError('');
+    setActionSubmitting(true);
+    const payload = actionIntent.action === 'reject'
+      ? { reason: reason.trim() }
+      : { reason: reason.trim() || null };
+    try {
+      const res = await fetch(`${API_BASE}/requests/${actionIntent.row.id}/${actionIntent.action}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        setActionError(body?.detail || 'Action failed. Please review and try again.');
+        return;
+      }
+      const message = `Request ${actionIntent.action === 'reject' ? 'rejected' : 'cancelled'}.`;
+      setActionIntent(null);
+      setActionError('');
+      setDetail(body);
+      await load();
+      showToast({ message });
+    } catch {
+      setActionError('Could not reach the server. Please try again.');
+    } finally {
+      setActionSubmitting(false);
+    }
   };
 
   const markPaid = async (row: EmployeeRequest) => {
@@ -1025,8 +1217,21 @@ export function RequestsPage() {
           </>
         )}
       </div>
-      {modalType && <RequestModal initialType={modalType} onClose={() => setModalType(null)} onSave={createFromForm} />}
+      {modalType && <RequestModal initialType={modalType} policies={policies} onClose={() => setModalType(null)} onSave={createFromForm} />}
       {detail && <DetailDrawer request={detail} userRole={user?.role} employees={employees} onClose={() => setDetail(null)} onRefresh={refreshDetail} onAction={runAction} onMarkPaid={markPaid} onReassign={reassign} headers={headers} />}
+      {actionIntent && (
+        <ActionReasonModal
+          intent={actionIntent}
+          submitting={actionSubmitting}
+          error={actionError}
+          onClose={() => {
+            if (actionSubmitting) return;
+            setActionIntent(null);
+            setActionError('');
+          }}
+          onConfirm={confirmActionIntent}
+        />
+      )}
     </PageShell>
   );
 }

@@ -18,7 +18,7 @@ from app.models.training import TrainingEnrollment
 from app.schemas.employee import AddEmployeeRequest, AddEmployeeResponse, UpdateEmployeeRequest
 from app.services.employee_service import create_employee
 from app.services.audit_service import changed_fields, log_audit, log_authorization_failure
-from app.services.settings_service import get_current_employee, is_admin_role, require_admin_employee
+from app.services.settings_service import get_current_employee, is_admin_role, normalize_role, require_admin_employee
 from app.services.security_service import (
     export_employee_csv,
     log_sensitive_access,
@@ -89,6 +89,23 @@ def serialize_employee(emp: Employee) -> dict:
         "last_updated_at": str(emp.last_updated_at) if emp.last_updated_at else None,
         "updated_by": emp.updated_by,
     }
+
+
+def employee_name(emp: Employee) -> str:
+    return " ".join(part.strip() for part in [emp.first_name, emp.last_name] if part and part.strip())
+
+
+def can_view_employee_detail(actor: Employee, target: Employee) -> bool:
+    if actor.id == target.id or is_admin_role(actor.role):
+        return True
+    if normalize_role(actor.role) != "manager":
+        return False
+    actor_name = employee_name(actor)
+    return bool(
+        target.manager_id == actor.id
+        or target.reporting_manager == actor_name
+        or target.reporting_manager == actor.work_email
+    )
 
 
 def changed_by_value(email: str | None, name: str | None, user_id: str | None) -> str:
@@ -340,11 +357,11 @@ async def get_employee(
 ):
     """Get single employee details."""
     actor = get_current_employee(db, current_user_id, current_user_email)
-    if actor.id != employee_id and not is_admin_role(actor.role):
-        raise HTTPException(status_code=403, detail="Not authorized to view this employee.")
     emp = db.query(Employee).filter(Employee.id == employee_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
+    if not can_view_employee_detail(actor, emp):
+        raise HTTPException(status_code=403, detail="Not authorized to view this employee.")
 
     if actor.id != employee_id:
         log_sensitive_access(
@@ -522,6 +539,34 @@ async def remind_emergency_contact(
     if not emp.is_active:
         raise HTTPException(status_code=400, detail="Reminders can only be sent to active employees.")
 
+    emergency_contact_complete = all([
+        bool((emp.emergency_contact_name or "").strip()),
+        bool((emp.emergency_contact_phone or "").strip()),
+        bool((emp.emergency_contact_relation or "").strip()),
+    ])
+    if emergency_contact_complete:
+        db.query(ActionInboxItem).filter(
+            ActionInboxItem.assigned_to_user_id == emp.id,
+            ActionInboxItem.item_type == "profile_update",
+            ActionInboxItem.related_entity_type == "employee",
+            ActionInboxItem.related_entity_id == emp.id,
+            ActionInboxItem.status == "pending",
+        ).update(
+            {
+                ActionInboxItem.status: "completed",
+                ActionInboxItem.updated_at: datetime.utcnow(),
+            },
+            synchronize_session=False,
+        )
+        db.query(Notification).filter(
+            Notification.user_id == emp.id,
+            Notification.notification_type == "profile_update",
+            Notification.related_entity_type == "employee",
+            Notification.related_entity_id == emp.id,
+        ).delete(synchronize_session=False)
+        db.commit()
+        return {"success": True, "message": "Emergency contact details are already complete."}
+
     existing_action = db.query(ActionInboxItem).filter(
         ActionInboxItem.assigned_to_user_id == emp.id,
         ActionInboxItem.item_type == "profile_update",
@@ -649,6 +694,26 @@ async def update_employee(
                 detail=f"Employees cannot modify restricted profile fields: {', '.join(blocked_fields)}.",
             )
 
+    emergency_contact_fields = (
+        "emergency_contact_name",
+        "emergency_contact_phone",
+        "emergency_contact_relation",
+    )
+    if any(field in updates for field in emergency_contact_fields):
+        emergency_contact_values = {
+            "Contact name": (updates.get("emergency_contact_name", emp.emergency_contact_name) or "").strip(),
+            "Contact phone": (updates.get("emergency_contact_phone", emp.emergency_contact_phone) or "").strip(),
+            "Relationship": (updates.get("emergency_contact_relation", emp.emergency_contact_relation) or "").strip(),
+        }
+        has_any_emergency_contact = any(emergency_contact_values.values())
+        has_all_emergency_contact = all(emergency_contact_values.values())
+        if has_any_emergency_contact and not has_all_emergency_contact:
+            missing = [label for label, value in emergency_contact_values.items() if not value]
+            raise HTTPException(
+                status_code=422,
+                detail=f"Emergency contact is incomplete. Missing: {', '.join(missing)}.",
+            )
+
     old_values = {field: getattr(emp, field) for field in updates.keys() if hasattr(emp, field)}
 
     # Apply updates
@@ -658,6 +723,33 @@ async def update_employee(
 
     emp.last_updated_at = datetime.utcnow()
     emp.updated_by = changed_by_value(actor.work_email, current_user_name, actor.id)
+
+    emergency_contact_complete = all([
+        bool((emp.emergency_contact_name or "").strip()),
+        bool((emp.emergency_contact_phone or "").strip()),
+        bool((emp.emergency_contact_relation or "").strip()),
+    ])
+    if emergency_contact_complete:
+        db.query(ActionInboxItem).filter(
+            ActionInboxItem.assigned_to_user_id == emp.id,
+            ActionInboxItem.item_type == "profile_update",
+            ActionInboxItem.related_entity_type == "employee",
+            ActionInboxItem.related_entity_id == emp.id,
+            ActionInboxItem.status == "pending",
+        ).update(
+            {
+                ActionInboxItem.status: "completed",
+                ActionInboxItem.updated_at: datetime.utcnow(),
+            },
+            synchronize_session=False,
+        )
+        db.query(Notification).filter(
+            Notification.user_id == emp.id,
+            Notification.notification_type == "profile_update",
+            Notification.related_entity_type == "employee",
+            Notification.related_entity_id == emp.id,
+        ).delete(synchronize_session=False)
+
     log_employee_changes(db, employee_id, old_values, updates, emp.updated_by)
     action = "user_profile_updated" if is_self and not is_admin else "employee.updated"
     field_changes = changed_fields(old_values, updates)

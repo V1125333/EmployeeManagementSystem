@@ -1,14 +1,114 @@
 :root {
-  --color-accent: #66785f;
-  --color-accent-light: #f3f5ef;
-  --color-accent-mid: #dde3d4;
-  --color-accent-dark: #4d5c47;
+  --color-accent: #f5a23a;
+  --color-accent-light: #fff4e8;
+  --color-accent-mid: #f9d7a6;
+  --color-accent-dark: #d97706;
   --color-bg-primary: #f7f6f2;
   --color-bg-card: #fefefc;
-  --color-bg-hover: #eef1e8;
+  --color-bg-hover: #fff7ed;
   --color-border: #e5e7eb;
-  --color-text-primary: #2f3437;
+  --color-text-primary: #252b3a;
   --color-text-muted: #6b7280;
+}
+
+[data-accent="olive"],
+[data-accent="orange"] {
+  --color-accent: #f5a23a;
+  --color-accent-light: #fff4e8;
+  --color-accent-mid: #f9d7a6;
+  --color-accent-dark: #d97706;
+}
+
+/* Legacy olive utility compatibility: render old olive classes with Reknew orange. */
+.bg-olive {
+  background-color: var(--color-accent) !important;
+}
+
+.bg-olive\/5 {
+  background-color: color-mix(in srgb, var(--color-accent) 5%, transparent) !important;
+}
+
+.bg-olive\/10 {
+  background-color: var(--color-accent-light) !important;
+}
+
+.bg-olive\/15 {
+  background-color: color-mix(in srgb, var(--color-accent) 15%, transparent) !important;
+}
+
+.bg-olive\/20 {
+  background-color: color-mix(in srgb, var(--color-accent) 20%, transparent) !important;
+}
+
+.bg-olive\/60 {
+  background-color: color-mix(in srgb, var(--color-accent) 60%, transparent) !important;
+}
+
+.text-olive,
+.text-olive-dark {
+  color: var(--color-accent) !important;
+}
+
+.border-olive {
+  border-color: var(--color-accent) !important;
+}
+
+.border-olive\/15 {
+  border-color: color-mix(in srgb, var(--color-accent) 15%, transparent) !important;
+}
+
+.border-olive\/20 {
+  border-color: color-mix(in srgb, var(--color-accent) 20%, transparent) !important;
+}
+
+.border-olive\/30,
+.hover\:border-olive\/30:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 30%, transparent) !important;
+}
+
+.border-olive\/40,
+.hover\:border-olive\/40:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 40%, transparent) !important;
+}
+
+.border-olive\/50,
+.hover\:border-olive\/50:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 50%, transparent) !important;
+}
+
+.hover\:bg-olive:hover {
+  background-color: var(--color-accent) !important;
+}
+
+.hover\:bg-olive\/5:hover,
+.hover\:bg-olive\/10:hover {
+  background-color: var(--color-accent-light) !important;
+}
+
+.hover\:text-olive:hover,
+.hover\:text-olive-dark:hover {
+  color: var(--color-accent) !important;
+}
+
+.focus\:border-olive:focus,
+.focus\:border-olive\/40:focus {
+  border-color: var(--color-accent) !important;
+}
+
+.focus\:ring-olive\/10:focus {
+  --tw-ring-color: color-mix(in srgb, var(--color-accent) 10%, transparent) !important;
+}
+
+.focus-visible\:ring-olive\/30:focus-visible {
+  --tw-ring-color: color-mix(in srgb, var(--color-accent) 30%, transparent) !important;
+}
+
+.ring-olive\/10 {
+  --tw-ring-color: color-mix(in srgb, var(--color-accent) 10%, transparent) !important;
+}
+
+.ring-olive\/20 {
+  --tw-ring-color: color-mix(in srgb, var(--color-accent) 20%, transparent) !important;
 }
 
 [data-accent="blue"] {

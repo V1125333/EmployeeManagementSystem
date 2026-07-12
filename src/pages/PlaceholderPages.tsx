@@ -553,12 +553,333 @@ export function EmployeesPage() {
   );
 }
 
-export function OnboardingPage() {
+interface OnboardingCandidate {
+  id: string;
+  name: string;
+  initials: string;
+  role: string;
+  stage: 'offer' | 'paperwork' | 'access' | 'first_week' | 'complete';
+  completedTasks: number;
+  totalTasks: number;
+  startDate: string;
+  owner: string;
+  location: string;
+  priority: 'normal' | 'watch' | 'blocked' | 'done';
+  checklist: Array<{ label: string; done: boolean; owner: string }>;
+}
+
+const onboardingStages: Array<{ key: OnboardingCandidate['stage']; label: string; helper: string }> = [
+  { key: 'offer', label: 'Offer Accepted', helper: 'Pre-start readiness' },
+  { key: 'paperwork', label: 'Paperwork', helper: 'Documents and compliance' },
+  { key: 'access', label: 'IT & Access', helper: 'Devices, apps, credentials' },
+  { key: 'first_week', label: 'First Week', helper: 'Manager and team ramp' },
+  { key: 'complete', label: 'Complete', helper: 'Ready for regular work' },
+];
+
+const onboardingCandidates: OnboardingCandidate[] = [
+  {
+    id: 'onb-priyanka',
+    name: 'Priyanka Shah',
+    initials: 'PS',
+    role: 'AI Engineer',
+    stage: 'offer',
+    completedTasks: 1,
+    totalTasks: 8,
+    startDate: '2026-08-04',
+    owner: 'Priya Nair',
+    location: 'Hyderabad',
+    priority: 'watch',
+    checklist: [
+      { label: 'Offer letter accepted', done: true, owner: 'HR' },
+      { label: 'Collect personal documents', done: false, owner: 'HR' },
+      { label: 'Assign reporting manager', done: false, owner: 'People Ops' },
+      { label: 'Create onboarding plan', done: false, owner: 'Manager' },
+    ],
+  },
+  {
+    id: 'onb-sofia',
+    name: 'Sofia Lind',
+    initials: 'SL',
+    role: 'Recruiter',
+    stage: 'paperwork',
+    completedTasks: 5,
+    totalTasks: 8,
+    startDate: '2026-07-08',
+    owner: 'Hari Prasad',
+    location: 'Remote',
+    priority: 'normal',
+    checklist: [
+      { label: 'Background verification', done: true, owner: 'HR' },
+      { label: 'Tax forms', done: true, owner: 'Payroll' },
+      { label: 'Policy acknowledgment', done: true, owner: 'HR' },
+      { label: 'Benefits enrollment', done: false, owner: 'People Ops' },
+    ],
+  },
+  {
+    id: 'onb-leo',
+    name: 'Leo Nakamura',
+    initials: 'LN',
+    role: 'ML Engineer',
+    stage: 'access',
+    completedTasks: 3,
+    totalTasks: 6,
+    startDate: '2026-07-13',
+    owner: 'David Park',
+    location: 'New York',
+    priority: 'blocked',
+    checklist: [
+      { label: 'Laptop assigned', done: true, owner: 'IT' },
+      { label: 'Email account created', done: true, owner: 'IT' },
+      { label: 'Git and cloud access', done: false, owner: 'Engineering' },
+      { label: 'Security training', done: false, owner: 'IT' },
+    ],
+  },
+  {
+    id: 'onb-james',
+    name: 'James Okoro',
+    initials: 'JO',
+    role: 'Data Engineer',
+    stage: 'paperwork',
+    completedTasks: 3,
+    totalTasks: 8,
+    startDate: '2026-07-28',
+    owner: 'Priya Sharma',
+    location: 'Austin',
+    priority: 'normal',
+    checklist: [
+      { label: 'Offer letter accepted', done: true, owner: 'HR' },
+      { label: 'Identity verification', done: true, owner: 'HR' },
+      { label: 'Payroll setup', done: false, owner: 'Payroll' },
+      { label: 'Compliance forms', done: false, owner: 'HR' },
+    ],
+  },
+  {
+    id: 'onb-tomas',
+    name: 'Tomas Berg',
+    initials: 'TB',
+    role: 'Data Engineer',
+    stage: 'first_week',
+    completedTasks: 5,
+    totalTasks: 6,
+    startDate: '2026-07-06',
+    owner: 'David Park',
+    location: 'Chicago',
+    priority: 'watch',
+    checklist: [
+      { label: 'Team introduction', done: true, owner: 'Manager' },
+      { label: 'Project overview', done: true, owner: 'Manager' },
+      { label: 'First week feedback', done: false, owner: 'Manager' },
+      { label: 'Buddy check-in', done: true, owner: 'Buddy' },
+    ],
+  },
+  {
+    id: 'onb-diego',
+    name: 'Diego Santos',
+    initials: 'DS',
+    role: 'Account Executive',
+    stage: 'complete',
+    completedTasks: 8,
+    totalTasks: 8,
+    startDate: '2026-06-17',
+    owner: 'Priya Nair',
+    location: 'Miami',
+    priority: 'done',
+    checklist: [
+      { label: 'All access confirmed', done: true, owner: 'IT' },
+      { label: 'Manager sign-off', done: true, owner: 'Manager' },
+      { label: 'Probation goals created', done: true, owner: 'HR' },
+      { label: 'Onboarding survey sent', done: true, owner: 'People Ops' },
+    ],
+  },
+];
+
+function onboardingPriorityVariant(priority: OnboardingCandidate['priority']): 'success' | 'warning' | 'error' | 'neutral' {
+  if (priority === 'done') return 'success';
+  if (priority === 'blocked') return 'error';
+  if (priority === 'watch') return 'warning';
+  return 'neutral';
+}
+
+function onboardingPriorityLabel(priority: OnboardingCandidate['priority']) {
+  if (priority === 'done') return 'Complete';
+  if (priority === 'blocked') return 'Blocked';
+  if (priority === 'watch') return 'Watch';
+  return 'On track';
+}
+
+function onboardingProgress(candidate: OnboardingCandidate) {
+  return Math.round((candidate.completedTasks / candidate.totalTasks) * 100);
+}
+
+function OnboardingCard({ candidate, selected, onSelect }: { candidate: OnboardingCandidate; selected: boolean; onSelect: () => void }) {
+  const progress = onboardingProgress(candidate);
   return (
-    <PlaceholderPage
-      title="Onboarding Center"
-      description="Track and manage employee onboarding workflows."
-    />
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        'w-full rounded-xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-olive/30 hover:shadow-card-md',
+        selected ? 'border-olive ring-2 ring-olive/10' : 'border-[#E5E7EB]'
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <Avatar initials={candidate.initials} variant="filled" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-bold text-[#2F3437]">{candidate.name}</div>
+          <div className="truncate text-xs font-medium text-gray-500">{candidate.role}</div>
+        </div>
+        <Badge variant={onboardingPriorityVariant(candidate.priority)}>{onboardingPriorityLabel(candidate.priority)}</Badge>
+      </div>
+      <div className="mt-4 h-2 rounded-full bg-olive/10">
+        <div className={cn('h-2 rounded-full', candidate.priority === 'blocked' ? 'bg-status-error' : candidate.priority === 'watch' ? 'bg-status-warning' : 'bg-olive')} style={{ width: `${progress}%` }} />
+      </div>
+      <div className="mt-3 flex items-center justify-between text-xs font-semibold text-gray-500">
+        <span>{candidate.completedTasks}/{candidate.totalTasks} tasks</span>
+        <span>Starts {formatDate(candidate.startDate).replace(', 2026', '')}</span>
+      </div>
+    </button>
+  );
+}
+
+export function OnboardingPage() {
+  const [selectedId, setSelectedId] = useState(onboardingCandidates[0]?.id || '');
+  const [query, setQuery] = useState('');
+  const filteredCandidates = onboardingCandidates.filter((candidate) => (
+    [candidate.name, candidate.role, candidate.owner, candidate.location].join(' ').toLowerCase().includes(query.trim().toLowerCase())
+  ));
+  const selected = onboardingCandidates.find((candidate) => candidate.id === selectedId) || onboardingCandidates[0];
+  const totalTasks = onboardingCandidates.reduce((sum, candidate) => sum + candidate.totalTasks, 0);
+  const completedTasks = onboardingCandidates.reduce((sum, candidate) => sum + candidate.completedTasks, 0);
+  const completion = Math.round((completedTasks / totalTasks) * 100);
+
+  return (
+    <div className="animate-fade-up">
+      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h1 className="mb-1 text-2xl font-bold tracking-tight text-[#2F3437]">Onboarding Center</h1>
+          <p className="text-sm text-gray-500">Track new hires from accepted offer through first-week completion.</p>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <label className="relative min-w-[280px]">
+            <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search new hires, owners..."
+              className="h-10 w-full rounded-xl border border-[#E5E7EB] bg-white pl-9 pr-3 text-sm outline-none focus:border-olive"
+            />
+          </label>
+          <Button icon={<Plus size={15} />}>Add New Hire</Button>
+        </div>
+      </div>
+
+      <div className="mb-5 grid gap-3 md:grid-cols-4">
+        <Card className="p-4">
+          <div className="text-xs font-bold uppercase tracking-wide text-gray-400">Active Onboarding</div>
+          <div className="mt-2 text-2xl font-bold text-[#2F3437]">{onboardingCandidates.filter((candidate) => candidate.stage !== 'complete').length}</div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-xs font-bold uppercase tracking-wide text-gray-400">Tasks Complete</div>
+          <div className="mt-2 text-2xl font-bold text-[#2F3437]">{completedTasks}/{totalTasks}</div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-xs font-bold uppercase tracking-wide text-gray-400">Overall Progress</div>
+          <div className="mt-2 flex items-center gap-3">
+            <div className="h-2 flex-1 rounded-full bg-olive/10"><div className="h-2 rounded-full bg-olive" style={{ width: `${completion}%` }} /></div>
+            <span className="text-sm font-bold text-olive">{completion}%</span>
+          </div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-xs font-bold uppercase tracking-wide text-gray-400">Needs Attention</div>
+          <div className="mt-2 text-2xl font-bold text-status-warning">{onboardingCandidates.filter((candidate) => candidate.priority === 'watch' || candidate.priority === 'blocked').length}</div>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
+        <div className="overflow-x-auto pb-3">
+          <div className="grid min-w-[1180px] grid-cols-5 gap-4">
+            {onboardingStages.map((stage) => {
+              const stageCandidates = filteredCandidates.filter((candidate) => candidate.stage === stage.key);
+              return (
+                <section key={stage.key} className="rounded-2xl border border-[#E5E7EB] bg-warm-bg/70 p-3">
+                  <div className="mb-3 flex items-start justify-between gap-2 px-1">
+                    <div>
+                      <div className="text-xs font-bold uppercase tracking-[0.18em] text-gray-400">{stage.label}</div>
+                      <div className="mt-1 text-xs text-gray-500">{stage.helper}</div>
+                    </div>
+                    <span className="rounded-full bg-white px-2 py-0.5 text-xs font-bold text-olive shadow-sm">{stageCandidates.length}</span>
+                  </div>
+                  <div className="space-y-3">
+                    {stageCandidates.length ? stageCandidates.map((candidate) => (
+                      <OnboardingCard
+                        key={candidate.id}
+                        candidate={candidate}
+                        selected={selected?.id === candidate.id}
+                        onSelect={() => setSelectedId(candidate.id)}
+                      />
+                    )) : (
+                      <div className="rounded-xl border border-dashed border-[#DDE3DD] bg-white px-3 py-8 text-center text-sm text-gray-400">No new hires</div>
+                    )}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        </div>
+
+        <Card className="overflow-hidden self-start">
+          {selected ? (
+            <>
+              <div className="border-b border-[#E5E7EB] p-5">
+                <div className="flex items-start gap-3">
+                  <Avatar initials={selected.initials} size="lg" variant="filled" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-lg font-bold text-[#2F3437]">{selected.name}</div>
+                    <div className="text-sm text-gray-500">{selected.role} - {selected.location}</div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Badge variant={onboardingPriorityVariant(selected.priority)}>{onboardingPriorityLabel(selected.priority)}</Badge>
+                      <Badge variant="neutral">{selected.owner}</Badge>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <div className="rounded-xl bg-warm-bg p-3">
+                    <div className="text-xs font-bold uppercase tracking-wide text-gray-400">Start Date</div>
+                    <div className="mt-1 text-sm font-bold text-[#2F3437]">{formatDate(selected.startDate)}</div>
+                  </div>
+                  <div className="rounded-xl bg-warm-bg p-3">
+                    <div className="text-xs font-bold uppercase tracking-wide text-gray-400">Progress</div>
+                    <div className="mt-1 text-sm font-bold text-[#2F3437]">{selected.completedTasks}/{selected.totalTasks} tasks</div>
+                  </div>
+                </div>
+              </div>
+              <div className="p-5">
+                <div className="mb-3 text-sm font-bold text-[#2F3437]">Checklist</div>
+                <div className="space-y-2">
+                  {selected.checklist.map((item) => (
+                    <div key={item.label} className="flex items-start gap-3 rounded-xl border border-[#E5E7EB] bg-white p-3">
+                      <span className={cn('mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border', item.done ? 'border-olive bg-olive text-white' : 'border-gray-300 text-gray-300')}>
+                        <CheckCircle2 size={13} />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className={cn('text-sm font-semibold', item.done ? 'text-[#2F3437]' : 'text-gray-500')}>{item.label}</div>
+                        <div className="mt-0.5 text-xs text-gray-400">Owner: {item.owner}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <Button variant="ghost" icon={<Pencil size={14} />}>Edit Plan</Button>
+                  <Button icon={<UserCheck size={14} />}>Assign Owner</Button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="p-8 text-center text-sm text-gray-500">Select an onboarding card to see details.</div>
+          )}
+        </Card>
+      </div>
+    </div>
   );
 }
 

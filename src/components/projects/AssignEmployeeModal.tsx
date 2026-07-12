@@ -9,6 +9,7 @@ interface ProjectRecord {
   id: string;
   name: string;
   code: string;
+  status?: string;
 }
 
 interface AllocationRecord {
@@ -22,6 +23,8 @@ interface AllocationRecord {
   start_date: string;
   end_date: string | null;
   notes?: string | null;
+  project_id?: string | null;
+  project_name?: string | null;
 }
 
 interface EmployeeOption {
@@ -47,6 +50,8 @@ interface AssignEmployeeModalProps {
   project: ProjectRecord | null;
   user: AuthUserLike | null;
   allocation?: AllocationRecord | null;
+  projects?: ProjectRecord[];
+  mode?: 'assign' | 'edit' | 'change' | 'extend';
   onClose: () => void;
   onAssigned: () => void;
 }
@@ -63,10 +68,46 @@ function employeeName(employee: EmployeeOption) {
   return `${employee.first_name || ''} ${employee.last_name || ''}`.trim() || employee.work_email;
 }
 
-export function AssignEmployeeModal({ open, project, user, allocation, onClose, onAssigned }: AssignEmployeeModalProps) {
+function formatApiError(payload: unknown, fallback: string) {
+  if (!payload || typeof payload !== 'object') return fallback;
+
+  const detail = (payload as { detail?: unknown }).detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (!item || typeof item !== 'object') return String(item);
+        const record = item as { msg?: string; message?: string; loc?: unknown[] };
+        const field = Array.isArray(record.loc) ? record.loc.filter(Boolean).slice(1).join('.') : '';
+        const message = record.msg || record.message || JSON.stringify(item);
+        return field ? `${field}: ${message}` : message;
+      })
+      .join('; ');
+  }
+  if (detail && typeof detail === 'object') {
+    const record = detail as { message?: string; error?: string };
+    if (record.message) return record.message;
+    if (record.error) return record.error;
+  }
+
+  const record = payload as { message?: string; error?: string };
+  return record.message || record.error || fallback;
+}
+
+export function AssignEmployeeModal({
+  open,
+  project,
+  user,
+  allocation,
+  projects = [],
+  mode = allocation ? 'edit' : 'assign',
+  onClose,
+  onAssigned,
+}: AssignEmployeeModalProps) {
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
   const [managers, setManagers] = useState<EmployeeOption[]>([]);
   const [employeeId, setEmployeeId] = useState('');
+  const [projectId, setProjectId] = useState(project?.id || '');
   const [managerId, setManagerId] = useState(user?.id || '');
   const [allocationRole, setAllocationRole] = useState('Developer');
   const [allocationPercentage, setAllocationPercentage] = useState(100);
@@ -79,6 +120,11 @@ export function AssignEmployeeModal({ open, project, user, allocation, onClose, 
   const [error, setError] = useState('');
   const [capacityMessage, setCapacityMessage] = useState('');
   const [capacityWarning, setCapacityWarning] = useState(false);
+  const canChangeProject = Boolean(allocation && mode === 'change');
+  const activeProjects = useMemo(
+    () => projects.filter((item) => item.status === 'active' || item.id === (allocation?.project_id || project?.id)),
+    [allocation?.project_id, project?.id, projects],
+  );
 
   const headers = useMemo(() => ({
     'Content-Type': 'application/json',
@@ -109,6 +155,7 @@ export function AssignEmployeeModal({ open, project, user, allocation, onClose, 
   useEffect(() => {
     if (open) {
       setEmployeeId(allocation?.employee_id || '');
+      setProjectId(allocation?.project_id || project?.id || '');
       setManagerId(allocation?.manager_id || '');
       setAllocationRole(allocation?.allocation_role || 'Developer');
       setAllocationPercentage(allocation?.allocation_percentage || 100);
@@ -121,7 +168,7 @@ export function AssignEmployeeModal({ open, project, user, allocation, onClose, 
       setCapacityMessage('');
       setCapacityWarning(false);
     }
-  }, [allocation, open, user?.id]);
+  }, [allocation, open, project?.id, user?.id]);
 
   useEffect(() => {
     if (!open || !employeeId || !startDate || !allocationPercentage) {
@@ -168,12 +215,33 @@ export function AssignEmployeeModal({ open, project, user, allocation, onClose, 
   }, [allocation?.id, allocationPercentage, employeeId, endDate, headers, open, startDate]);
 
   const selectedEmployee = employees.find((employee) => employee.id === employeeId);
+  const selectedProject = activeProjects.find((item) => item.id === projectId) || project;
+  const allocationPercentageChanged = Boolean(allocation && allocation.allocation_percentage !== allocationPercentage);
+  const modalTitle = mode === 'change'
+    ? 'Change Project'
+    : mode === 'extend'
+      ? 'Extend Assignment'
+      : allocation
+        ? 'Edit Allocation'
+        : 'Assign Employee';
 
   if (!open || !project) return null;
 
   const submit = async () => {
-    if (!employeeId || !managerId || !startDate || !allocationRole.trim()) {
-      setError('Employee, manager, role, and start date are required.');
+    if (!employeeId || !managerId || !projectId || !startDate || !allocationRole.trim()) {
+      setError('Employee, project, manager, role, and start date are required.');
+      return;
+    }
+    if (!selectedProject) {
+      setError('Invalid project ID.');
+      return;
+    }
+    if (endDate && endDate < startDate) {
+      setError('Start date must be before end date.');
+      return;
+    }
+    if (allocationPercentage < 1 || allocationPercentage > 100) {
+      setError('Allocation percentage must be between 1 and 100.');
       return;
     }
     setLoading(true);
@@ -185,8 +253,8 @@ export function AssignEmployeeModal({ open, project, user, allocation, onClose, 
         body: JSON.stringify({
           employee_id: employeeId,
           manager_id: managerId,
-          project_id: project.id,
-          project_name: project.name,
+          project_id: projectId,
+          project_name: selectedProject.name,
           allocation_percentage: allocationPercentage,
           allocation_role: allocationRole.trim(),
           billing_type: billingType,
@@ -196,8 +264,19 @@ export function AssignEmployeeModal({ open, project, user, allocation, onClose, 
           notes: notes.trim() || null,
         }),
       });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(payload.detail || (allocation ? 'Could not update assignment.' : 'Could not assign employee.'));
+      const responseText = await res.text();
+      let payload: unknown = {};
+      if (responseText) {
+        try {
+          payload = JSON.parse(responseText);
+        } catch {
+          payload = { detail: responseText };
+        }
+      }
+      if (!res.ok) {
+        const message = formatApiError(payload, allocation ? 'Could not update assignment.' : 'Could not assign employee.');
+        throw new Error(message);
+      }
       onAssigned();
       onClose();
     } catch (err) {
@@ -217,8 +296,8 @@ export function AssignEmployeeModal({ open, project, user, allocation, onClose, 
                 <UserPlus size={18} />
               </div>
               <div>
-                <h2 className="text-lg font-bold text-[#2F3437]">{allocation ? 'Edit Assignment' : 'Assign Employee'}</h2>
-                <p className="text-sm text-gray-500">{project.name} · {project.code}</p>
+                <h2 className="text-lg font-bold text-[#2F3437]">{modalTitle}</h2>
+                <p className="text-sm text-gray-500">{selectedProject?.name || project.name} · {selectedProject?.code || project.code}</p>
               </div>
             </div>
           </div>
@@ -235,6 +314,19 @@ export function AssignEmployeeModal({ open, project, user, allocation, onClose, 
           )}
 
           <div className="grid gap-4 md:grid-cols-2">
+            {canChangeProject && (
+              <label className="space-y-1.5 md:col-span-2">
+                <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Target Project</span>
+                <select value={projectId} onChange={(event) => setProjectId(event.target.value)} className="h-11 w-full rounded-lg border border-[#E5E7EB] bg-warm-card px-3 text-sm font-medium text-[#2F3437] outline-none focus:border-accent">
+                  <option value="">Select active project</option>
+                  {activeProjects.map((item) => (
+                    <option key={item.id} value={item.id}>{item.name} · {item.code}</option>
+                  ))}
+                </select>
+                <div className="text-xs text-gray-500">Only active projects can receive moved assignments.</div>
+              </label>
+            )}
+
             <label className="space-y-1.5">
               <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Employee</span>
               <select value={employeeId} onChange={(event) => setEmployeeId(event.target.value)} disabled={Boolean(allocation)} className="h-11 w-full rounded-lg border border-[#E5E7EB] bg-warm-card px-3 text-sm font-medium text-[#2F3437] outline-none focus:border-accent disabled:cursor-not-allowed disabled:opacity-70">
@@ -279,6 +371,8 @@ export function AssignEmployeeModal({ open, project, user, allocation, onClose, 
               <select value={status} onChange={(event) => setStatus(event.target.value)} className="h-11 w-full rounded-lg border border-[#E5E7EB] bg-warm-card px-3 text-sm font-medium text-[#2F3437] outline-none focus:border-accent">
                 <option value="active">Active</option>
                 <option value="upcoming">Upcoming</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
               </select>
             </label>
 
@@ -319,6 +413,15 @@ export function AssignEmployeeModal({ open, project, user, allocation, onClose, 
                 : 'border-status-success/20 bg-status-success/10 text-status-success',
             )}>
               {capacityMessage}
+            </div>
+          )}
+
+          {allocationPercentageChanged && (
+            <div className="mt-4 rounded-xl border border-status-warning/25 bg-status-warning/10 px-4 py-3">
+              <div className="text-sm font-bold text-[#2F3437]">Allocation percentage will change</div>
+              <div className="mt-1 text-sm text-gray-600">
+                {allocation?.allocation_percentage}% → <span className="font-bold text-status-warning">{allocationPercentage}%</span>
+              </div>
             </div>
           )}
         </div>

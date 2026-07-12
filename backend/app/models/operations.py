@@ -53,6 +53,18 @@ class ProjectDocument(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class CompanyHoliday(Base):
+    __tablename__ = "company_holidays"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    holiday_date: Mapped[date] = mapped_column(Date, nullable=False)
+    holiday_type: Mapped[str] = mapped_column(String(30), default="public")
+    regions: Mapped[str] = mapped_column(Text, default="all")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class TimesheetEntry(Base):
     __tablename__ = "timesheet_entries"
 

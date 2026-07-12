@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CalendarClock, Download, SearchX, TrendingUp } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Avatar, Badge, Button, Card } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/utils/cn';
@@ -17,12 +18,13 @@ interface ForecastEmployeeRow {
   forecast_allocation_percentage: number;
   forecast_available_percentage: number;
   next_allocation_end_date: string | null;
-  forecast_status: 'becoming_available' | 'partially_available' | 'fully_available' | 'overallocated' | 'bench_risk';
+  forecast_status: 'becoming_available' | 'partially_available' | 'fully_allocated' | 'fully_available' | 'overallocated' | 'bench_risk';
 }
 
 interface ForecastSummary {
   total_employees: number;
   becoming_available_count: number;
+  fully_allocated_count: number;
   fully_available_count: number;
   partially_available_count: number;
   bench_risk_count: number;
@@ -77,9 +79,10 @@ function formatDate(value?: string | null) {
   return new Date(`${value}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-function statusVariant(status: ForecastEmployeeRow['forecast_status']): 'info' | 'olive' | 'success' | 'warning' | 'error' {
+function statusVariant(status: ForecastEmployeeRow['forecast_status']): 'info' | 'olive' | 'success' | 'warning' | 'error' | 'neutral' {
   if (status === 'becoming_available') return 'info';
   if (status === 'partially_available') return 'olive';
+  if (status === 'fully_allocated') return 'neutral';
   if (status === 'fully_available') return 'success';
   if (status === 'bench_risk') return 'warning';
   return 'error';
@@ -108,6 +111,7 @@ function SkeletonBlock() {
 
 export function WorkforceForecastPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [forecast, setForecast] = useState<ForecastResponse | null>(null);
   const [windowDays, setWindowDays] = useState('30');
   const [department, setDepartment] = useState('all');
@@ -158,6 +162,7 @@ export function WorkforceForecastPage() {
 
   const filteredSummary = useMemo(() => ({
     becoming_available_count: filteredEmployees.filter((row) => row.forecast_status === 'becoming_available').length,
+    fully_allocated_count: filteredEmployees.filter((row) => row.forecast_status === 'fully_allocated').length,
     fully_available_count: filteredEmployees.filter((row) => row.forecast_status === 'fully_available').length,
     partially_available_count: filteredEmployees.filter((row) => row.forecast_status === 'partially_available').length,
     bench_risk_count: filteredEmployees.filter((row) => row.forecast_status === 'bench_risk').length,
@@ -255,9 +260,10 @@ export function WorkforceForecastPage() {
         </div>
       </Card>
 
-      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
         {[
           ['Becoming Available', filteredSummary.becoming_available_count, 'info'],
+          ['Fully Allocated', filteredSummary.fully_allocated_count, 'neutral'],
           ['Fully Available', filteredSummary.fully_available_count, 'success'],
           ['Partially Available', filteredSummary.partially_available_count, 'olive'],
           ['Bench Risk', filteredSummary.bench_risk_count, 'warning'],
@@ -336,7 +342,7 @@ export function WorkforceForecastPage() {
                     <td className="px-4 py-4 font-semibold">{row.forecast_available_percentage}%</td>
                     <td className="px-4 py-4 text-gray-600">{formatDate(row.next_allocation_end_date)}</td>
                     <td className="px-4 py-4"><Badge variant={statusVariant(row.forecast_status)}>{titleCase(row.forecast_status)}</Badge></td>
-                    <td className="px-4 py-4"><Button size="sm" variant="ghost" onClick={() => window.location.assign(`/profile?employee_id=${row.employee_id}`)}>View</Button></td>
+                    <td className="px-4 py-4"><Button size="sm" variant="ghost" onClick={() => navigate(`/profile?employee_id=${encodeURIComponent(row.employee_id)}&tab=allocations`)}>View</Button></td>
                   </tr>
                 ))}
               </tbody>

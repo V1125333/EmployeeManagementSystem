@@ -5,6 +5,7 @@ import { ToastProvider } from '@/components/ui/Toast';
 import { AdminRoute, EmployeeRoute, ProtectedRoute, RoleHomeRedirect } from '@/components/layout/ProtectedRoute';
 import { AppLayout } from '@/layouts/AppLayout';
 import { LoginPage } from '@/pages/LoginPage';
+import { BrandPreviewPage } from '@/pages/BrandPreviewPage';
 import { ForceChangePasswordPage } from '@/pages/ForceChangePasswordPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { EmployeesPage } from '@/pages/EmployeesPage';
@@ -16,12 +17,14 @@ import { AuditTrailPage } from '@/pages/AuditTrailPage';
 import { SecurityCenterPage } from '@/pages/SecurityCenterPage';
 import { HRDocumentsPage } from '@/pages/HRDocumentsPage';
 import { BenchPage } from '@/pages/BenchPage';
+import { TalentProfilesPage } from '@/pages/TalentProfilesPage';
 import { WorkforceForecastPage } from '@/pages/WorkforceForecastPage';
 import { StaffingRequestDetailPage } from '@/pages/StaffingRequestDetailPage';
 import { StaffingRequestsPage } from '@/pages/StaffingRequestsPage';
 import { RequestsPage } from '@/pages/RequestsPage';
 import { ProjectDetailPage } from '@/pages/ProjectDetailPage';
 import { ProjectsPage } from '@/pages/ProjectsPage';
+import { AskOrbitAIPage } from '@/pages/AskOrbitAIPage';
 import {
   OnboardingPage,
   ClientOnboardingPage,
@@ -44,6 +47,7 @@ import {
   LeaveApprovalsPage,
   TimesheetsPage,
 } from '@/pages/EmployeePortalPages';
+import { MyCareerProfilePage } from '@/pages/MyCareerProfilePage';
 
 export default function App() {
   return (
@@ -54,6 +58,7 @@ export default function App() {
           <Routes>
             {/* Public route */}
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/brand-preview" element={<BrandPreviewPage />} />
             <Route path="/force-change-password" element={<ForceChangePasswordPage />} />
             <Route path="/verify/:certificateCode" element={<CertificateVerificationPage />} />
 
@@ -64,12 +69,14 @@ export default function App() {
                 <Route path="/profile" element={<ProfilePage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/notifications" element={<EmployeeNotificationsPage />} />
+                <Route path="/ask-orbit-ai" element={<AskOrbitAIPage />} />
                 <Route path="/bench" element={<BenchPage />} />
                 <Route path="/projects" element={<ProjectsPage />} />
                 <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
                 <Route path="/staffing-requests" element={<StaffingRequestsPage />} />
                 <Route path="/staffing-requests/:requestId" element={<StaffingRequestDetailPage />} />
                 <Route path="/forecasting" element={<WorkforceForecastPage />} />
+                <Route path="/talent-profiles" element={<TalentProfilesPage />} />
 
                 <Route element={<EmployeeRoute />}>
                   <Route path="/employee" element={<EmployeeDashboardPage />} />
@@ -83,6 +90,7 @@ export default function App() {
                   <Route path="/employee/documents" element={<EmployeeDocumentsPage />} />
                   <Route path="/employee/company-handbook" element={<CompanyHandbookPage />} />
                   <Route path="/employee/holidays" element={<HolidaysPage />} />
+                  <Route path="/employee/career-profile" element={<MyCareerProfilePage />} />
                   <Route path="/employee/notifications" element={<Navigate to="/notifications" replace />} />
                 </Route>
 

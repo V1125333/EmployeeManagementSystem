@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 import hashlib
 import os
 import uuid
@@ -25,7 +25,11 @@ PROJECT_DOCUMENT_TYPES = {"CONTRACT", "SOW", "NDA", "INVOICE", "REPORT", "OTHER"
 
 
 def _is_project_admin(actor: Employee) -> bool:
-    return normalize_role(actor.role) in {"super_admin", "hr_admin", "global_access"}
+    return normalize_role(actor.role) in {"super_admin", "hr_admin", "admin", "global_access"}
+
+
+def _is_manager(actor: Employee) -> bool:
+    return normalize_role(actor.role) == "manager"
 
 
 def _employee_name_from_row(employee: Employee | None) -> str | None:
@@ -89,12 +93,23 @@ def _validate_dates(start_date, end_date) -> None:
 
 def list_projects(
     db: Session,
+    actor: Employee | None = None,
     search: str | None = None,
     status: str | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[dict[str, Any]], int]:
     query = db.query(Project)
+    if actor and not _is_project_admin(actor) and not _is_manager(actor):
+        today = date.today()
+        allocated_project_ids = db.query(Allocation.project_id).filter(
+            Allocation.employee_id == actor.id,
+            Allocation.status == "active",
+            Allocation.project_id.isnot(None),
+            Allocation.start_date <= today,
+            or_(Allocation.end_date.is_(None), Allocation.end_date >= today),
+        )
+        query = query.filter(Project.id.in_(allocated_project_ids))
     if search and search.strip():
         term = f"%{search.strip()}%"
         query = query.filter(

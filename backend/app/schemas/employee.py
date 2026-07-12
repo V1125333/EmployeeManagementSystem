@@ -83,6 +83,7 @@ class CheckEmailResponse(BaseModel):
     employee_id: str | None = None
     role: str | None = None
     profile_image_url: str | None = None
+    force_password_change: bool = False
 
 
 # ═══════════════════════════════════════
@@ -203,7 +204,7 @@ class AdminResetPasswordResponse(BaseModel):
 
 
 class ForceChangePasswordRequest(BaseModel):
-    current_password: str
+    current_password: Optional[str] = None
     new_password: str = Field(..., min_length=8)
     confirm_password: str = Field(..., min_length=8)
 
@@ -224,6 +225,8 @@ class VerifyLoginPasswordResponse(BaseModel):
     login_challenge_token: Optional[str] = None
     account_locked: bool = False
     attempts_remaining: Optional[int] = None
+    employee: Optional[dict] = None
+    force_password_change: bool = False
 
 
 class CompleteLoginMfaRequest(BaseModel):
