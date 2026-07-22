@@ -2,10 +2,10 @@
 Employee attendance self-service endpoints.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -25,6 +25,15 @@ class AttendanceResponse(BaseModel):
     total_hours: float | None = None
     status: str
     is_checked_in: bool
+
+
+class AttendanceContextResponse(BaseModel):
+    joining_date: date
+    today: date
+
+
+def employee_joining_date(employee) -> date:
+    return employee.date_of_joining or employee.joining_date
 
 
 def serialize_attendance(attendance: Attendance | None, target_date: date | None = None) -> AttendanceResponse:
@@ -69,6 +78,19 @@ async def my_attendance_today(
         Attendance.date == today,
     ).first()
     return serialize_attendance(attendance, today)
+
+
+@router.get("/me/context", response_model=AttendanceContextResponse)
+async def my_attendance_context(
+    db: Session = Depends(get_db),
+    x_user_id: str | None = Header(default=None),
+    x_user_email: str | None = Header(default=None),
+):
+    employee = current_employee(db, x_user_id, x_user_email)
+    return AttendanceContextResponse(
+        joining_date=employee_joining_date(employee),
+        today=date.today(),
+    )
 
 
 @router.post("/me/check-in", response_model=AttendanceResponse)
@@ -161,12 +183,27 @@ async def check_out(
 
 @router.get("/me/history", response_model=list[AttendanceResponse])
 async def my_attendance_history(
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
     db: Session = Depends(get_db),
     x_user_id: str | None = Header(default=None),
     x_user_email: str | None = Header(default=None),
 ):
     employee = current_employee(db, x_user_id, x_user_email)
+    joining_date = employee_joining_date(employee)
+    today = date.today()
+    effective_to = date_to or today
+    effective_from = date_from or max(joining_date, today - timedelta(days=29))
+    if effective_from < joining_date:
+        raise HTTPException(status_code=400, detail="Attendance history cannot start before your joining date.")
+    if effective_to > today:
+        raise HTTPException(status_code=400, detail="Attendance history cannot include future dates.")
+    if effective_from > effective_to:
+        raise HTTPException(status_code=400, detail="From date must be on or before To date.")
+
     records = db.query(Attendance).filter(
         Attendance.employee_id == employee.id,
-    ).order_by(Attendance.date.desc()).limit(30).all()
+        Attendance.date >= effective_from,
+        Attendance.date <= effective_to,
+    ).order_by(Attendance.date.desc()).all()
     return [serialize_attendance(record) for record in records]

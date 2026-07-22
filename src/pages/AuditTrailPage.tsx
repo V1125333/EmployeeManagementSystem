@@ -91,7 +91,7 @@ function buildParams(filters: AuditFilters, includePaging: boolean, page: number
 
 function KpiCard({ label, value, tone }: { label: string; value: number; tone: 'neutral' | 'error' | 'olive' | 'info' }) {
   const toneClass = {
-    neutral: 'text-[#2F3437]',
+    neutral: 'text-[var(--color-brand-navy)]',
     error: 'text-status-error',
     olive: 'text-accent',
     info: 'text-status-info',
@@ -109,13 +109,13 @@ function JsonBlock({ title, value }: { title: string; value: unknown }) {
   const { showToast } = useToast();
   const text = JSON.stringify(value || {}, null, 2);
   return (
-    <div className="rounded-lg border border-[#E5E7EB]">
-      <button className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-bold text-[#2F3437]" onClick={() => setOpen((value) => !value)}>
+    <div className="rounded-lg border border-[var(--color-border)]">
+      <button className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-bold text-[var(--color-brand-navy)]" onClick={() => setOpen((value) => !value)}>
         {title}
         <span className="text-xs text-gray-400">{open ? 'Hide' : 'Show'}</span>
       </button>
       {open && (
-        <div className="border-t border-[#E5E7EB] p-3">
+        <div className="border-t border-[var(--color-border)] p-3">
           <div className="mb-2 flex justify-end">
             <Button
               size="sm"
@@ -158,7 +158,7 @@ function AuditDetailDrawer({ row, onClose }: { row: AuditLogRow | null; onClose:
             <div className="mb-3 flex items-center gap-3">
               <Avatar initials={initials(row.actor_name)} size="md" />
               <div>
-                <div className="font-bold text-[#2F3437]">{row.actor_name || 'System'}</div>
+                <div className="font-bold text-[var(--color-brand-navy)]">{row.actor_name || 'System'}</div>
                 <div className="text-xs text-gray-500">{labelize(row.actor_role)}</div>
               </div>
             </div>
@@ -173,11 +173,11 @@ function AuditDetailDrawer({ row, onClose }: { row: AuditLogRow | null; onClose:
 
         {changed.length > 0 && (
           <Card className="overflow-hidden">
-            <div className="border-b border-[#E5E7EB] px-4 py-3 text-sm font-bold text-[#2F3437]">Changed Fields</div>
-            <div className="divide-y divide-[#E5E7EB]">
+            <div className="border-b border-[var(--color-border)] px-4 py-3 text-sm font-bold text-[var(--color-brand-navy)]">Changed Fields</div>
+            <div className="divide-y divide-[var(--color-border)]">
               {changed.map(([field, diff]) => (
                 <div key={field} className="grid gap-3 p-4 lg:grid-cols-[180px_1fr_1fr]">
-                  <div className="text-sm font-bold text-[#2F3437]">{labelize(field)}</div>
+                  <div className="text-sm font-bold text-[var(--color-brand-navy)]">{labelize(field)}</div>
                   <pre className="min-h-12 whitespace-pre-wrap rounded-lg bg-status-error/5 p-3 text-xs text-status-error">{isMasked(diff.old) ? 'Lock ' : '- '}{stringifyValue(diff.old)}</pre>
                   <pre className="min-h-12 whitespace-pre-wrap rounded-lg bg-status-success/5 p-3 text-xs text-status-success">{isMasked(diff.new) ? 'Lock ' : '+ '}{stringifyValue(diff.new)}</pre>
                 </div>
@@ -187,7 +187,7 @@ function AuditDetailDrawer({ row, onClose }: { row: AuditLogRow | null; onClose:
         )}
 
         <Card className="p-4">
-          <div className="mb-2 text-sm font-bold text-[#2F3437]">Reason / Notes</div>
+          <div className="mb-2 text-sm font-bold text-[var(--color-brand-navy)]">Reason / Notes</div>
           <div className="text-sm text-gray-600">{row.reason || 'No reason recorded.'}</div>
         </Card>
 
@@ -201,7 +201,7 @@ function AuditDetailDrawer({ row, onClose }: { row: AuditLogRow | null; onClose:
 
 function SkeletonRows() {
   return (
-    <div className="divide-y divide-[#E5E7EB]">
+    <div className="divide-y divide-[var(--color-border)]">
       {Array.from({ length: 5 }).map((_, index) => (
         <div key={index} className="grid grid-cols-8 gap-4 px-5 py-4">
           {Array.from({ length: 8 }).map((__, cell) => (
@@ -307,7 +307,7 @@ export function AuditTrailPage() {
   if (!canView) {
     return (
       <div className="animate-fade-up">
-        <h1 className="mb-1 text-2xl font-bold tracking-tight text-[#2F3437]">Audit Trail</h1>
+        <h1 className="mb-1 text-2xl font-bold tracking-tight text-[var(--color-brand-navy)]">Audit Trail</h1>
         <p className="mb-6 text-sm text-gray-500">Global audit trail access is restricted.</p>
         <Card className="p-6 text-sm text-status-error">Only Super Admin and HR Admin can view audit logs.</Card>
       </div>
@@ -318,7 +318,7 @@ export function AuditTrailPage() {
     <div className="animate-fade-up">
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="mb-1 text-2xl font-bold tracking-tight text-[#2F3437]">Audit Trail</h1>
+          <h1 className="mb-1 text-2xl font-bold tracking-tight text-[var(--color-brand-navy)]">Audit Trail</h1>
           <p className="text-sm text-gray-500">Review append-only business, security, and compliance events across Reknew Orbit.</p>
         </div>
         <div className="flex gap-2">
@@ -340,22 +340,22 @@ export function AuditTrailPage() {
         <div className="grid gap-3 2xl:grid-cols-[1.4fr_0.8fr_0.8fr_1fr_1fr_1fr_1fr_auto]">
           <label className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-            <input value={filters.search} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} placeholder="Search actor, entity, field, reason..." className="h-11 w-full rounded-lg border border-[#E5E7EB] bg-warm-bg pl-9 pr-3 text-sm outline-none focus:border-accent" />
+            <input value={filters.search} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} placeholder="Search actor, entity, field, reason..." className="h-11 w-full rounded-lg border border-[var(--color-border)] bg-warm-bg pl-9 pr-3 text-sm outline-none focus:border-accent" />
           </label>
-          <input type="date" value={filters.date_from} onChange={(event) => setFilters((current) => ({ ...current, date_from: event.target.value }))} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 text-sm outline-none focus:border-accent" aria-label="From date" />
-          <input type="date" value={filters.date_to} onChange={(event) => setFilters((current) => ({ ...current, date_to: event.target.value }))} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 text-sm outline-none focus:border-accent" aria-label="To date" />
-          <input value={filters.actor} onChange={(event) => setFilters((current) => ({ ...current, actor: event.target.value }))} placeholder="Actor" className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 text-sm outline-none focus:border-accent" />
-          <input value={filters.entity_type} onChange={(event) => setFilters((current) => ({ ...current, entity_type: event.target.value }))} placeholder="Entity type" className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 text-sm outline-none focus:border-accent" />
-          <input value={filters.action} onChange={(event) => setFilters((current) => ({ ...current, action: event.target.value }))} placeholder="Action" className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 text-sm outline-none focus:border-accent" />
-          <select value={filters.source} onChange={(event) => setFilters((current) => ({ ...current, source: event.target.value }))} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 text-sm outline-none focus:border-accent">
+          <input type="date" value={filters.date_from} onChange={(event) => setFilters((current) => ({ ...current, date_from: event.target.value }))} className="h-11 rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 text-sm outline-none focus:border-accent" aria-label="From date" />
+          <input type="date" value={filters.date_to} onChange={(event) => setFilters((current) => ({ ...current, date_to: event.target.value }))} className="h-11 rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 text-sm outline-none focus:border-accent" aria-label="To date" />
+          <input value={filters.actor} onChange={(event) => setFilters((current) => ({ ...current, actor: event.target.value }))} placeholder="Actor" className="h-11 rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 text-sm outline-none focus:border-accent" />
+          <input value={filters.entity_type} onChange={(event) => setFilters((current) => ({ ...current, entity_type: event.target.value }))} placeholder="Entity type" className="h-11 rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 text-sm outline-none focus:border-accent" />
+          <input value={filters.action} onChange={(event) => setFilters((current) => ({ ...current, action: event.target.value }))} placeholder="Action" className="h-11 rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 text-sm outline-none focus:border-accent" />
+          <select value={filters.source} onChange={(event) => setFilters((current) => ({ ...current, source: event.target.value }))} className="h-11 rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 text-sm outline-none focus:border-accent">
             <option value="">Source: All</option>
             <option value="admin">Admin</option>
             <option value="user">User</option>
             <option value="system">System</option>
             <option value="api">API</option>
           </select>
-          <label className="flex h-11 items-center gap-2 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 text-sm font-semibold text-accent">
-            <input type="checkbox" checked={filters.sensitive_only} onChange={(event) => setFilters((current) => ({ ...current, sensitive_only: event.target.checked }))} className="h-4 w-4 accent-[#66785F]" />
+          <label className="flex h-11 items-center gap-2 rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 text-sm font-semibold text-accent">
+            <input type="checkbox" checked={filters.sensitive_only} onChange={(event) => setFilters((current) => ({ ...current, sensitive_only: event.target.checked }))} className="h-4 w-4 accent-[var(--color-brand-orange)]" />
             Sensitive
           </label>
         </div>
@@ -365,8 +365,8 @@ export function AuditTrailPage() {
       </Card>
 
       <Card className="overflow-hidden">
-        <div className="flex items-center justify-between border-b border-[#E5E7EB] px-5 py-4">
-          <div className="flex items-center gap-2 font-bold text-[#2F3437]"><ShieldCheck size={17} className="text-accent" /> Audit Events</div>
+        <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
+          <div className="flex items-center gap-2 font-bold text-[var(--color-brand-navy)]"><ShieldCheck size={17} className="text-accent" /> Audit Events</div>
           <div className="text-xs font-semibold text-gray-400">{total} records</div>
         </div>
         {loading ? (
@@ -374,7 +374,7 @@ export function AuditTrailPage() {
         ) : rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-12 text-center">
             <FileSearch size={34} className="mb-3 text-gray-300" />
-            <div className="font-bold text-[#2F3437]">No audit events match the current filters.</div>
+            <div className="font-bold text-[var(--color-brand-navy)]">No audit events match the current filters.</div>
             <p className="mt-1 text-sm text-gray-500">Try a wider date range or clear the filters.</p>
             <Button className="mt-4" variant="ghost" onClick={() => setFilters(defaultFilters)}>Clear filters</Button>
           </div>
@@ -393,14 +393,14 @@ export function AuditTrailPage() {
                   <th className="px-5 py-3 text-left">Source</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E5E7EB]">
+              <tbody className="divide-y divide-[var(--color-border)]">
                 {rows.map((row) => (
                   <tr key={row.id} className="cursor-pointer align-top transition hover:bg-accent-light/30" onClick={() => setSelected(row)}>
                     <td className="whitespace-nowrap px-5 py-3 text-gray-600">{formatDateTime(row.created_at)}</td>
-                    <td className="px-5 py-3 font-semibold text-[#2F3437]">{row.actor_name || 'System'}</td>
+                    <td className="px-5 py-3 font-semibold text-[var(--color-brand-navy)]">{row.actor_name || 'System'}</td>
                     <td className="px-5 py-3 text-gray-600">{labelize(row.actor_role)}</td>
-                    <td className="px-5 py-3"><span className="font-mono text-xs text-[#2F3437]">{row.action}</span></td>
-                    <td className="px-5 py-3"><div className="font-semibold text-[#2F3437]">{row.entity_type}</div><div className="max-w-[180px] truncate text-xs text-gray-400">{row.entity_id || '-'}</div></td>
+                    <td className="px-5 py-3"><span className="font-mono text-xs text-[var(--color-brand-navy)]">{row.action}</span></td>
+                    <td className="px-5 py-3"><div className="font-semibold text-[var(--color-brand-navy)]">{row.entity_type}</div><div className="max-w-[180px] truncate text-xs text-gray-400">{row.entity_id || '-'}</div></td>
                     <td className="px-5 py-3 text-gray-600">{changedFieldsLabel(row.changed_fields)}</td>
                     <td className="max-w-[260px] px-5 py-3 text-gray-600"><div className="line-clamp-2">{row.reason || '-'}</div></td>
                     <td className="px-5 py-3"><Badge variant={sourceVariant(row.source)}>{labelize(row.source)}</Badge></td>
@@ -410,7 +410,7 @@ export function AuditTrailPage() {
             </table>
           </div>
         )}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E5E7EB] px-5 py-3 text-sm text-gray-500">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] px-5 py-3 text-sm text-gray-500">
           <span>Showing {from}-{to} of {total} records</span>
           <div className="flex items-center gap-2">
             <Button size="sm" variant="ghost" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Previous</Button>
@@ -423,7 +423,7 @@ export function AuditTrailPage() {
                   const value = Number(jumpPage);
                   setPage(Number.isFinite(value) ? Math.min(totalPages, Math.max(1, value)) : page);
                 }}
-                className="h-8 w-16 rounded-lg border border-[#E5E7EB] bg-warm-bg px-2 text-sm text-[#2F3437] outline-none focus:border-accent"
+                className="h-8 w-16 rounded-lg border border-[var(--color-border)] bg-warm-bg px-2 text-sm text-[var(--color-brand-navy)] outline-none focus:border-accent"
               />
               of {totalPages}
             </label>

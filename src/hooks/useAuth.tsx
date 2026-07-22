@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, type ReactNode } from 'react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 const STORAGE_KEY = 'reknew_orbit_auth';
@@ -31,24 +31,21 @@ function makeInitials(name: string): string {
   return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
 }
 
+function readStoredUser(): AuthUser | null {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    const parsed = stored ? JSON.parse(stored) : null;
+    return parsed?.user || null;
+  } catch {
+    localStorage.removeItem(STORAGE_KEY);
+    return null;
+  }
+}
+
 // ─── Provider ───
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
-
-  // Check localStorage on mount
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed?.user) {
-          setUser(parsed.user);
-        }
-      }
-    } catch {
-      localStorage.removeItem(STORAGE_KEY);
-    }
-  }, []);
+  // Hydrate before the first protected-route render so bookmarks and refreshes keep their route.
+  const [user, setUser] = useState<AuthUser | null>(readStoredUser);
 
   // Login via backend API (email + password + TOTP)
   const loginWithApi = async (email: string, password: string, totpCode: string) => {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   Bell,
+  CalendarDays,
   ChevronRight,
   Eye,
   Globe2,
@@ -9,10 +10,12 @@ import {
   HelpCircle,
   KeyRound,
   LockKeyhole,
+  Mail,
   Monitor,
   Moon,
   Palette,
   Save,
+  Send,
   Shield,
   ShieldCheck,
   Sun,
@@ -25,11 +28,13 @@ import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/useTheme';
 import type { UserPreferences } from '@/hooks/useTheme';
+import { useOutlook } from '@/hooks/useOutlook';
+import type { OutlookEvent, OutlookMessage } from '@/hooks/useOutlook';
 import { cn } from '@/utils/cn';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
-type SettingsTab = 'profile' | 'general' | 'security' | 'notifications' | 'appearance' | 'privacy' | 'support';
+type SettingsTab = 'profile' | 'general' | 'security' | 'notifications' | 'integrations' | 'appearance' | 'privacy' | 'support';
 
 interface LegacySettings {
   mfa_enabled: boolean;
@@ -62,6 +67,7 @@ const tabs: { key: SettingsTab; label: string; icon: ReactNode }[] = [
   { key: 'general', label: 'General', icon: <Globe2 size={16} /> },
   { key: 'security', label: 'Security', icon: <Shield size={16} /> },
   { key: 'notifications', label: 'Notifications', icon: <Bell size={16} /> },
+  { key: 'integrations', label: 'Integrations', icon: <Mail size={16} /> },
   { key: 'appearance', label: 'Appearance', icon: <Palette size={16} /> },
   { key: 'privacy', label: 'Privacy', icon: <Eye size={16} /> },
   { key: 'support', label: 'Support', icon: <Headphones size={16} /> },
@@ -73,13 +79,7 @@ const languages = [
   { label: 'English (UK)', value: 'en-GB' },
 ];
 const accentOptions = [
-  ['olive', '#66785F'],
-  ['blue', '#3B82F6'],
-  ['indigo', '#6366F1'],
-  ['purple', '#8B5CF6'],
-  ['emerald', '#10B981'],
-  ['rose', '#F43F5E'],
-  ['slate', '#64748B'],
+  ['orange', 'var(--color-brand-orange)'],
 ];
 const timezoneOptions = [
   'UTC',
@@ -146,7 +146,7 @@ function Field({ label, children, hint }: { label: string; children: ReactNode; 
 }
 
 function inputClass() {
-  return 'w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm font-medium text-[#2F3437] outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent-light';
+  return 'w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-brand-navy)] outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent-light';
 }
 
 function SelectField({ value, onChange, options }: { value: string; onChange: (value: string) => void; options: string[] }) {
@@ -172,9 +172,9 @@ function SearchableTimezone({ value, onChange }: { value: string; onChange: (val
 
 function ToggleRow({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
   return (
-    <label className="flex items-center justify-between gap-4 border-b border-[#E5E7EB] py-3 last:border-b-0">
-      <span className="text-sm font-medium text-[#2F3437]">{label}</span>
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="h-4 w-4 rounded border-[#D1D5DB] accent-[var(--color-accent)]" />
+    <label className="flex items-center justify-between gap-4 border-b border-[var(--color-border)] py-3 last:border-b-0">
+      <span className="text-sm font-medium text-[var(--color-brand-navy)]">{label}</span>
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-accent)]" />
     </label>
   );
 }
@@ -182,10 +182,10 @@ function ToggleRow({ label, checked, onChange }: { label: string; checked: boole
 function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 px-4">
-      <div className="w-full max-w-lg rounded-xl border border-[#E5E7EB] bg-warm-card shadow-card-md">
-        <div className="flex items-center justify-between border-b border-[#E5E7EB] px-5 py-4">
-          <div className="text-sm font-bold text-[#2F3437]">{title}</div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-gray-400 hover:bg-hover-bg hover:text-[#2F3437]"><X size={16} /></button>
+      <div className="w-full max-w-lg rounded-xl border border-[var(--color-border)] bg-warm-card shadow-card-md">
+        <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
+          <div className="text-sm font-bold text-[var(--color-brand-navy)]">{title}</div>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-gray-400 hover:bg-hover-bg hover:text-[var(--color-brand-navy)]"><X size={16} /></button>
         </div>
         <div className="p-5">{children}</div>
       </div>
@@ -200,11 +200,11 @@ function ThemeCard({ mode, selected, onClick }: { mode: 'light' | 'dark' | 'syst
       onClick={onClick}
       className={cn(
         'rounded-xl border p-3 text-left transition-all',
-        selected ? 'border-accent bg-accent-light shadow-card-md' : 'border-[#E5E7EB] bg-white hover:bg-hover-bg'
+        selected ? 'border-accent bg-accent-light shadow-card-md' : 'border-[var(--color-border)] bg-white hover:bg-hover-bg'
       )}
     >
-      <div className={cn('mb-3 h-16 rounded-lg border', mode === 'dark' ? 'border-[#3A3E3A] bg-[#222522]' : 'border-[#E5E7EB] bg-white', mode === 'system' && 'bg-gradient-to-br from-white from-50% to-[#222522] to-50%')} />
-      <div className="text-sm font-bold capitalize text-[#2F3437]">{mode}</div>
+      <div className={cn('mb-3 h-16 rounded-lg border', mode === 'dark' ? 'border-[var(--color-brand-navy)] bg-[var(--color-brand-navy)]' : 'border-[var(--color-border)] bg-white', mode === 'system' && 'bg-gradient-to-br from-white from-50% to-[var(--color-brand-navy)] to-50%')} />
+      <div className="text-sm font-bold capitalize text-[var(--color-brand-navy)]">{mode}</div>
       <div className="mt-1 text-xs text-gray-500">{mode === 'system' ? 'Follow device setting' : `${mode} interface`}</div>
     </button>
   );
@@ -212,11 +212,220 @@ function ThemeCard({ mode, selected, onClick }: { mode: 'light' | 'dark' | 'syst
 
 function SupportCard({ icon, title, description, onClick }: { icon: ReactNode; title: string; description: string; onClick: () => void }) {
   return (
-    <button onClick={onClick} className="flex min-h-[112px] flex-col items-start rounded-lg border border-[#E5E7EB] bg-white p-4 text-left transition-colors hover:bg-hover-bg">
+    <button onClick={onClick} className="flex min-h-[112px] flex-col items-start rounded-lg border border-[var(--color-border)] bg-white p-4 text-left transition-colors hover:bg-hover-bg">
       <span className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-accent-light text-accent">{icon}</span>
-      <span className="text-sm font-bold text-[#2F3437]">{title}</span>
+      <span className="text-sm font-bold text-[var(--color-brand-navy)]">{title}</span>
       <span className="mt-1 text-xs leading-5 text-gray-500">{description}</span>
     </button>
+  );
+}
+
+function operationErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'The Outlook request failed.';
+}
+
+function formatEventTime(event: OutlookEvent) {
+  if (!event.start?.dateTime) return 'Time unavailable';
+  const date = new Date(event.start.dateTime);
+  if (Number.isNaN(date.getTime())) return event.start.dateTime;
+  return date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function OutlookIntegrationPanel() {
+  const {
+    account,
+    connect,
+    disconnect,
+    error,
+    getEvents,
+    getMessages,
+    isConnected,
+    loading,
+    sendMail,
+  } = useOutlook();
+  const { showToast } = useToast();
+  const [messages, setMessages] = useState<OutlookMessage[] | null>(null);
+  const [events, setEvents] = useState<OutlookEvent[] | null>(null);
+  const [mailLoading, setMailLoading] = useState(false);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [sendLoading, setSendLoading] = useState(false);
+  const [mailError, setMailError] = useState('');
+  const [calendarError, setCalendarError] = useState('');
+  const [sendFeedback, setSendFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  async function handleConnect() {
+    try {
+      await connect();
+    } catch {
+      // The hook exposes the actionable error in the integration card.
+    }
+  }
+
+  async function handleDisconnect() {
+    try {
+      await disconnect();
+      showToast({ message: 'Outlook disconnected' });
+    } catch {
+      // The hook exposes the actionable error in the integration card.
+    }
+  }
+
+  async function handleLoadMessages() {
+    setMailLoading(true);
+    setMailError('');
+    try {
+      setMessages((await getMessages()).slice(0, 5));
+    } catch (caught) {
+      setMailError(operationErrorMessage(caught));
+    } finally {
+      setMailLoading(false);
+    }
+  }
+
+  async function handleLoadEvents() {
+    setCalendarLoading(true);
+    setCalendarError('');
+    try {
+      setEvents((await getEvents()).slice(0, 5));
+    } catch (caught) {
+      setCalendarError(operationErrorMessage(caught));
+    } finally {
+      setCalendarLoading(false);
+    }
+  }
+
+  async function handleSendTestMail() {
+    if (!account?.username) {
+      setSendFeedback({ type: 'error', message: 'The connected account does not have an email address.' });
+      return;
+    }
+
+    setSendLoading(true);
+    setSendFeedback(null);
+    try {
+      await sendMail({
+        to: account.username,
+        subject: 'ReKnew Orbit Outlook integration test',
+        body: '<p>This is a test message sent from the ReKnew Orbit Outlook integration.</p>',
+      });
+      setSendFeedback({ type: 'success', message: `Test email sent to ${account.username}.` });
+      showToast({ message: 'Outlook test email sent' });
+    } catch (caught) {
+      setSendFeedback({ type: 'error', message: operationErrorMessage(caught) });
+    } finally {
+      setSendLoading(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader title="Microsoft Outlook" icon={<Mail size={17} />} />
+      <div className="p-5">
+        <div className="flex flex-col gap-4 rounded-xl border border-[var(--color-border)] bg-white p-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#0078d4]/10 text-[#0078d4]">
+              <Mail size={22} />
+            </span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-sm font-bold text-[var(--color-brand-navy)]">Outlook Mail & Calendar</div>
+                <span className={cn(
+                  'rounded-full px-2 py-0.5 text-[11px] font-semibold',
+                  isConnected ? 'bg-status-success/10 text-status-success' : 'bg-gray-100 text-gray-500',
+                )}>
+                  {isConnected ? 'Connected' : 'Not connected'}
+                </span>
+              </div>
+              <p className="mt-1 text-sm text-gray-500">
+                {isConnected
+                  ? `Signed in as ${account?.name || account?.username}`
+                  : 'Connect your Microsoft account to read mail, send messages, and manage calendar events.'}
+              </p>
+              {isConnected && account?.name && account.username && (
+                <p className="mt-1 truncate text-xs text-gray-400">{account.username}</p>
+              )}
+            </div>
+          </div>
+          <Button
+            variant={isConnected ? 'ghost' : 'primary'}
+            icon={isConnected ? undefined : <Mail size={16} />}
+            disabled={loading}
+            onClick={() => void (isConnected ? handleDisconnect() : handleConnect())}
+          >
+            {loading ? 'Please wait...' : isConnected ? 'Disconnect' : 'Connect Outlook'}
+          </Button>
+        </div>
+
+        <div className="mt-4 grid items-start gap-3 lg:grid-cols-2">
+          <div className="rounded-lg border border-[var(--color-border)] bg-hover-bg p-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-[var(--color-brand-navy)]"><Mail size={15} /> Mail</div>
+            <p className="mt-1 text-xs leading-5 text-gray-500">Read your mailbox and send email from your signed-in Outlook account.</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button size="sm" variant="soft" disabled={!isConnected || mailLoading} onClick={() => void handleLoadMessages()}>
+                {mailLoading ? 'Loading emails...' : 'Load recent emails'}
+              </Button>
+              <Button size="sm" variant="ghost" icon={<Send size={13} />} disabled={!isConnected || sendLoading} onClick={() => void handleSendTestMail()}>
+                {sendLoading ? 'Sending...' : 'Send test email'}
+              </Button>
+            </div>
+
+            {mailError && <div className="mt-3 rounded-md bg-status-error/10 px-3 py-2 text-xs text-status-error">{mailError}</div>}
+            {sendFeedback && (
+              <div className={cn(
+                'mt-3 rounded-md px-3 py-2 text-xs',
+                sendFeedback.type === 'success' ? 'bg-status-success/10 text-status-success' : 'bg-status-error/10 text-status-error',
+              )}>
+                {sendFeedback.message}
+              </div>
+            )}
+
+            {messages && (
+              <div className="mt-3 overflow-hidden rounded-lg border border-[var(--color-border)] bg-white">
+                {messages.length === 0 ? (
+                  <div className="px-3 py-4 text-center text-xs text-gray-500">No recent emails found.</div>
+                ) : messages.map((message) => (
+                  <div key={message.id} className="border-b border-[var(--color-border)] px-3 py-2.5 last:border-b-0">
+                    <div className="truncate text-xs font-semibold text-[var(--color-brand-navy)]">{message.subject || '(No subject)'}</div>
+                    <div className="mt-0.5 truncate text-[11px] text-gray-500">
+                      {message.from?.emailAddress?.name || message.from?.emailAddress?.address || 'Unknown sender'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="rounded-lg border border-[var(--color-border)] bg-hover-bg p-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-[var(--color-brand-navy)]"><CalendarDays size={15} /> Calendar</div>
+            <p className="mt-1 text-xs leading-5 text-gray-500">Read and manage events using your Outlook calendar.</p>
+            <div className="mt-3">
+              <Button size="sm" variant="soft" disabled={!isConnected || calendarLoading} onClick={() => void handleLoadEvents()}>
+                {calendarLoading ? 'Loading events...' : 'Load upcoming events'}
+              </Button>
+            </div>
+
+            {calendarError && <div className="mt-3 rounded-md bg-status-error/10 px-3 py-2 text-xs text-status-error">{calendarError}</div>}
+            {events && (
+              <div className="mt-3 overflow-hidden rounded-lg border border-[var(--color-border)] bg-white">
+                {events.length === 0 ? (
+                  <div className="px-3 py-4 text-center text-xs text-gray-500">No upcoming events found.</div>
+                ) : events.map((event) => (
+                  <div key={event.id} className="border-b border-[var(--color-border)] px-3 py-2.5 last:border-b-0">
+                    <div className="truncate text-xs font-semibold text-[var(--color-brand-navy)]">{event.subject || '(Untitled event)'}</div>
+                    <div className="mt-0.5 text-[11px] text-gray-500">{formatEventTime(event)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {error && (
+          <div className="mt-4 rounded-lg border border-status-error/20 bg-status-error/10 px-4 py-3 text-sm text-status-error">
+            {error}
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }
 
@@ -479,7 +688,7 @@ export function SettingsPage() {
   return (
     <div className="animate-fade-up">
       <div className="mb-7">
-        <h1 className="mb-1 text-2xl font-bold tracking-tight text-[#2F3437]">Settings</h1>
+        <h1 className="mb-1 text-2xl font-bold tracking-tight text-[var(--color-brand-navy)]">Settings</h1>
         <p className="text-sm text-gray-500">Manage your profile, preferences, security, and notifications.</p>
       </div>
 
@@ -494,7 +703,7 @@ export function SettingsPage() {
                 onClick={() => setActiveTab(tab.key)}
                 className={cn(
                   'mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-semibold transition-all last:mb-0',
-                  activeTab === tab.key ? 'bg-accent text-white shadow-sm' : 'text-gray-500 hover:bg-hover-bg hover:text-[#2F3437]'
+                  activeTab === tab.key ? 'bg-accent text-white shadow-sm' : 'text-gray-500 hover:bg-hover-bg hover:text-[var(--color-brand-navy)]'
                 )}
               >
                 <span className="flex items-center gap-2.5">{tab.icon}{tab.label}</span>
@@ -509,10 +718,10 @@ export function SettingsPage() {
             <Card>
               <CardHeader title="Profile" icon={<UserRound size={17} />} action={<Button icon={<Save size={16} />} disabled={savingSection === 'profile'} onClick={saveProfile}>{savingSection === 'profile' ? 'Saving' : 'Save Profile'}</Button>} />
               <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-2">
-                <div className="md:col-span-2 flex items-center gap-4 rounded-xl border border-[#E5E7EB] bg-white p-4">
+                <div className="md:col-span-2 flex items-center gap-4 rounded-xl border border-[var(--color-border)] bg-white p-4">
                   <Avatar initials={initials(profile.display_name)} size="lg" variant="filled" src={profile.profile_image_url} />
                   <div className="min-w-0 flex-1">
-                    <div className="font-bold text-[#2F3437]">{profile.display_name}</div>
+                    <div className="font-bold text-[var(--color-brand-navy)]">{profile.display_name}</div>
                     <div className="text-sm text-gray-500">{profile.work_email}</div>
                   </div>
                   <input
@@ -559,15 +768,15 @@ export function SettingsPage() {
           {activeTab === 'security' && (
             <Card>
               <CardHeader title="Security" icon={<ShieldCheck size={17} />} />
-              <div className="divide-y divide-[#E5E7EB] p-5">
+              <div className="divide-y divide-[var(--color-border)] p-5">
                 <div className="flex flex-col gap-3 pb-4 md:flex-row md:items-center md:justify-between">
-                  <div><div className="text-sm font-bold text-[#2F3437]">Password</div><div className="mt-1 text-sm text-gray-500">Password changes are coming soon.</div></div>
+                  <div><div className="text-sm font-bold text-[var(--color-brand-navy)]">Password</div><div className="mt-1 text-sm text-gray-500">Password changes are coming soon.</div></div>
                   <Button variant="ghost" icon={<KeyRound size={16} />} onClick={() => setPasswordModal(true)}>Change Password</Button>
                 </div>
-                <div className="py-4 text-sm text-gray-500">Last login: <span className="font-semibold text-[#2F3437]">{profile?.last_login_at ? new Date(profile.last_login_at).toLocaleString() : 'Not recorded'}</span></div>
+                <div className="py-4 text-sm text-gray-500">Last login: <span className="font-semibold text-[var(--color-brand-navy)]">{profile?.last_login_at ? new Date(profile.last_login_at).toLocaleString() : 'Not recorded'}</span></div>
                 <div className="flex flex-col gap-3 py-4 md:flex-row md:items-center md:justify-between">
-                  <div><div className="text-sm font-bold text-[#2F3437]">Multi-Factor Authentication</div><div className="mt-1 text-sm text-gray-500">Add an extra verification step for sign in.</div></div>
-                  <label className="flex items-center gap-2 text-sm font-semibold text-[#2F3437]"><input type="checkbox" checked={legacy.mfa_enabled} onChange={(e) => setLegacy({ ...legacy, mfa_enabled: e.target.checked })} className="h-4 w-4 accent-[var(--color-accent)]" />MFA Enabled</label>
+                  <div><div className="text-sm font-bold text-[var(--color-brand-navy)]">Multi-Factor Authentication</div><div className="mt-1 text-sm text-gray-500">Add an extra verification step for sign in.</div></div>
+                  <label className="flex items-center gap-2 text-sm font-semibold text-[var(--color-brand-navy)]"><input type="checkbox" checked={legacy.mfa_enabled} onChange={(e) => setLegacy({ ...legacy, mfa_enabled: e.target.checked })} className="h-4 w-4 accent-[var(--color-accent)]" />MFA Enabled</label>
                 </div>
                 <div className="pt-4"><Button disabled variant="ghost">Sign Out All Devices</Button><span className="ml-3 text-xs text-gray-400">Session management coming soon</span></div>
               </div>
@@ -578,11 +787,13 @@ export function SettingsPage() {
             <Card>
               <CardHeader title="Notifications" icon={<Bell size={17} />} action={<Button icon={<Save size={16} />} disabled={savingSection === 'notifications'} onClick={saveNotifications}>{savingSection === 'notifications' ? 'Saving' : 'Save'}</Button>} />
               <div className="grid grid-cols-1 gap-6 p-5 lg:grid-cols-2">
-                <div><div className="mb-2 text-sm font-bold text-[#2F3437]">Email Notifications</div><ToggleRow label="Leave Approved" checked={currentNotifications.email_notif_leave_approved} onChange={(value) => setNotificationDraft({ ...notificationDraft, email_notif_leave_approved: value })} /><ToggleRow label="Leave Rejected" checked={currentNotifications.email_notif_leave_rejected} onChange={(value) => setNotificationDraft({ ...notificationDraft, email_notif_leave_rejected: value })} /><ToggleRow label="Timesheet Approved" checked={currentNotifications.email_notif_timesheet_approved} onChange={(value) => setNotificationDraft({ ...notificationDraft, email_notif_timesheet_approved: value })} /><ToggleRow label="Timesheet Rejected" checked={currentNotifications.email_notif_timesheet_rejected} onChange={(value) => setNotificationDraft({ ...notificationDraft, email_notif_timesheet_rejected: value })} /><ToggleRow label="Allocation Changes" checked={currentNotifications.email_notif_allocation_changes} onChange={(value) => setNotificationDraft({ ...notificationDraft, email_notif_allocation_changes: value })} /></div>
-                <div><div className="mb-2 text-sm font-bold text-[#2F3437]">In-App Notifications</div><ToggleRow label="Enable In-App Notifications" checked={currentNotifications.inapp_notifications_enabled} onChange={(value) => setNotificationDraft({ ...notificationDraft, inapp_notifications_enabled: value })} /><ToggleRow label="Company Announcements" checked={legacy.notification_company_announcements} onChange={(value) => setLegacy({ ...legacy, notification_company_announcements: value })} /><ToggleRow label="Attendance Reminders" checked={legacy.notification_attendance_reminders} onChange={(value) => setLegacy({ ...legacy, notification_attendance_reminders: value })} /><ToggleRow label="Task Assignments" checked={legacy.notification_task_assignments} onChange={(value) => setLegacy({ ...legacy, notification_task_assignments: value })} /><ToggleRow label="Training" checked={legacy.notification_training_notifications} onChange={(value) => setLegacy({ ...legacy, notification_training_notifications: value })} /><ToggleRow label="Project Allocation Updates" checked={legacy.notification_project_allocation_updates} onChange={(value) => setLegacy({ ...legacy, notification_project_allocation_updates: value })} /></div>
+                <div><div className="mb-2 text-sm font-bold text-[var(--color-brand-navy)]">Email Notifications</div><ToggleRow label="Leave Approved" checked={currentNotifications.email_notif_leave_approved} onChange={(value) => setNotificationDraft({ ...notificationDraft, email_notif_leave_approved: value })} /><ToggleRow label="Leave Rejected" checked={currentNotifications.email_notif_leave_rejected} onChange={(value) => setNotificationDraft({ ...notificationDraft, email_notif_leave_rejected: value })} /><ToggleRow label="Timesheet Approved" checked={currentNotifications.email_notif_timesheet_approved} onChange={(value) => setNotificationDraft({ ...notificationDraft, email_notif_timesheet_approved: value })} /><ToggleRow label="Timesheet Rejected" checked={currentNotifications.email_notif_timesheet_rejected} onChange={(value) => setNotificationDraft({ ...notificationDraft, email_notif_timesheet_rejected: value })} /><ToggleRow label="Allocation Changes" checked={currentNotifications.email_notif_allocation_changes} onChange={(value) => setNotificationDraft({ ...notificationDraft, email_notif_allocation_changes: value })} /></div>
+                <div><div className="mb-2 text-sm font-bold text-[var(--color-brand-navy)]">In-App Notifications</div><ToggleRow label="Enable In-App Notifications" checked={currentNotifications.inapp_notifications_enabled} onChange={(value) => setNotificationDraft({ ...notificationDraft, inapp_notifications_enabled: value })} /><ToggleRow label="Company Announcements" checked={legacy.notification_company_announcements} onChange={(value) => setLegacy({ ...legacy, notification_company_announcements: value })} /><ToggleRow label="Attendance Reminders" checked={legacy.notification_attendance_reminders} onChange={(value) => setLegacy({ ...legacy, notification_attendance_reminders: value })} /><ToggleRow label="Task Assignments" checked={legacy.notification_task_assignments} onChange={(value) => setLegacy({ ...legacy, notification_task_assignments: value })} /><ToggleRow label="Training" checked={legacy.notification_training_notifications} onChange={(value) => setLegacy({ ...legacy, notification_training_notifications: value })} /><ToggleRow label="Project Allocation Updates" checked={legacy.notification_project_allocation_updates} onChange={(value) => setLegacy({ ...legacy, notification_project_allocation_updates: value })} /></div>
               </div>
             </Card>
           )}
+
+          {activeTab === 'integrations' && <OutlookIntegrationPanel />}
 
           {activeTab === 'appearance' && (
             <Card>
@@ -590,8 +801,8 @@ export function SettingsPage() {
               <div className="space-y-6 p-5">
                 <Field label="Theme Mode"><div className="grid gap-3 sm:grid-cols-3"><ThemeCard mode="light" selected={theme.themeMode === 'light'} onClick={() => theme.setThemeMode('light')} /><ThemeCard mode="dark" selected={theme.themeMode === 'dark'} onClick={() => theme.setThemeMode('dark')} /><ThemeCard mode="system" selected={theme.themeMode === 'system'} onClick={() => theme.setThemeMode('system')} /></div></Field>
                 <Field label="Accent Color"><div className="flex flex-wrap gap-3">{accentOptions.map(([name, color]) => <button key={name} title={name} onClick={() => theme.setAccentColor(name)} className={cn('h-8 w-8 rounded-full border-2 transition-all', theme.accentColor === name ? 'border-white ring-2 ring-accent ring-offset-2' : 'border-transparent')} style={{ backgroundColor: color }} />)}</div></Field>
-                <div className="rounded-xl border border-[#E5E7EB] bg-white p-4"><div className="mb-3 text-sm font-bold text-[#2F3437]">Live Preview</div><div className="flex flex-wrap items-center gap-3"><Button>Primary Button</Button><span className="rounded-md bg-accent-light px-2 py-1 text-xs font-bold text-accent">Badge</span><span className="text-sm font-bold text-accent">Active nav link</span></div></div>
-                <Field label="Sidebar"><div className="grid gap-2 sm:grid-cols-2"><button onClick={() => theme.setSidebarCollapsed(false)} className={cn('rounded-lg border px-3 py-2 text-sm font-semibold', !theme.sidebarCollapsed ? 'border-accent bg-accent text-white' : 'border-[#E5E7EB] bg-white text-gray-500')}>Expanded</button><button onClick={() => theme.setSidebarCollapsed(true)} className={cn('rounded-lg border px-3 py-2 text-sm font-semibold', theme.sidebarCollapsed ? 'border-accent bg-accent text-white' : 'border-[#E5E7EB] bg-white text-gray-500')}>Collapsed</button></div></Field>
+                <div className="rounded-xl border border-[var(--color-border)] bg-white p-4"><div className="mb-3 text-sm font-bold text-[var(--color-brand-navy)]">Live Preview</div><div className="flex flex-wrap items-center gap-3"><Button>Primary Button</Button><span className="rounded-md bg-accent-light px-2 py-1 text-xs font-bold text-accent">Badge</span><span className="text-sm font-bold text-accent">Active nav link</span></div></div>
+                <Field label="Sidebar"><div className="grid gap-2 sm:grid-cols-2"><button onClick={() => theme.setSidebarCollapsed(false)} className={cn('rounded-lg border px-3 py-2 text-sm font-semibold', !theme.sidebarCollapsed ? 'border-accent bg-accent text-white' : 'border-[var(--color-border)] bg-white text-gray-500')}>Expanded</button><button onClick={() => theme.setSidebarCollapsed(true)} className={cn('rounded-lg border px-3 py-2 text-sm font-semibold', theme.sidebarCollapsed ? 'border-accent bg-accent text-white' : 'border-[var(--color-border)] bg-white text-gray-500')}>Collapsed</button></div></Field>
                 <ToggleRow label="Compact Layout" checked={theme.compactMode} onChange={theme.setCompactMode} />
                 {theme.isDirty && <div className="rounded-lg border border-status-warning/20 bg-status-warning/10 px-4 py-3 text-sm text-status-warning">Preview is active. Save to keep these appearance changes.</div>}
               </div>
@@ -620,7 +831,7 @@ export function SettingsPage() {
 
       {passwordModal && <Modal title="Change Password" onClose={() => setPasswordModal(false)}><div className="space-y-4">{passwordError && <div className="rounded-lg bg-status-error/10 px-3 py-2 text-sm text-status-error">{passwordError}</div>}<Field label="Current Password"><input type="password" value={passwordForm.current} onChange={(e) => setPasswordForm({ ...passwordForm, current: e.target.value })} className={inputClass()} /></Field><Field label="New Password"><input type="password" value={passwordForm.next} onChange={(e) => setPasswordForm({ ...passwordForm, next: e.target.value })} className={inputClass()} /></Field><Field label="Confirm Password"><input type="password" value={passwordForm.confirm} onChange={(e) => setPasswordForm({ ...passwordForm, confirm: e.target.value })} className={inputClass()} /></Field><div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => setPasswordModal(false)}>Cancel</Button><Button icon={<LockKeyhole size={16} />} onClick={submitPasswordChange}>Validate</Button></div></div></Modal>}
       {ticketModal && <Modal title="Raise Support Ticket" onClose={() => setTicketModal(false)}><div className="space-y-4"><Field label="Category"><SelectField value={ticketForm.category} options={['HR', 'IT', 'Payroll', 'Access', 'Other']} onChange={(category) => setTicketForm({ ...ticketForm, category })} /></Field><Field label="Subject"><input value={ticketForm.subject} onChange={(e) => setTicketForm({ ...ticketForm, subject: e.target.value })} className={inputClass()} /></Field><Field label="Description"><textarea value={ticketForm.description} onChange={(e) => setTicketForm({ ...ticketForm, description: e.target.value })} rows={5} className={`${inputClass()} resize-none`} /></Field><div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => setTicketModal(false)}>Cancel</Button><Button onClick={submitSupportTicket} disabled={savingSection === 'support'}>Submit Ticket</Button></div></div></Modal>}
-      {guideModal && <Modal title="User Guide" onClose={() => setGuideModal(false)}><div className="rounded-lg border border-dashed border-[#E5E7EB] bg-hover-bg px-4 py-10 text-center text-sm font-semibold text-gray-500">User Guide Coming Soon</div></Modal>}
+      {guideModal && <Modal title="User Guide" onClose={() => setGuideModal(false)}><div className="rounded-lg border border-dashed border-[var(--color-border)] bg-hover-bg px-4 py-10 text-center text-sm font-semibold text-gray-500">User Guide Coming Soon</div></Modal>}
     </div>
   );
 }

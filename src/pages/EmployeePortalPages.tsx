@@ -4,11 +4,11 @@ import { createPortal } from 'react-dom';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Bell,
-  Briefcase,
+  ArrowRight, Briefcase,
   BookOpen,
-  CalendarCheck, CalendarClock, CalendarPlus, CheckCircle2, ClipboardCheck,
-  Clock3, Copy, Download, FileText, LogIn, Pencil, Plus,
-  RefreshCw, Send, Trash2, Upload, WalletCards, X,
+  CalendarCheck, CalendarClock, CalendarPlus, CheckCircle2, ChevronDown, ClipboardCheck,
+  Clock3, Copy, Download, FileText, FolderKanban, LogIn, Pencil, Plus,
+  RefreshCw, Send, Trash2, Upload, UsersRound, WalletCards, X,
 } from 'lucide-react';
 import { Badge, Button, Card, CardHeader } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
@@ -19,6 +19,7 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 const attendanceCache: Record<string, {
   today: AttendanceRecord | null;
   history: AttendanceRecord[];
+  joiningDate: string;
 }> = {};
 
 const dashboardCache: Record<string, {
@@ -29,6 +30,7 @@ const dashboardCache: Record<string, {
   timesheetApprovalRows: TimesheetApprovalItem[];
   activeProjects: DashboardAllocation[];
   actionInboxRows: ActionInboxItem[];
+  employeeContext: EmployeeDashboardContext | null;
 }> = {};
 
 interface AttendanceRecord {
@@ -112,12 +114,35 @@ interface DashboardAllocation {
   id: string;
   project_id: string | null;
   project_name: string | null;
+  project_code?: string | null;
+  project_client_name?: string | null;
+  project_status?: string | null;
+  project_start_date?: string | null;
+  project_end_date?: string | null;
+  project_location?: string | null;
   manager_name: string | null;
   allocation_percentage: number;
   allocation_role: string;
   status: string;
   start_date: string;
   end_date: string | null;
+  created_at?: string | null;
+}
+
+interface DashboardPerson {
+  id: string;
+  name: string;
+  email: string;
+  designation: string;
+  department: string;
+  profile_image_url?: string | null;
+  today_status?: 'working' | 'on_leave' | 'not_checked_in';
+}
+
+interface EmployeeDashboardContext {
+  employee: DashboardPerson;
+  manager: DashboardPerson | null;
+  direct_reports: DashboardPerson[];
 }
 
 interface TimesheetSummary {
@@ -307,19 +332,15 @@ interface ComplianceReport {
   warning_threshold: number;
 }
 
-const attendanceRows = [
-  { date: 'Jun 3, 2026', checkIn: '09:18 AM', checkOut: 'In progress', hours: '4h 22m', status: 'Present' },
-  { date: 'Jun 2, 2026', checkIn: '09:31 AM', checkOut: '06:18 PM', hours: '8h 47m', status: 'Late' },
-  { date: 'Jun 1, 2026', checkIn: '09:08 AM', checkOut: '06:05 PM', hours: '8h 57m', status: 'Present' },
-];
-
 function useAttendance() {
   const { user } = useAuth();
   const cacheKey = user?.id || user?.email || '';
   const cachedAttendance = cacheKey ? attendanceCache[cacheKey] : undefined;
   const [today, setToday] = useState<AttendanceRecord | null>(cachedAttendance?.today ?? null);
   const [history, setHistory] = useState<AttendanceRecord[]>(cachedAttendance?.history ?? []);
+  const [joiningDate, setJoiningDate] = useState(cachedAttendance?.joiningDate ?? '');
   const [loading, setLoading] = useState(!cachedAttendance);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<'check-in' | 'check-out' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -335,9 +356,16 @@ function useAttendance() {
     setLoading(!currentCache);
     setError(null);
     try {
+      const contextRes = await fetch(`${API_BASE}/attendance/me/context`, { headers });
+      if (!contextRes.ok) throw new Error('Could not load attendance date limits.');
+      const contextData = await contextRes.json();
+      const defaultTo = contextData.today as string;
+      const thirtyDaysAgo = toDateInput(addDays(new Date(`${defaultTo}T00:00:00`), -29));
+      const defaultFrom = contextData.joining_date > thirtyDaysAgo ? contextData.joining_date : thirtyDaysAgo;
+      const query = new URLSearchParams({ date_from: defaultFrom, date_to: defaultTo });
       const [todayRes, historyRes] = await Promise.all([
         fetch(`${API_BASE}/attendance/me/today`, { headers }),
-        fetch(`${API_BASE}/attendance/me/history`, { headers }),
+        fetch(`${API_BASE}/attendance/me/history?${query.toString()}`, { headers }),
       ]);
       if (!todayRes.ok) throw new Error('Could not load today\'s attendance.');
       if (!historyRes.ok) throw new Error('Could not load attendance history.');
@@ -345,8 +373,9 @@ function useAttendance() {
       const historyData = await historyRes.json();
       setToday(todayData);
       setHistory(historyData);
+      setJoiningDate(contextData.joining_date);
       if (cacheKey) {
-        attendanceCache[cacheKey] = { today: todayData, history: historyData };
+        attendanceCache[cacheKey] = { today: todayData, history: historyData, joiningDate: contextData.joining_date };
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load attendance.');
@@ -354,6 +383,22 @@ function useAttendance() {
       setLoading(false);
     }
   }, [cacheKey, headers, user]);
+
+  const loadHistory = useCallback(async (dateFrom: string, dateTo: string) => {
+    setHistoryLoading(true);
+    setError(null);
+    try {
+      const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+      const response = await fetch(`${API_BASE}/attendance/me/history?${query.toString()}`, { headers });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.detail || 'Could not load attendance history.');
+      setHistory(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load attendance history.');
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [headers]);
 
   const runAction = useCallback(async (action: 'check-in' | 'check-out') => {
     setActionLoading(action);
@@ -380,11 +425,14 @@ function useAttendance() {
   return {
     today,
     history,
+    joiningDate,
     loading,
+    historyLoading,
     actionLoading,
     error,
     checkIn: () => runAction('check-in'),
     checkOut: () => runAction('check-out'),
+    loadHistory,
   };
 }
 
@@ -557,7 +605,7 @@ function makeTimesheetRow(project?: TimesheetProject, code = 'PRJ', workDate = t
 
 function rowsFromTimesheet(week: TimesheetWeek, projects: TimesheetProject[]) {
   if (!week.entries.length) return [];
-  return week.entries.map((entry) => {
+  return week.entries.filter((entry) => entry.entry_code !== 'BRK').map((entry) => {
     const project = entry.project_id
       ? projects.find((item) => item.id === entry.project_id)
       : projects.find((item) => item.code === entry.entry_code)
@@ -601,15 +649,17 @@ function PageShell({
   title,
   description,
   children,
+  className,
 }: {
   title: string;
   description?: string;
   children: React.ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="animate-fade-up">
+    <div className={cn('animate-fade-up', className)}>
       <div className={description ? 'mb-5' : 'mb-3'}>
-        <h1 className="text-2xl font-bold text-[#2F3437] tracking-tight mb-1">{title}</h1>
+        <h1 className="text-2xl font-bold text-[var(--color-brand-navy)] tracking-tight mb-1">{title}</h1>
         {description && <p className="text-sm text-gray-500">{description}</p>}
       </div>
       {children}
@@ -702,7 +752,7 @@ function HolidayCalendarContent({
               'rounded-btn border px-3 py-2 text-sm font-semibold transition-colors',
               holidayRegionFilter === region.code
                 ? 'border-accent bg-accent text-white'
-                : 'border-[#E5E7EB] bg-white text-gray-600 hover:border-accent/30 hover:text-accent'
+                : 'border-[var(--color-border)] bg-white text-gray-600 hover:border-accent/30 hover:text-accent'
             )}
           >
             {region.label}
@@ -721,17 +771,17 @@ function HolidayCalendarContent({
         ) : holidaysByMonth.length === 0 ? (
           <div className="px-5 py-8 text-sm text-gray-500">No upcoming holidays for this region.</div>
         ) : (
-          <div className="divide-y divide-[#E5E7EB]">
+          <div className="divide-y divide-[var(--color-border)]">
             {holidaysByMonth.map(([month, monthHolidays]) => (
               <div key={month} className="px-5 py-4">
                 <div className="mb-3 text-xs font-bold uppercase tracking-wide text-gray-400">{month}</div>
                 <div className="space-y-2">
                   {monthHolidays.map((holiday) => (
-                    <div key={holiday.id} className="grid gap-3 rounded-lg border border-[#E5E7EB] bg-white px-4 py-3 text-sm md:grid-cols-[90px_1fr_140px_110px] md:items-center">
-                      <div className="font-bold text-[#2F3437]">
+                    <div key={holiday.id} className="grid gap-3 rounded-lg border border-[var(--color-border)] bg-white px-4 py-3 text-sm md:grid-cols-[90px_1fr_140px_110px] md:items-center">
+                      <div className="font-bold text-[var(--color-brand-navy)]">
                         {new Date(`${holiday.holiday_date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                       </div>
-                      <div className="font-semibold text-[#2F3437]">{holiday.name}</div>
+                      <div className="font-semibold text-[var(--color-brand-navy)]">{holiday.name}</div>
                       <div className="text-gray-500">{holidayRegionLabel(holiday.regions)}</div>
                       <div className="md:text-right">
                         <Badge variant={holidayTypeVariant(holiday.holiday_type)}>{holidayTypeLabel(holiday.holiday_type)}</Badge>
@@ -775,7 +825,7 @@ function MetricCard({
       <div className="flex items-center justify-between">
         <div>
           <div className="text-[12px] font-semibold text-gray-500">{label}</div>
-          <div className="mt-2 text-2xl font-bold text-[#2F3437]">{value}</div>
+          <div className="mt-2 text-2xl font-bold text-[var(--color-brand-navy)]">{value}</div>
         </div>
         <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent-light text-accent">
           {icon}
@@ -800,7 +850,7 @@ function AllocationCompliancePanel({
 }) {
   if (loading) {
     return (
-      <div className="rounded-lg border border-[#DDE3EA] bg-white px-4 py-3 text-sm text-gray-500">
+      <div className="rounded-lg border border-[var(--color-border)] bg-white px-4 py-3 text-sm text-gray-500">
         Checking allocation compliance...
       </div>
     );
@@ -811,7 +861,7 @@ function AllocationCompliancePanel({
   return (
     <div className={cn(
       'rounded-lg border bg-white shadow-[0_6px_18px_rgba(17,24,39,0.05)]',
-      isIssue ? 'border-status-warning/30' : 'border-[#DDE3EA]'
+      isIssue ? 'border-status-warning/30' : 'border-[var(--color-border)]'
     )}>
       <button
         type="button"
@@ -820,7 +870,7 @@ function AllocationCompliancePanel({
       >
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-bold text-[#2F3437]">Allocation Compliance</span>
+            <span className="text-sm font-bold text-[var(--color-brand-navy)]">Allocation Compliance</span>
             <Badge variant={complianceBadgeVariant(report.overall_status)}>
               {complianceStatusLabel(report.overall_status)}
             </Badge>
@@ -833,9 +883,9 @@ function AllocationCompliancePanel({
         {onToggle && <span className="text-xs font-semibold text-accent">{open ? 'Hide' : 'Show'}</span>}
       </button>
       {open && (
-        <div className="border-t border-[#E5E7EB] px-4 py-3">
+        <div className="border-t border-[var(--color-border)] px-4 py-3">
           {report.no_allocations_found ? (
-            <div className="rounded-lg border border-[#E5E7EB] bg-warm-bg px-4 py-3 text-sm text-gray-600">
+            <div className="rounded-lg border border-[var(--color-border)] bg-warm-bg px-4 py-3 text-sm text-gray-600">
               No active allocations were found for this week. Compliance is not applicable, but {formatNumber(report.unallocated_hours)}h were logged without an allocation.
             </div>
           ) : (
@@ -851,10 +901,10 @@ function AllocationCompliancePanel({
                     <th className="px-3 py-2 text-right font-bold">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#E5E7EB]">
+                <tbody className="divide-y divide-[var(--color-border)]">
                   {report.project_rows.map((row) => (
                     <tr key={`${row.project_id || row.project_name}-${row.allocation_percentage}`}>
-                      <td className="px-3 py-2 font-semibold text-[#2F3437]">{row.project_name}</td>
+                      <td className="px-3 py-2 font-semibold text-[var(--color-brand-navy)]">{row.project_name}</td>
                       <td className="px-3 py-2 text-right text-gray-500">{row.allocation_percentage}%</td>
                       <td className="px-3 py-2 text-right">{formatNumber(row.expected_hours)}h</td>
                       <td className="px-3 py-2 text-right">{formatNumber(row.actual_hours)}h</td>
@@ -863,7 +913,7 @@ function AllocationCompliancePanel({
                     </tr>
                   ))}
                   <tr className="bg-warm-bg/60">
-                    <td className="px-3 py-2 font-bold text-[#2F3437]">Unallocated hours</td>
+                    <td className="px-3 py-2 font-bold text-[var(--color-brand-navy)]">Unallocated hours</td>
                     <td className="px-3 py-2 text-right text-gray-400" colSpan={3}>Logged against projects without active allocation</td>
                     <td className={cn('px-3 py-2 text-right font-bold', report.unallocated_hours > report.compliant_threshold && 'text-status-warning')}>{formatNumber(report.unallocated_hours)}h</td>
                     <td className="px-3 py-2 text-right">-</td>
@@ -953,7 +1003,7 @@ function TimesheetSummaryCard({
             {detailRows.map(([label, value]) => (
               <div key={label} className="flex gap-1.5">
                 <span className="font-semibold text-gray-500">{label}:</span>
-                <span className="truncate text-[#2F3437]">{value}</span>
+                <span className="truncate text-[var(--color-brand-navy)]">{value}</span>
               </div>
             ))}
           </div>
@@ -983,9 +1033,9 @@ function SimpleTable({
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-[#E5E7EB]">
+        <tbody className="divide-y divide-[var(--color-border)]">
           {rows.map((row, rowIndex) => (
-            <tr key={rowIndex} className="text-[#2F3437]">
+            <tr key={rowIndex} className="text-[var(--color-brand-navy)]">
               {row.map((cell, cellIndex) => (
                 <td key={cellIndex} className="px-5 py-4">{cell}</td>
               ))}
@@ -1091,13 +1141,13 @@ function AttendanceDashCard({
               <div className="mt-2 flex items-center gap-2">
                 <Badge variant={badgeVariant}>{label}</Badge>
               </div>
-              <div className="mt-3 text-2xl font-bold text-[#2F3437]">
+              <div className="mt-3 text-2xl font-bold text-[var(--color-brand-navy)]">
                 {status === 'working' && sessionStart ? formatElapsed(today?.check_in) : status === 'checked_out' ? formatHours(today?.total_hours || 0) : status === 'on_leave' ? '8h leave' : '--'}
               </div>
               <div className="mt-2 space-y-1 text-xs text-gray-500">
                 {status === 'working' && (
                   <>
-                    <div>Checked in at <span className="font-semibold text-[#2F3437]">{formatTime(today?.check_in)}</span></div>
+                    <div>Checked in at <span className="font-semibold text-[var(--color-brand-navy)]">{formatTime(today?.check_in)}</span></div>
                     <div>Expected checkout {expectedCheckout || '-'}</div>
                     <div className="truncate">Project: {currentProject}</div>
                   </>
@@ -1204,7 +1254,7 @@ function LeaveDashCard({
             </div>
           ) : (
             <>
-              <div className="mt-2 text-2xl font-bold text-[#2F3437]">{formatNumber(available)} days</div>
+              <div className="mt-2 text-2xl font-bold text-[var(--color-brand-navy)]">{formatNumber(available)} days</div>
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-accent-light">
                 <div
                   className={cn('h-full rounded-full', available <= 1 ? 'bg-status-error' : available <= 5 ? 'bg-status-warning' : 'bg-accent')}
@@ -1214,7 +1264,7 @@ function LeaveDashCard({
               <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-gray-500">
                 {breakdown.map((leave) => (
                   <div key={leave.leave_type_id} className="truncate">
-                    <span className="font-semibold text-[#2F3437]">{leave.code || leave.type}:</span> {formatNumber(effectiveLeaveAvailable(leave) || 0)}
+                    <span className="font-semibold text-[var(--color-brand-navy)]">{leave.code || leave.type}:</span> {formatNumber(effectiveLeaveAvailable(leave) || 0)}
                   </div>
                 ))}
               </div>
@@ -1326,7 +1376,7 @@ function TimesheetDashCard({
                 {detailRows.map(([label, value]) => (
                   <div key={label} className="flex gap-1.5">
                     <span className="font-semibold text-gray-500">{label}:</span>
-                    <span className="truncate text-[#2F3437]">{value}</span>
+                    <span className="truncate text-[var(--color-brand-navy)]">{value}</span>
                   </div>
                 ))}
               </div>
@@ -1408,7 +1458,7 @@ function ActionsDashCard({
         <div>
           <div className="text-[12px] font-semibold uppercase tracking-wide text-gray-400">Pending Actions</div>
           <div className="mt-2 flex items-center gap-2">
-            <span className="text-2xl font-bold text-[#2F3437]">{totalActions}</span>
+            <span className="text-2xl font-bold text-[var(--color-brand-navy)]">{totalActions}</span>
             <Badge variant={totalActions ? 'warning' : 'olive'}>{totalActions ? 'Needs review' : 'All clear'}</Badge>
           </div>
         </div>
@@ -1421,23 +1471,72 @@ function ActionsDashCard({
           <button
             key={`${item.title}-${item.path}`}
             type="button"
-            className="flex w-full items-center justify-between gap-3 rounded-lg border border-[#E5E7EB] px-3 py-2 text-left transition hover:border-accent/30 hover:bg-accent-light focus:outline-none focus:ring-2 focus:ring-accent/20"
+            className="flex w-full items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] px-3 py-2 text-left transition hover:border-accent/30 hover:bg-accent-light focus:outline-none focus:ring-2 focus:ring-accent/20"
             onClick={() => onNavigate(item.path)}
           >
             <span className="min-w-0">
-              <span className="block truncate text-xs font-semibold text-[#2F3437]">{item.title}</span>
+              <span className="block truncate text-xs font-semibold text-[var(--color-brand-navy)]">{item.title}</span>
               <span className="block truncate text-[11px] text-gray-500">{item.meta}</span>
             </span>
             <Badge variant={item.status === 'Due' ? 'warning' : 'neutral'}>{item.status}</Badge>
           </button>
         ))}
         {!items.length && (
-          <div className="rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 py-2 text-xs text-gray-500">
+          <div className="rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 py-2 text-xs text-gray-500">
             No pending actions right now.
           </div>
         )}
       </div>
     </Card>
+  );
+}
+
+function dashboardInitials(name: string) {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'NA';
+}
+
+function EmployeeStatusTile({
+  label,
+  value,
+  detail,
+  icon,
+  borderColor,
+  iconClass,
+  valueClass = 'text-[#1f2430]',
+  onClick,
+}: {
+  label: string;
+  value: React.ReactNode;
+  detail: React.ReactNode;
+  icon: React.ReactNode;
+  borderColor: string;
+  iconClass: string;
+  valueClass?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="relative min-h-[158px] overflow-hidden rounded-2xl border border-[#ece5d8] bg-white p-5 text-left shadow-[0_3px_10px_rgba(60,40,10,.025)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(60,40,10,.08)]"
+      style={{ borderTop: `3px solid ${borderColor}` }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="text-[11px] font-bold uppercase tracking-[.08em] text-[#9a927f]">{label}</div>
+        <div className={cn('flex h-10 w-10 items-center justify-center rounded-xl', iconClass)}>{icon}</div>
+      </div>
+      <div className={cn('mt-3 text-[27px] font-bold leading-tight tracking-[-.025em]', valueClass)}>{value}</div>
+      <div className="mt-2 text-[12px] leading-relaxed text-[#8a8371]">{detail}</div>
+    </button>
+  );
+}
+
+function DashboardQuickAction({ icon, label, onClick, disabled = false }: { icon: React.ReactNode; label: string; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} className="flex min-h-[58px] items-center gap-3 rounded-xl border border-[#ece5d8] bg-[#fffdf9] px-4 py-3 text-left text-[12px] font-bold text-[#1f2430] transition hover:border-[#d97a34]/40 hover:bg-[#fbf5ea] disabled:cursor-not-allowed disabled:opacity-50">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#fbeee1] text-[#d97a34]">{icon}</span>
+      {label}
+    </button>
   );
 }
 
@@ -1455,6 +1554,7 @@ export function EmployeeDashboardPage() {
   const [timesheetApprovalRows, setTimesheetApprovalRows] = useState<TimesheetApprovalItem[]>(cachedDashboard?.timesheetApprovalRows ?? []);
   const [activeProjects, setActiveProjects] = useState<DashboardAllocation[]>(cachedDashboard?.activeProjects ?? []);
   const [actionInboxRows, setActionInboxRows] = useState<ActionInboxItem[]>(cachedDashboard?.actionInboxRows ?? []);
+  const [employeeContext, setEmployeeContext] = useState<EmployeeDashboardContext | null>(cachedDashboard?.employeeContext ?? null);
 
   const headers = useMemo(() => ({
     'Content-Type': 'application/json',
@@ -1472,7 +1572,8 @@ export function EmployeeDashboardPage() {
       fetch(`${API_BASE}/timesheets/approvals`, { headers }).then((res) => res.ok ? res.json() : null),
       fetch(`${API_BASE}/inbox`, { headers }).then((res) => res.ok ? res.json() : null),
       user.id ? fetch(`${API_BASE}/allocations/employee/${user.id}/active`, { headers }).then((res) => res.ok ? res.json() : null) : Promise.resolve(null),
-    ]).then(([leaveData, timesheetSummaryData, timesheetHistoryData, approvalsData, timesheetApprovalsData, inboxData, activeProjectsData]) => {
+      fetch(`${API_BASE}/dashboard/employee-context`, { headers }).then((res) => res.ok ? res.json() : null),
+    ]).then(([leaveData, timesheetSummaryData, timesheetHistoryData, approvalsData, timesheetApprovalsData, inboxData, activeProjectsData, employeeContextData]) => {
       const existingCache = dashboardCacheKey ? dashboardCache[dashboardCacheKey] : undefined;
       const nextLeaveSummary = leaveData || existingCache?.leaveSummary || null;
       const nextTimesheetSummary = timesheetSummaryData || existingCache?.timesheetSummary || null;
@@ -1481,6 +1582,7 @@ export function EmployeeDashboardPage() {
       const nextTimesheetApprovalRows = timesheetApprovalsData?.approvals || existingCache?.timesheetApprovalRows || [];
       const nextActionInboxRows = inboxData?.items || existingCache?.actionInboxRows || [];
       const nextActiveProjects = activeProjectsData || existingCache?.activeProjects || [];
+      const nextEmployeeContext = employeeContextData || existingCache?.employeeContext || null;
       if (leaveData) setLeaveSummary(leaveData);
       if (timesheetSummaryData) setTimesheetSummary(timesheetSummaryData);
       if (timesheetHistoryData) setTimesheetHistory(timesheetHistoryData);
@@ -1488,6 +1590,7 @@ export function EmployeeDashboardPage() {
       if (timesheetApprovalsData?.approvals) setTimesheetApprovalRows(timesheetApprovalsData.approvals);
       if (inboxData?.items) setActionInboxRows(inboxData.items);
       if (activeProjectsData) setActiveProjects(activeProjectsData);
+      if (employeeContextData) setEmployeeContext(employeeContextData);
       if (dashboardCacheKey) {
         dashboardCache[dashboardCacheKey] = {
           leaveSummary: nextLeaveSummary,
@@ -1497,6 +1600,7 @@ export function EmployeeDashboardPage() {
           timesheetApprovalRows: nextTimesheetApprovalRows,
           activeProjects: nextActiveProjects,
           actionInboxRows: nextActionInboxRows,
+          employeeContext: nextEmployeeContext,
         };
       }
     }).catch(() => {
@@ -1537,102 +1641,138 @@ export function EmployeeDashboardPage() {
       activityAt: activityTime(request.updated_at || request.reviewed_at || request.created_at || request.start_date),
     })),
     ...timesheetActivityRows,
+    ...activeProjects.map((allocation) => ({
+      title: `Allocated to ${allocation.project_name || 'project'}`,
+      meta: `${allocation.allocation_role} · ${allocation.allocation_percentage}% allocation`,
+      status: allocation.status,
+      key: `allocation-${allocation.id}`,
+      activityAt: activityTime(allocation.created_at || allocation.start_date),
+    })),
   ].sort((a, b) => b.activityAt - a.activityAt).slice(0, 4);
 
+  const currentEmployee = employeeContext?.employee;
+  const employeeName = currentEmployee?.name || user?.name || 'Employee';
+  const firstName = employeeName.split(/\s+/).filter(Boolean)[0] || 'there';
+  const greetingHour = new Date().getHours();
+  const greeting = greetingHour < 12 ? 'Good morning' : greetingHour < 17 ? 'Good afternoon' : 'Good evening';
+  const dateLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  const totalAllocation = Math.min(100, activeProjects.reduce((sum, allocation) => sum + Number(allocation.allocation_percentage || 0), 0));
+  const leaveBalances = leaveSummary?.balances || [];
+  const leaveTotal = leaveBalances.reduce((sum, leave) => sum + (effectiveLeaveAvailable(leave) || 0), 0);
+  const leaveByCode = new Map(leaveBalances.map((leave) => [(leave.code || leave.type).toUpperCase(), effectiveLeaveAvailable(leave) || 0]));
+  const leaveBreakdown = ['CL', 'SL', 'EL', 'CO'].map((code) => `${code} ${formatNumber(leaveByCode.get(code) || 0)}`).join(' · ');
+  const isCheckedOut = !!today?.check_out && !isCheckedIn;
+  const attendanceValue = isCheckedIn ? formatElapsed(today?.check_in) : isCheckedOut ? formatHours(today?.total_hours || 0) : '0h 0m';
+  const attendanceDetail = isCheckedIn
+    ? `Checked in at ${formatTime(today?.check_in)} · Working`
+    : isCheckedOut
+      ? `Checked out · ${statusLabel(today?.status || 'present')}`
+      : 'Not checked in yet';
+  const timesheetStatus = timesheetSummary?.status || 'not_submitted';
+  const timesheetNeedsAttention = !['submitted', 'approved'].includes(timesheetStatus);
+  const remainingTimesheetHours = Math.max(0, 40 - Number(timesheetSummary?.working_hours || 0));
+  const timesheetDueDate = timesheetSummary?.week_end ? formatDate(timesheetSummary.week_end) : formatDate(toDateInput(addDays(startOfLocalWeek(), 6)));
+  const pendingOwnLeave = (leaveSummary?.requests || []).filter((request) => request.status === 'pending').length;
+  const pendingOwnTimesheet = timesheetNeedsAttention ? 1 : 0;
+  const managerApprovalCount = approvalRows.length + timesheetApprovalRows.length;
+  const pendingActionCount = actionInboxRows.length + pendingOwnLeave + pendingOwnTimesheet + managerApprovalCount;
+  const directReports = employeeContext?.direct_reports || [];
+
   return (
-    <PageShell title="My Dashboard" description="Your daily attendance, leave, and action summary.">
-      {error && (
-        <div className="mb-5 rounded-lg border border-status-error/20 bg-status-error/10 px-4 py-3 text-sm text-status-error">
-          {error}
+    <div className="animate-fade-up text-[#1f2430]">
+      <div className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+        <div>
+          <h1 className="text-[26px] font-bold tracking-[-.035em]">{greeting}, {firstName} <span aria-hidden>👋</span></h1>
+          <p className="mt-1 text-sm text-[#8a8371]">{dateLabel} · Here&apos;s your day at a glance.</p>
         </div>
-      )}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <AttendanceDashCard
-          today={today}
-          loading={loading}
-          actionLoading={actionLoading}
-          activeProjects={activeProjects}
-          leaveSummary={leaveSummary}
-          onCheckIn={checkIn}
-          onCheckOut={checkOut}
-          onClick={() => navigate('/employee/check-in')}
-        />
-        <LeaveDashCard leaveSummary={leaveSummary} onClick={() => navigate('/employee/apply-leave')} />
-        <TimesheetDashCard summary={timesheetSummary} loading={!timesheetSummary} onClick={openTimesheetSummary} />
-        <ActionsDashCard
-          leaveSummary={leaveSummary}
-          timesheetSummary={timesheetSummary}
-          approvalRows={approvalRows}
-          timesheetApprovalRows={timesheetApprovalRows}
-          actionInboxRows={actionInboxRows}
-          onNavigate={navigate}
-        />
+        <Button onClick={isCheckedIn ? checkOut : checkIn} disabled={!!actionLoading || isCheckedOut} className="border-[#d97a34] bg-[#d97a34] px-6 shadow-[0_8px_18px_rgba(217,122,52,.2)] hover:bg-[#c9611f]" icon={<LogIn size={16} />}>
+          {actionLoading ? 'Updating...' : isCheckedIn ? 'Check Out' : isCheckedOut ? 'Day Complete' : 'Check In'}
+        </Button>
       </div>
-      {activeProjects.length > 0 && (
-        <Card className="mt-5 p-5">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm font-bold text-[#2F3437]">
-              <Briefcase size={17} className="text-accent" />
-              My Projects
+
+      {error && <div className="mb-5 rounded-xl border border-[#d64545]/20 bg-[#fcecec] px-4 py-3 text-sm text-[#d64545]">{error}</div>}
+
+      <section className="mb-5 grid gap-5 rounded-2xl border border-[#ece5d8] bg-[#fbf5ea] p-5 shadow-[0_3px_10px_rgba(60,40,10,.025)] lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center">
+        <div className="flex min-w-0 items-center gap-4">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#e79a55] to-[#c9611f] text-lg font-bold text-white shadow-[0_4px_12px_rgba(201,97,31,.25)]">{dashboardInitials(employeeName)}</div>
+          <div className="min-w-0"><div className="truncate text-[17px] font-bold">{employeeName}</div><div className="truncate text-sm text-[#8a8371]">{currentEmployee?.designation || 'Employee'} · {currentEmployee?.department || 'Department not set'}</div></div>
+        </div>
+        <div className="border-t border-[#e6dac6] pt-4 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
+          <div className="text-[10px] font-bold uppercase tracking-[.08em] text-[#9a927f]">Reports To</div>
+          <div className="mt-2 flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2b3243] text-[10px] font-bold text-white">{dashboardInitials(employeeContext?.manager?.name || 'Self')}</span>
+            <span className="max-w-[140px] truncate text-sm font-bold">{employeeContext?.manager?.name || 'No manager'}</span>
+            <button type="button" onClick={() => navigate('/profile?tab=organization')} className="whitespace-nowrap text-xs font-semibold text-[#d97a34]">Org chart →</button>
+          </div>
+        </div>
+        <div className="min-w-[180px] border-t border-[#e6dac6] pt-4 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
+          <div className="flex justify-between text-[10px] font-bold uppercase tracking-[.08em] text-[#9a927f]"><span>Allocation</span><span className="text-[#1f2430]">{totalAllocation}%</span></div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#eadfca]"><div className="h-full rounded-full bg-[#d97a34]" style={{ width: `${totalAllocation}%` }} /></div>
+          <div className="mt-1.5 text-[11px] text-[#8a8371]">Across {activeProjects.length} active {activeProjects.length === 1 ? 'project' : 'projects'}</div>
+        </div>
+      </section>
+
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <EmployeeStatusTile label="Today" value={loading ? 'Loading...' : attendanceValue} detail={attendanceDetail} icon={<ArrowRight size={17} />} borderColor="#d97a34" iconClass="bg-[#fbeee1] text-[#d97a34]" onClick={() => navigate('/employee/check-in')} />
+        <EmployeeStatusTile label="Leave Balance" value={`${formatNumber(leaveTotal)} days`} detail={leaveBreakdown} icon={<CalendarCheck size={17} />} borderColor="#5b8c5a" iconClass="bg-[#e5f3e5] text-[#5b8c5a]" onClick={() => navigate('/employee/apply-leave')} />
+        <EmployeeStatusTile label="Timesheet" value={statusLabel(timesheetStatus)} detail={`${formatNumber(remainingTimesheetHours)}h to target · due ${timesheetDueDate}`} icon={<Clock3 size={17} />} borderColor={timesheetNeedsAttention ? '#d64545' : '#5b8c5a'} iconClass={timesheetNeedsAttention ? 'bg-[#fcecec] text-[#d64545]' : 'bg-[#e5f3e5] text-[#5b8c5a]'} valueClass={timesheetNeedsAttention ? 'text-[#d64545]' : 'text-[#5b8c5a]'} onClick={openTimesheetSummary} />
+        <EmployeeStatusTile label="Pending Actions" value={String(pendingActionCount)} detail={pendingActionCount ? 'Items need your attention' : 'You are all caught up'} icon={<ClipboardCheck size={17} />} borderColor="#2b3243" iconClass="bg-[#f0f1f6] text-[#2b3243]" onClick={() => navigate('/employee/requests')} />
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,1fr)]">
+        <div className="space-y-5">
+          <section className="overflow-hidden rounded-2xl border border-[#ece5d8] bg-white shadow-[0_3px_10px_rgba(60,40,10,.025)]">
+            <div className="flex items-center justify-between border-b border-[#ece5d8] px-5 py-4">
+              <div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#fbeee1] text-[#d97a34]"><FolderKanban size={17} /></span><h2 className="text-[15px] font-bold">My Projects</h2><Badge variant="warning">{activeProjects.length} active</Badge></div>
+              <button type="button" onClick={() => navigate('/projects')} className="text-xs font-bold text-[#d97a34]">All allocations →</button>
             </div>
-            <Button size="sm" variant="ghost" onClick={() => navigate('/projects')}>View Projects</Button>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {activeProjects.slice(0, 3).map((allocation) => (
-              <div key={allocation.id} className="rounded-xl border border-[#E5E7EB] bg-warm-bg px-4 py-3">
-                <div className="truncate text-sm font-bold text-[#2F3437]">{allocation.project_name || allocation.project_id || 'Assigned project'}</div>
-                <div className="mt-1 text-xs text-gray-500">{allocation.allocation_role} · {allocation.allocation_percentage}%</div>
-                <div className="mt-2 text-[11px] font-semibold text-gray-400">Manager: {allocation.manager_name || 'Not assigned'}</div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-      <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-2">
-        <Card>
-          <CardHeader title="Recent Activity" icon={<CalendarClock size={17} />} />
-          <div className="divide-y divide-[#E5E7EB]">
-            {dashboardActivity.length === 0 ? (
-              <div className="px-5 py-8 text-sm text-gray-500">
-                No recent leave or timesheet activity yet.
-              </div>
-            ) : dashboardActivity.map((item) => {
-              const rowKey = (item as { key?: string }).key || item.title;
-              return (
-                <div key={rowKey} className="flex items-center justify-between px-5 py-4">
-                  <div>
-                    <div className="text-sm font-semibold text-[#2F3437]">{item.title}</div>
-                    <div className="text-xs text-gray-500">{item.meta}</div>
+            <div className="space-y-3 p-5">
+              {activeProjects.length === 0 ? <div className="rounded-xl border border-dashed border-[#ded3bf] bg-[#fffdf9] px-5 py-10 text-center text-sm text-[#8a8371]">You do not have an active project allocation yet.</div> : activeProjects.map((allocation, index) => {
+                const atRisk = ['on_hold', 'cancelled'].includes((allocation.project_status || '').toLowerCase());
+                const projectMark = allocation.project_code || allocation.project_name || `P${index + 1}`;
+                const projectEnd = allocation.project_end_date || allocation.end_date;
+                return (
+                  <div key={allocation.id} className="grid gap-4 rounded-xl border border-[#ece5d8] bg-[#fffdf9] p-4 md:grid-cols-[auto_minmax(0,1fr)_170px] md:items-center">
+                    <div className={cn('flex h-12 w-12 items-center justify-center rounded-xl text-xs font-bold text-white', index % 2 ? 'bg-[#4d5873]' : 'bg-[#d97a34]')}>{projectMark.slice(0, 3).toUpperCase()}</div>
+                    <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><div className="truncate text-sm font-bold">{allocation.project_name || 'Assigned project'}</div><span className={cn('rounded-full px-2 py-0.5 text-[10px] font-bold', atRisk ? 'bg-[#fcecec] text-[#d64545]' : 'bg-[#e5f3e5] text-[#5b8c5a]')}>{atRisk ? 'At risk' : 'On track'}</span></div><div className="mt-1 text-xs text-[#8a8371]">{allocation.project_client_name || 'Internal'} · {allocation.allocation_role || 'Team member'}</div></div>
+                    <div><div className="mb-2 flex justify-between gap-3 text-[11px] text-[#8a8371]"><span>{formatDate(allocation.project_start_date || allocation.start_date)}–{projectEnd ? formatDate(projectEnd) : 'Ongoing'}</span><strong className="text-[#1f2430]">{allocation.allocation_percentage}%</strong></div><div className="h-1.5 overflow-hidden rounded-full bg-[#eee6d7]"><div className="h-full rounded-full bg-[#d97a34]" style={{ width: `${Math.min(100, allocation.allocation_percentage)}%` }} /></div></div>
                   </div>
-                  <Badge variant={item.status === 'approved' || item.status === 'Approved' || item.status === 'submitted' ? 'olive' : item.status === 'rejected' ? 'error' : 'warning'}>{item.status}</Badge>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-        <Card className="p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <div className="text-sm font-bold text-[#2F3437]">Quick Actions</div>
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Button onClick={() => navigate('/employee/apply-leave')} icon={<CalendarPlus size={15} />}>Apply Leave</Button>
-            <Button onClick={() => navigate('/employee/timesheets')} variant="soft" icon={<Clock3 size={15} />}>Submit Timesheet</Button>
-            <Button onClick={() => navigate('/employee/apply-leave?quick=sick-today')} variant="ghost" icon={<CalendarPlus size={15} />}>Report Sick Today</Button>
-            {isCheckedIn ? (
-              <Button onClick={checkOut} disabled={!!actionLoading} variant="ghost" icon={<LogIn size={15} />}>
-                {actionLoading === 'check-out' ? 'Checking Out' : 'Check Out'}
-              </Button>
-            ) : (
-              <Button onClick={checkIn} disabled={!!actionLoading || !!today?.check_out} variant="ghost" icon={<LogIn size={15} />}>
-                {actionLoading === 'check-in' ? 'Checking In' : 'Check In'}
-              </Button>
-            )}
-            <Button onClick={() => navigate('/employee/requests')} variant="ghost" icon={<Send size={15} />}>New Request</Button>
-          </div>
-        </Card>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="overflow-hidden rounded-2xl border border-[#ece5d8] bg-white shadow-[0_3px_10px_rgba(60,40,10,.025)]">
+            <div className="flex items-center gap-2.5 border-b border-[#ece5d8] px-5 py-4"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#fbeee1] text-[#d97a34]"><CalendarClock size={17} /></span><h2 className="text-[15px] font-bold">Recent Activity</h2></div>
+            <div className="px-5 py-2">{dashboardActivity.length === 0 ? <div className="py-8 text-center text-sm text-[#8a8371]">No recent activity yet.</div> : dashboardActivity.map((item, index) => <div key={item.key} className="relative flex gap-4 border-b border-[#f0e9dc] py-4 last:border-0"><div className="relative z-10 mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-[#d97a34] ring-4 ring-[#fbeee1]" />{index < dashboardActivity.length - 1 && <span className="absolute left-[4px] top-7 h-[calc(100%-12px)] w-px bg-[#e5dac7]" />}<div className="min-w-0 flex-1"><div className="text-sm font-bold">{item.title}</div><div className="mt-1 text-xs text-[#8a8371]">{item.meta}</div></div><Badge variant={item.status === 'approved' || item.status === 'submitted' || item.status === 'active' ? 'olive' : item.status === 'rejected' ? 'error' : 'warning'}>{statusLabel(item.status)}</Badge></div>)}</div>
+          </section>
+        </div>
+
+        <div className="space-y-5">
+          {directReports.length > 0 && <section className="overflow-hidden rounded-2xl border border-[#ece5d8] bg-white shadow-[0_3px_10px_rgba(60,40,10,.025)]">
+            <div className="flex items-center justify-between border-b border-[#ece5d8] px-5 py-4"><div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#f0f1f6] text-[#4d5873]"><UsersRound size={17} /></span><h2 className="text-[15px] font-bold">My Team</h2><span className="text-xs text-[#8a8371]">{directReports.length} people</span></div><button type="button" onClick={() => navigate('/team-allocation')} className="text-xs font-bold text-[#d97a34]">Manage →</button></div>
+            <div className="p-5">
+              {managerApprovalCount > 0 && <button type="button" onClick={() => navigate('/employee/approvals')} className="mb-4 flex w-full items-center justify-between rounded-xl border border-[#eed4b5] bg-[#fbf5ea] px-4 py-3 text-left text-xs font-bold text-[#a7561b]"><span>{managerApprovalCount} {managerApprovalCount === 1 ? 'approval' : 'approvals'} waiting on you</span><span>Review →</span></button>}
+              <div className="space-y-4">{directReports.slice(0, 6).map((report) => <div key={report.id} className="flex items-center gap-3"><div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#efe7d8] text-xs font-bold text-[#8a6a3a]">{dashboardInitials(report.name)}<span className={cn('absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-white', report.today_status === 'on_leave' ? 'bg-[#e2a532]' : report.today_status === 'working' ? 'bg-[#42bf77]' : 'bg-[#b8b4aa]')} /></div><div className="min-w-0 flex-1"><div className="truncate text-sm font-bold">{report.name}</div><div className="truncate text-xs text-[#8a8371]">{report.designation || report.department || 'Team member'}</div></div><span className={cn('text-xs font-semibold', report.today_status === 'on_leave' ? 'text-[#c87816]' : report.today_status === 'working' ? 'text-[#4c8b3f]' : 'text-[#8a8371]')}>{report.today_status === 'on_leave' ? 'On leave' : report.today_status === 'working' ? 'Working' : 'Not checked in'}</span></div>)}</div>
+            </div>
+          </section>}
+
+          <section className="rounded-2xl border border-[#ece5d8] bg-white p-5 shadow-[0_3px_10px_rgba(60,40,10,.025)]">
+            <h2 className="mb-4 text-[15px] font-bold">Quick Actions</h2>
+            <div className="grid grid-cols-2 gap-3">
+              <DashboardQuickAction icon={<CalendarPlus size={15} />} label="Apply Leave" onClick={() => navigate('/employee/apply-leave')} />
+              <DashboardQuickAction icon={<Clock3 size={15} />} label="Submit Timesheet" onClick={() => navigate('/employee/timesheets')} />
+              <DashboardQuickAction icon={<CalendarCheck size={15} />} label="Report Sick" onClick={() => navigate('/employee/apply-leave?quick=sick-today')} />
+              <DashboardQuickAction icon={<LogIn size={15} />} label={isCheckedIn ? 'Check Out' : isCheckedOut ? 'Day Complete' : 'Check In'} onClick={isCheckedIn ? checkOut : checkIn} disabled={!!actionLoading || isCheckedOut} />
+              <DashboardQuickAction icon={<Send size={15} />} label="New Request" onClick={() => navigate('/employee/requests')} />
+              <DashboardQuickAction icon={<Briefcase size={15} />} label="My Projects" onClick={() => navigate('/projects')} />
+            </div>
+          </section>
+        </div>
       </div>
-    </PageShell>
+    </div>
   );
+
 }
 
 export function ApplyLeavePage() {
@@ -1652,7 +1792,6 @@ export function ApplyLeavePage() {
   const [leaveError, setLeaveError] = useState<string | null>(null);
   const [leaveSuccess, setLeaveSuccess] = useState<string | null>(null);
   const [quickLeaveApplied, setQuickLeaveApplied] = useState(false);
-  const [activeTab, setActiveTab] = useState<'apply' | 'calendar'>('apply');
   const [floatingHolidays, setFloatingHolidays] = useState<HolidayItem[]>([]);
   const [selectedHolidayId, setSelectedHolidayId] = useState('');
   const [workingDays, setWorkingDays] = useState<WorkingDaysSummary | null>(null);
@@ -1978,333 +2117,149 @@ export function ApplyLeavePage() {
     }
   };
 
+  const requestedWorkingDays = workingDays?.working_days || 0;
+  const balanceNow = selectedEffectiveAvailable;
+  const balanceAfter = balanceNow === null ? null : balanceNow - requestedWorkingDays;
+  const hasInsufficientBalance = Boolean(
+    selectedLeaveType?.is_paid
+    && balanceAfter !== null
+    && requestedWorkingDays > 0
+    && balanceAfter < 0
+  );
+  const formComplete = Boolean(
+    leaveForm.leaveTypeId
+    && leaveForm.fromDate
+    && leaveForm.toDate
+    && (isHolidayLeave ? selectedHolidayId : leaveForm.reason.trim())
+  );
+  const submitDisabled = Boolean(
+    savingLeave
+    || loadingLeave
+    || loadingWorkingDays
+    || !formComplete
+    || requestedWorkingDays <= 0
+    || selectedLeaveUnavailable
+    || hasInsufficientBalance
+    || (leavePolicyMessage && selectedPolicy?.allow_future_dates === false)
+  );
+  const requestDateLabel = leaveForm.fromDate && leaveForm.toDate
+    ? `${formatDate(leaveForm.fromDate)} – ${formatDate(leaveForm.toDate)}`
+    : 'Select dates';
+
   return (
-    <PageShell title="Apply Leave">
-      {leaveError && (
-        <div className="mb-3 rounded-lg border border-status-error/20 bg-status-error/10 px-4 py-3 text-sm text-status-error">
-          {leaveError}
-        </div>
-      )}
-      {leaveSuccess && (
-        <div className="mb-3 rounded-lg border border-status-success/20 bg-status-success/10 px-4 py-3 text-sm text-status-success">
-          {leaveSuccess}
-        </div>
-      )}
-      <div className="mb-3 flex w-fit rounded-lg border border-[#E5E7EB] bg-white p-1">
-        <button
-          onClick={() => setActiveTab('apply')}
-          className={cn('rounded-md px-3 py-2 text-sm font-semibold transition-colors', activeTab === 'apply' ? 'bg-accent text-white' : 'text-gray-500 hover:bg-hover-bg hover:text-[#2F3437]')}
-        >
-          Apply Leave
-        </button>
-        <button
-          onClick={() => setActiveTab('calendar')}
-          className={cn('rounded-md px-3 py-2 text-sm font-semibold transition-colors', activeTab === 'calendar' ? 'bg-accent text-white' : 'text-gray-500 hover:bg-hover-bg hover:text-[#2F3437]')}
-        >
-          Holiday Calendar
-        </button>
-      </div>
-      {activeTab === 'calendar' ? (
-        <HolidayCalendarContent headers={headers} />
-      ) : (
-        <>
-      <Card className="p-4">
-        {editingLeaveId && (
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-accent/20 bg-accent-light px-3 py-2 text-sm text-accent-dark">
-            <span className="font-semibold">Editing saved draft</span>
-            <button onClick={cancelLeaveEdit} className="text-xs font-bold text-accent hover:underline">Cancel edit</button>
-          </div>
-        )}
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <label className="block">
-            <span className="mb-1.5 block text-[13px] font-semibold text-[#2F3437]">Leave Type</span>
-            <select
-              value={leaveForm.leaveTypeId}
-              onChange={(event) => {
-                updateLeaveForm('leaveTypeId', event.target.value);
-                setSelectedHolidayId('');
-                setLeaveError(null);
-              }}
-              className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#2F3437] outline-none focus:border-accent"
-            >
-              {leaveBalances.map((leave) => {
-                const effective = effectiveLeaveAvailable(leave);
-                const disabled = Boolean(leave.is_paid && effective !== null && effective <= 0);
-                const reason = disabled
-                  ? (leave.pending > 0 ? ' - all balance pending approval' : ' - balance exhausted')
-                  : '';
-                return (
-                  <option key={leave.leave_type_id} value={leave.leave_type_id} disabled={disabled}>
-                    {leave.type}{effective !== null ? ` (${formatNumber(effective)} available)` : ''}{reason}
-                  </option>
-                );
-              })}
-            </select>
-          </label>
-          {isHolidayLeave ? (
-            <div className="md:col-span-2">
-              <span className="mb-1.5 block text-[13px] font-semibold text-[#2F3437]">Select Holiday</span>
-              <div className="grid gap-2">
-                {floatingHolidays.filter((holiday) => selectedLeaveCode === 'FL' ? holiday.holiday_type === 'floating' : holiday.holiday_type === 'optional').length === 0 ? (
-                  <div className="rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 py-3 text-sm text-gray-500">No available holidays for this leave type.</div>
-                ) : floatingHolidays.filter((holiday) => selectedLeaveCode === 'FL' ? holiday.holiday_type === 'floating' : holiday.holiday_type === 'optional').map((holiday) => {
-                  const isWeekend = new Date(`${holiday.holiday_date}T00:00:00`).getDay() % 6 === 0;
-                  const isUnavailableDate = Boolean(
-                    (minAllowedDate && holiday.holiday_date < minAllowedDate)
-                    || (maxAllowedDate && holiday.holiday_date > maxAllowedDate)
-                  );
-                  return (
-                    <label key={holiday.id} className={cn('flex items-start gap-3 rounded-lg border px-3 py-2.5 transition-colors', isUnavailableDate ? 'cursor-not-allowed border-[#E5E7EB] bg-gray-50 opacity-60' : selectedHolidayId === holiday.id ? 'cursor-pointer border-accent bg-accent-light' : 'cursor-pointer border-[#E5E7EB] bg-white hover:border-accent/40')}>
-                      <input
-                        type="radio"
-                        className="mt-1"
-                        checked={selectedHolidayId === holiday.id}
-                        disabled={isUnavailableDate}
-                        onChange={() => setSelectedHolidayId(holiday.id)}
-                      />
-                      <span>
-                        <span className="block text-sm font-bold text-[#2F3437]">{holiday.name}</span>
-                        <span className="block text-xs text-gray-500">{formatDate(holiday.holiday_date)} · {holidayRegionLabel(holiday.regions)}</span>
-                        {isUnavailableDate && <span className="mt-1 block text-xs font-semibold text-status-error">Not available for your joining date or request window.</span>}
-                        {isWeekend && <span className="mt-1 block text-xs font-semibold text-status-warning">Falls on a weekend. Check with HR for the observance date.</span>}
-                      </span>
-                    </label>
-                  );
+    <PageShell
+      title="Apply Leave"
+      description="Request time off and see its impact on your balance before submitting."
+      className="-mx-[var(--layout-main-padding-x)] -my-[var(--layout-main-padding-y)] min-h-screen bg-[#f7f3ec] px-[var(--layout-main-padding-x)] py-[var(--layout-main-padding-y)]"
+    >
+      {leaveError && <div className="mb-4 rounded-xl border border-[#d64545]/20 bg-[#fcecec] px-4 py-3 text-sm text-[#d64545]">{leaveError}</div>}
+      {leaveSuccess && <div className="mb-4 rounded-xl border border-[#3f9b52]/20 bg-[#e5f3e5] px-4 py-3 text-sm text-[#3f7d3f]">{leaveSuccess}</div>}
+
+      {editingLeaveId && <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#d97a34]/25 bg-[#fff7ef] px-4 py-3 text-sm text-[#a7561b]"><span className="font-semibold">Editing saved draft</span><button type="button" onClick={cancelLeaveEdit} className="text-xs font-bold text-[#d97a34] hover:underline">Cancel edit</button></div>}
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.7fr)_minmax(330px,1fr)] xl:items-start">
+        <section className="rounded-2xl border border-[#ece5d8] bg-white p-5 shadow-[0_3px_10px_rgba(60,40,10,.025)] sm:p-7">
+          <div className="grid gap-5">
+            <label className="block">
+              <span className="mb-2 block text-[13px] font-bold text-[#1f2430]">Leave Type</span>
+              <div className="relative">
+                <select value={leaveForm.leaveTypeId} onChange={(event) => { updateLeaveForm('leaveTypeId', event.target.value); setSelectedHolidayId(''); setLeaveError(null); }} className="h-12 w-full appearance-none rounded-[10px] border border-[#e4daca] bg-[#faf8f3] px-4 pr-11 text-sm font-medium text-[#1f2430] outline-none transition focus:border-[#d97a34] focus:ring-2 focus:ring-[#d97a34]/10">
+                  {leaveBalances.map((leave) => {
+                    const effective = effectiveLeaveAvailable(leave);
+                    const disabled = Boolean(leave.is_paid && effective !== null && effective <= 0);
+                    return <option key={leave.leave_type_id} value={leave.leave_type_id} disabled={disabled}>{leave.type}{effective !== null ? ` — ${formatNumber(effective)} available` : ' — no balance limit'}{disabled ? leave.pending > 0 ? ' (pending)' : ' (exhausted)' : ''}</option>;
+                  })}
+                </select>
+                <ChevronDown size={17} aria-hidden="true" className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#b8611f]" />
+              </div>
+            </label>
+
+            {isHolidayLeave && <div>
+              <div className="mb-2 text-[13px] font-bold text-[#1f2430]">Select Holiday</div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {floatingHolidays.filter((holiday) => selectedLeaveCode === 'FL' ? holiday.holiday_type === 'floating' : holiday.holiday_type === 'optional').length === 0 ? <div className="rounded-[10px] border border-dashed border-[#ddd1bc] bg-[#faf8f3] px-4 py-5 text-sm text-[#8a8371] sm:col-span-2">No available holidays for this leave type.</div> : floatingHolidays.filter((holiday) => selectedLeaveCode === 'FL' ? holiday.holiday_type === 'floating' : holiday.holiday_type === 'optional').map((holiday) => {
+                  const isUnavailableDate = Boolean((minAllowedDate && holiday.holiday_date < minAllowedDate) || (maxAllowedDate && holiday.holiday_date > maxAllowedDate));
+                  return <label key={holiday.id} className={cn('flex gap-3 rounded-[10px] border px-4 py-3', isUnavailableDate ? 'cursor-not-allowed border-[#ece5d8] bg-gray-50 opacity-60' : selectedHolidayId === holiday.id ? 'cursor-pointer border-[#d97a34] bg-[#fff7ef]' : 'cursor-pointer border-[#e4daca] bg-[#faf8f3] hover:border-[#d97a34]/50')}><input type="radio" checked={selectedHolidayId === holiday.id} disabled={isUnavailableDate} onChange={() => setSelectedHolidayId(holiday.id)} className="mt-1 accent-[#d97a34]" /><span><span className="block text-sm font-bold">{holiday.name}</span><span className="mt-0.5 block text-xs text-[#8a8371]">{formatDate(holiday.holiday_date)} · {holidayRegionLabel(holiday.regions)}</span></span></label>;
                 })}
               </div>
-            </div>
-          ) : (
-            <>
-              <label className="block">
-                <span className="mb-1.5 block text-[13px] font-semibold text-[#2F3437]">From Date</span>
-                <input
-                  type="date"
-                  value={leaveForm.fromDate}
-                  min={minAllowedDate}
-                  max={maxAllowedDate}
-                  onChange={(event) => updateLeaveForm('fromDate', event.target.value)}
-                  className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#2F3437] outline-none focus:border-accent"
-                />
-              </label>
-              <label className="block">
-                <span className="mb-1.5 block text-[13px] font-semibold text-[#2F3437]">To Date</span>
-                <input
-                  type="date"
-                  value={leaveForm.toDate}
-                  min={leaveForm.fromDate || minAllowedDate}
-                  max={maxAllowedDate}
-                  onChange={(event) => updateLeaveForm('toDate', event.target.value)}
-                  className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#2F3437] outline-none focus:border-accent"
-                />
-              </label>
-            </>
-          )}
-          <label className="block">
-            <span className="mb-1.5 block text-[13px] font-semibold text-[#2F3437]">Reporting Manager</span>
-            <input
-              value={reportingManager}
-              readOnly
-              className="w-full rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 py-2 text-sm text-gray-500 outline-none"
-            />
-          </label>
+            </div>}
 
-          {workingDays && (
-            <div className="flex items-center rounded-lg border border-accent/20 bg-accent-light px-3 py-2 text-sm text-accent-dark md:col-span-2 xl:col-span-4">
-              <span className="font-bold">Working days: {workingDays.working_days}</span>
-              <span className="ml-2 text-xs text-gray-500">
-                ({workingDays.weekends} weekends{workingDays.holidays ? `, ${workingDays.holidays} holiday${workingDays.holidays === 1 ? '' : 's'} excluded: ${workingDays.holiday_names.join(', ')}` : ''})
-              </span>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label><span className="mb-2 block text-[13px] font-bold text-[#1f2430]">From</span><input type="date" value={leaveForm.fromDate} min={minAllowedDate} max={maxAllowedDate} onChange={(event) => updateLeaveForm('fromDate', event.target.value)} className="h-12 w-full rounded-[10px] border border-[#e4daca] bg-[#faf8f3] px-4 text-sm text-[#1f2430] outline-none transition focus:border-[#d97a34] focus:ring-2 focus:ring-[#d97a34]/10" /></label>
+              <label><span className="mb-2 block text-[13px] font-bold text-[#1f2430]">To</span><input type="date" value={leaveForm.toDate} min={leaveForm.fromDate || minAllowedDate} max={maxAllowedDate} onChange={(event) => updateLeaveForm('toDate', event.target.value)} className="h-12 w-full rounded-[10px] border border-[#e4daca] bg-[#faf8f3] px-4 text-sm text-[#1f2430] outline-none transition focus:border-[#d97a34] focus:ring-2 focus:ring-[#d97a34]/10" /></label>
             </div>
-          )}
-          {loadingWorkingDays && (
-            <div className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-gray-500 md:col-span-2 xl:col-span-4">Calculating working days...</div>
-          )}
-          {!isHolidayLeave && <label className="block md:col-span-2 xl:col-span-3">
-            <div className="mb-1.5 flex items-center justify-between gap-3">
-              <span className="block text-[13px] font-semibold text-[#2F3437]">Reason</span>
-              <span className="text-xs text-gray-400">{leaveForm.reason.length}/200</span>
+
+            <div className="flex min-h-[52px] flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-[#ead8bd] bg-[#fbf5ea] px-4 py-3 text-sm text-[#8a6a3a]">
+              <CalendarCheck size={17} className="text-[#d97a34]" />
+              {loadingWorkingDays ? <span>Calculating working days…</span> : leaveForm.fromDate && leaveForm.toDate ? <><span>You&apos;re requesting</span><strong className="text-[15px] text-[#b8611f]">{requestedWorkingDays} working {requestedWorkingDays === 1 ? 'day' : 'days'}</strong><span>({requestDateLabel} · {workingDays?.weekends || 0} weekend day{workingDays?.weekends === 1 ? '' : 's'}{workingDays?.holidays ? ` and ${workingDays.holidays} holiday${workingDays.holidays === 1 ? '' : 's'}` : ''} excluded)</span></> : <span>Select a date range to calculate working days; weekends and company holidays will be excluded.</span>}
             </div>
-            <textarea
-              value={leaveForm.reason}
-              onChange={(event) => updateLeaveForm('reason', event.target.value)}
-              placeholder="Add reason here"
-              rows={2}
-              maxLength={200}
-              className="w-full resize-none rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#2F3437] outline-none focus:border-accent"
-            />
-            {leavePolicyMessage && (
-              <div className={cn(
-                'mt-1 text-xs font-semibold',
-                selectedPolicy?.allow_future_dates === false ? 'text-status-error' : 'text-status-warning'
-              )}>
-                {leavePolicyMessage}
-              </div>
-            )}
-            {selectedLeaveType?.code?.toUpperCase() === 'SL' && minAllowedDate && (
-              <div className="mt-1 text-xs text-gray-500">
-                Sick Leave can be applied across available dates, up to your effective balance.
-              </div>
-            )}
-          </label>}
-          <div className="flex items-end justify-end gap-2">
-            <Button variant="ghost" disabled={!!savingLeave || loadingLeave} onClick={() => saveLeaveRequest('draft')}>
-              {savingLeave === 'draft' ? 'Saving' : 'Save Draft'}
-            </Button>
-            <Button icon={<Send size={15} />} disabled={!!savingLeave || loadingLeave} onClick={() => saveLeaveRequest('submit')}>
-              {savingLeave === 'submit' ? 'Submitting' : editingLeaveId ? 'Submit Draft' : 'Submit Request'}
-            </Button>
+
+            {!isHolidayLeave && <label className="block">
+              <div className="mb-2 flex justify-between gap-4"><span className="text-[13px] font-bold text-[#1f2430]">Reason</span><span className="text-xs text-[#a99e8a]">{leaveForm.reason.length} / 200</span></div>
+              <textarea value={leaveForm.reason} onChange={(event) => updateLeaveForm('reason', event.target.value)} placeholder="Add a short reason…" rows={4} maxLength={200} className="w-full resize-none rounded-[10px] border border-[#e4daca] bg-[#faf8f3] px-4 py-3 text-sm text-[#1f2430] outline-none transition placeholder:text-[#aaa394] focus:border-[#d97a34] focus:ring-2 focus:ring-[#d97a34]/10" />
+              {leavePolicyMessage && <div className={cn('mt-2 text-xs font-semibold', selectedPolicy?.allow_future_dates === false ? 'text-[#d64545]' : 'text-[#c47b1a]')}>{leavePolicyMessage}</div>}
+            </label>}
           </div>
-        </div>
-      </Card>
+        </section>
 
-      <div className="mt-3">
-        <div className="mb-2 flex items-center gap-2 text-base font-bold text-[#2F3437]">
-          <WalletCards size={18} className="text-accent" />
-          Leave Balance
-        </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {loadingLeave ? (
-            <Card className="p-3 text-sm text-gray-500">Loading leave balances...</Card>
-          ) : leaveBalances.map((leave) => {
+        <aside className="rounded-2xl border border-[#ece5d8] bg-white p-5 shadow-[0_3px_10px_rgba(60,40,10,.025)] sm:p-7 xl:sticky xl:top-5">
+          <div className="mb-5 flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#fbeee1] text-[#d97a34]"><Send size={17} /></span><h2 className="text-[17px] font-bold">Request Summary</h2></div>
+          <div className="space-y-3 text-sm">
+            <div className="flex justify-between gap-4"><span className="text-[#8a8371]">Leave type</span><strong className="text-right">{selectedLeaveType?.type || 'Not selected'}</strong></div>
+            <div className="flex justify-between gap-4"><span className="text-[#8a8371]">Dates</span><strong className="text-right">{requestDateLabel}</strong></div>
+            <div className="flex justify-between gap-4"><span className="text-[#8a8371]">Working days</span><strong>{loadingWorkingDays ? '…' : `${requestedWorkingDays} ${requestedWorkingDays === 1 ? 'day' : 'days'}`}</strong></div>
+          </div>
+          <div className="my-5 border-t border-[#eadfce]" />
+          <div className="space-y-3 text-sm">
+            <div className="flex justify-between gap-4"><span className="text-[#8a8371]">Balance now</span><strong>{balanceNow === null ? 'No limit' : `${formatNumber(balanceNow)} days`}</strong></div>
+            <div className="flex justify-between gap-4"><span className="text-[#8a8371]">After this request</span><strong className={hasInsufficientBalance ? 'text-[#d64545]' : 'text-[#3f9b52]'}>{balanceAfter === null ? 'No limit' : `${formatNumber(balanceAfter)} days`}</strong></div>
+            {hasInsufficientBalance && <div className="rounded-lg bg-[#fcecec] px-3 py-2 text-xs font-semibold text-[#d64545]">This request exceeds your available balance.</div>}
+          </div>
+          <div className="mt-5 flex items-center gap-3 rounded-xl border border-[#e5d9c5] bg-[#fbf5ea] px-4 py-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#2b3243] text-[11px] font-bold text-white">{dashboardInitials(reportingManager)}</span>
+            <div className="min-w-0"><div className="text-[10px] font-bold uppercase tracking-[.08em] text-[#a99e8a]">Approver</div><div className="truncate text-sm font-bold">{reportingManager}</div></div>
+          </div>
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <Button variant="ghost" disabled={!!savingLeave || loadingLeave || !formComplete} onClick={() => saveLeaveRequest('draft')} className="border-[#e4daca] bg-white text-[#1f2430] hover:bg-[#fbf5ea]">{savingLeave === 'draft' ? 'Saving…' : 'Save Draft'}</Button>
+            <Button disabled={submitDisabled} onClick={() => saveLeaveRequest('submit')} className="border-[#d97a34] bg-[#d97a34] shadow-[0_7px_16px_rgba(217,122,52,.18)] hover:bg-[#c9611f]">{savingLeave === 'submit' ? 'Submitting…' : editingLeaveId ? 'Submit Draft' : 'Submit Request'}</Button>
+          </div>
+        </aside>
+      </div>
+
+      <section className="mt-5 rounded-2xl border border-[#ece5d8] bg-white p-5 shadow-[0_3px_10px_rgba(60,40,10,.025)] sm:p-7">
+        <div className="mb-5 flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#fbeee1] text-[#d97a34]"><WalletCards size={18} /></span><h2 className="text-[17px] font-bold">Leave Balance</h2></div>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {loadingLeave ? <div className="rounded-xl border border-[#ece5d8] bg-[#faf8f3] p-5 text-sm text-[#8a8371]">Loading leave balances…</div> : leaveBalances.map((leave) => {
             const total = typeof leave.total === 'number' ? leave.total : 0;
             const available = effectiveLeaveAvailable(leave) || 0;
             const used = typeof leave.used === 'number' ? leave.used : 0;
             const pending = typeof leave.pending === 'number' ? leave.pending : 0;
-            const usedPercent = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
-            const pendingPercent = total > 0 ? Math.min(100 - usedPercent, Math.round((pending / total) * 100)) : 0;
-            const availableTone = typeof leave.available === 'number' && total > 0 && available <= 0
-              ? 'text-status-error'
-              : typeof leave.available === 'number' && total > 0 && available < total * 0.25
-                ? 'text-status-warning'
-                : 'text-accent';
-            const regionTag = ({ FL: 'IN/AE', OH: 'IN', AL: 'AE' } as Record<string, string>)[leave.code?.toUpperCase()];
-            return (
-            <Card key={leave.leave_type_id} className="p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="text-sm font-bold text-[#2F3437]">{leave.type}</div>
-                    {regionTag && <span className="rounded-full bg-accent-light px-2 py-0.5 text-[10px] font-bold text-accent">{regionTag}</span>}
-                  </div>
-                  <div className="mt-1.5 text-xs text-gray-500">
-                    Used <span className="font-bold text-[#2F3437]">{leave.used}</span>
-                    <span className="mx-2 text-gray-300">|</span>
-                    Pending <span className="font-bold text-status-warning">{leave.pending}</span>
-                    <span className="mx-2 text-gray-300">|</span>
-                    Effective <span className="font-bold text-[#2F3437]">{formatNumber(available)}</span>
-                  </div>
-                  {total > 0 && (
-                    <div className="mt-2 flex h-1.5 w-40 overflow-hidden rounded-full bg-gray-100">
-                      <div className="h-full bg-[#7E9BB7]" style={{ width: `${usedPercent}%` }} />
-                      <div className="h-full bg-status-warning" style={{ width: `${pendingPercent}%` }} />
-                    </div>
-                  )}
-                  <div className="mt-1 text-[11px] font-medium text-gray-400">{leave.expiry_label}</div>
-                </div>
-                <div className="text-right">
-                  <div className={cn('text-lg font-bold', availableTone)}>{typeof leave.available === 'string' ? leave.available : formatNumber(available)}</div>
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Effective</div>
-                  {total > 0 && <div className="mt-1 text-[11px] text-gray-400">{formatNumber(available)}/{formatNumber(total)} total</div>}
-                </div>
-              </div>
-            </Card>
-          );})}
+            const usedPercent = total > 0 ? Math.min(100, (used / total) * 100) : 0;
+            const pendingPercent = total > 0 ? Math.min(100 - usedPercent, (pending / total) * 100) : 0;
+            const availablePercent = total > 0 ? Math.max(0, 100 - usedPercent - pendingPercent) : 0;
+            const selected = leave.leave_type_id === leaveForm.leaveTypeId;
+            return <button type="button" key={leave.leave_type_id} onClick={() => { updateLeaveForm('leaveTypeId', leave.leave_type_id); setSelectedHolidayId(''); }} className={cn('relative rounded-2xl border p-5 text-left transition', selected ? 'border-2 border-[#d97a34] bg-[#fff7ef] shadow-[0_7px_18px_rgba(217,122,52,.1)]' : 'border-[#ece5d8] bg-[#fffdf9] hover:border-[#d97a34]/40')}>
+              {selected && <span className="absolute -top-2.5 left-4 rounded-full bg-[#d97a34] px-2.5 py-1 text-[9px] font-bold tracking-wide text-white">APPLYING</span>}
+              <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-bold">{leave.type}</div><div className="mt-1 text-[10px] font-semibold uppercase tracking-[.08em] text-[#a99e8a]">Days available</div></div><div className={cn('text-[25px] font-bold', available <= 0 ? 'text-[#aaa394]' : 'text-[#d97a34]')}>{typeof leave.available === 'string' ? leave.available : formatNumber(available)}</div></div>
+              <div className="mt-4 flex h-2 overflow-hidden rounded-full bg-[#eee9df]"><span className="h-full bg-[#aba69d]" style={{ width: `${usedPercent}%` }} /><span className="h-full bg-[#e0a23a]" style={{ width: `${pendingPercent}%` }} /><span className="h-full bg-[#d97a34]" style={{ width: `${availablePercent}%` }} /></div>
+              <div className="mt-3 text-xs text-[#8a8371]">Used {formatNumber(used)} · Pending {formatNumber(pending)}</div>
+              <div className="mt-3 border-t border-[#eee5d6] pt-3 text-[11px] text-[#a99e8a]">{leave.expiry_label || (leave.is_carry_forward ? `Carry forward up to ${formatNumber(leave.max_carry_forward_days)} days` : 'No balance expiry')}</div>
+            </button>;
+          })}
         </div>
-      </div>
-      <Card className="mt-3 overflow-hidden">
-        <CardHeader title="My Leave Requests" icon={<ClipboardCheck size={17} />} />
-        {leaveRequests.length === 0 ? (
-          <div className="px-5 py-5 text-sm text-gray-500">No leave requests yet.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <div className="min-w-[980px]">
-              <div className="grid grid-cols-[1.25fr_1fr_1.2fr_110px_150px] gap-4 border-y border-[#E5E7EB] bg-warm-bg px-5 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-400">
-                <div>Leave</div>
-                <div>Progress</div>
-                <div>Reason</div>
-                <div className="text-center">Status</div>
-                <div className="text-center">Actions</div>
-              </div>
-          <div className="divide-y divide-[#E5E7EB]">
-            {leaveRequests.slice(0, 5).map((request) => (
-              <div key={request.id}>
-              <div className="grid grid-cols-[1.25fr_1fr_1.2fr_110px_150px] items-center gap-4 px-5 py-3 text-sm">
-                <div className="min-w-0">
-                  <div className="font-semibold text-[#2F3437]">{request.leave_type}</div>
-                  <div className="text-xs text-gray-500">{formatDate(request.start_date)} - {formatDate(request.end_date)} • {request.total_days} day{request.total_days === 1 ? '' : 's'}</div>
-                </div>
-                <div className="text-gray-500">
-                  {request.status === 'pending' ? `Pending with ${request.pending_with || reportingManager}` : request.reviewed_by ? `Reviewed by ${request.reviewed_by}` : 'Saved draft'}
-                </div>
-                <div className="truncate text-gray-500">{request.reason}</div>
-                <div className="flex min-h-9 items-center justify-center">
-                  <Badge variant={request.status === 'approved' ? 'success' : request.status === 'rejected' ? 'error' : request.status === 'pending' ? 'warning' : 'neutral'}>
-                    {request.status}
-                  </Badge>
-                </div>
-                <div className="flex min-h-9 items-center justify-center gap-2">
-                  {request.status === 'draft' ? (
-                    <>
-                      <button
-                        onClick={() => editLeaveDraft(request)}
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-accent/15 bg-accent-light text-accent transition-colors hover:bg-accent hover:text-white"
-                        title="Edit draft"
-                        aria-label="Edit draft leave request"
-                      >
-                        <Pencil size={14} />
-                      </button>
-                      <button
-                        disabled={!!savingLeave}
-                        onClick={() => deleteLeaveDraft(request)}
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E5E7EB] bg-white text-gray-400 transition-colors hover:border-status-error/30 hover:bg-status-error/10 hover:text-status-error disabled:cursor-not-allowed disabled:opacity-50"
-                        title="Delete draft"
-                        aria-label="Delete draft leave request"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </>
-                  ) : request.status === 'pending' ? (
-                    <button
-                      disabled={withdrawingLeaveId === request.id}
-                      onClick={() => withdrawLeaveRequest(request)}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E5E7EB] bg-white text-gray-400 transition-colors hover:border-status-error/30 hover:bg-status-error/10 hover:text-status-error disabled:cursor-not-allowed disabled:opacity-50"
-                      title="Withdraw request"
-                      aria-label="Withdraw pending leave request"
-                    >
-                      <X size={14} />
-                    </button>
-                  ) : (
-                    <span className="h-8 w-8" aria-hidden="true" />
-                  )}
-                </div>
-              </div>
-              {confirmDeleteId === request.id && (
-                <div className="mx-5 mb-3 flex flex-wrap items-center justify-end gap-2 rounded-lg border border-status-error/20 bg-status-error/10 px-3 py-2 text-sm text-status-error">
-                  <span className="mr-auto font-semibold">Delete this draft?</span>
-                  <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteId(null)}>Cancel</Button>
-                  <Button size="sm" onClick={() => deleteLeaveDraft(request)}>Yes, delete</Button>
-                </div>
-              )}
-              {confirmWithdrawId === request.id && (
-                <div className="mx-5 mb-3 flex flex-wrap items-center justify-end gap-2 rounded-lg border border-status-error/20 bg-status-error/10 px-3 py-2 text-sm text-status-error">
-                  <span className="mr-auto font-semibold">Withdraw this pending request?</span>
-                  <Button size="sm" variant="ghost" onClick={() => setConfirmWithdrawId(null)}>Cancel</Button>
-                  <Button size="sm" onClick={() => withdrawLeaveRequest(request)} disabled={withdrawingLeaveId === request.id}>
-                    {withdrawingLeaveId === request.id ? 'Withdrawing' : 'Yes, withdraw'}
-                  </Button>
-                </div>
-              )}
-              </div>
-            ))}
-          </div>
-            </div>
-          </div>
-        )}
-      </Card>
-        </>
-      )}
+      </section>
+
+      <section className="mt-5 overflow-hidden rounded-2xl border border-[#ece5d8] bg-white shadow-[0_3px_10px_rgba(60,40,10,.025)]">
+        <div className="flex items-center gap-3 border-b border-[#ece5d8] px-5 py-4 sm:px-7"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e5f3e5] text-[#3f9b52]"><ClipboardCheck size={18} /></span><h2 className="text-[17px] font-bold">My Leave Requests</h2></div>
+        {leaveRequests.length === 0 ? <div className="m-5 rounded-xl border border-dashed border-[#ddd1bc] px-5 py-10 text-center sm:m-7"><div className="text-sm font-semibold text-[#8a8371]">No leave requests yet.</div><div className="mt-1 text-xs text-[#a99e8a]">Submitted requests will appear here with their approval status.</div></div> : <div className="overflow-x-auto"><div className="min-w-[900px]"><div className="grid grid-cols-[1.1fr_1fr_1.3fr_110px_130px] gap-4 border-b border-[#ece5d8] bg-[#faf8f3] px-7 py-3 text-[10px] font-bold uppercase tracking-[.08em] text-[#a99e8a]"><div>Leave</div><div>Dates</div><div>Reason / Progress</div><div className="text-center">Status</div><div className="text-center">Actions</div></div><div className="divide-y divide-[#eee7dc]">{leaveRequests.map((request) => <div key={request.id}>
+          <div className="grid grid-cols-[1.1fr_1fr_1.3fr_110px_130px] items-center gap-4 px-7 py-4 text-sm"><div><div className="font-bold">{request.leave_type}</div><div className="mt-1 text-xs text-[#8a8371]">{formatNumber(request.total_days)} working {request.total_days === 1 ? 'day' : 'days'}</div></div><div className="text-xs text-[#8a8371]">{formatDate(request.start_date)} – {formatDate(request.end_date)}</div><div className="min-w-0"><div className="truncate text-xs text-[#8a8371]">{request.reason}</div><div className="mt-1 text-[11px] text-[#a99e8a]">{request.status === 'pending' ? `Pending with ${request.pending_with || reportingManager}` : request.reviewed_by ? `Reviewed by ${request.reviewed_by}` : 'Saved draft'}</div></div><div className="flex justify-center"><Badge variant={request.status === 'approved' ? 'success' : request.status === 'rejected' ? 'error' : request.status === 'pending' ? 'warning' : 'neutral'}>{statusLabel(request.status)}</Badge></div><div className="flex justify-center gap-2">{request.status === 'draft' ? <><button type="button" onClick={() => editLeaveDraft(request)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#ead8bd] bg-[#fff7ef] text-[#d97a34]" aria-label="Edit draft"><Pencil size={14} /></button><button type="button" disabled={!!savingLeave} onClick={() => deleteLeaveDraft(request)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#ece5d8] text-[#8a8371] hover:bg-[#fcecec] hover:text-[#d64545]" aria-label="Delete draft"><Trash2 size={14} /></button></> : request.status === 'pending' ? <button type="button" disabled={withdrawingLeaveId === request.id} onClick={() => withdrawLeaveRequest(request)} className="rounded-lg border border-[#ece5d8] px-3 py-2 text-xs font-bold text-[#d64545] hover:bg-[#fcecec] disabled:opacity-50">Withdraw</button> : <span className="text-xs text-[#a99e8a]">—</span>}</div></div>
+          {confirmDeleteId === request.id && <div className="mx-7 mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-[#d64545]/20 bg-[#fcecec] px-3 py-2 text-sm text-[#d64545]"><span className="mr-auto font-semibold">Delete this draft?</span><Button size="sm" variant="ghost" onClick={() => setConfirmDeleteId(null)}>Cancel</Button><Button size="sm" onClick={() => deleteLeaveDraft(request)}>Yes, delete</Button></div>}
+          {confirmWithdrawId === request.id && <div className="mx-7 mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-[#d64545]/20 bg-[#fcecec] px-3 py-2 text-sm text-[#d64545]"><span className="mr-auto font-semibold">Withdraw this pending request?</span><Button size="sm" variant="ghost" onClick={() => setConfirmWithdrawId(null)}>Cancel</Button><Button size="sm" onClick={() => withdrawLeaveRequest(request)} disabled={withdrawingLeaveId === request.id}>{withdrawingLeaveId === request.id ? 'Withdrawing…' : 'Yes, withdraw'}</Button></div>}
+        </div>)}</div></div></div>}
+      </section>
     </PageShell>
   );
+
 }
 
 function RejectionReasonModal({
@@ -2324,9 +2279,9 @@ function RejectionReasonModal({
   return createPortal(
     <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/35 p-6 backdrop-blur-sm">
       <Card className="w-full max-w-lg overflow-hidden shadow-[0_24px_80px_rgba(31,41,55,0.24)]">
-        <div className="flex items-start justify-between border-b border-[#E5E7EB] px-6 py-5">
+        <div className="flex items-start justify-between border-b border-[var(--color-border)] px-6 py-5">
           <div>
-            <h2 className="text-lg font-bold text-[#2F3437]">Reject approval</h2>
+            <h2 className="text-lg font-bold text-[var(--color-brand-navy)]">Reject approval</h2>
             <p className="mt-1 text-sm text-gray-500">{intent.title}</p>
           </div>
           <button onClick={onClose} disabled={submitting} className="rounded-lg p-2 text-gray-400 hover:bg-hover-bg disabled:cursor-not-allowed disabled:opacity-50">
@@ -2335,18 +2290,18 @@ function RejectionReasonModal({
         </div>
         <div className="p-6">
           {intent.subtitle && (
-            <div className="mb-4 rounded-xl border border-[#E5E7EB] bg-warm-bg p-4 text-sm text-gray-600">
+            <div className="mb-4 rounded-xl border border-[var(--color-border)] bg-warm-bg p-4 text-sm text-gray-600">
               {intent.subtitle}
             </div>
           )}
-          <label className="grid gap-2 text-sm font-semibold text-[#2F3437]">
+          <label className="grid gap-2 text-sm font-semibold text-[var(--color-brand-navy)]">
             Rejection reason
             <textarea
               value={reason}
               maxLength={300}
               onChange={(event) => setReason(event.target.value)}
               placeholder="Explain why this approval is being rejected."
-              className="min-h-[120px] rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 py-3 text-sm outline-none focus:border-accent"
+              className="min-h-[120px] rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 py-3 text-sm outline-none focus:border-accent"
               autoFocus
             />
           </label>
@@ -2355,7 +2310,7 @@ function RejectionReasonModal({
             <span>{reason.length}/300</span>
           </div>
         </div>
-        <div className="flex justify-end gap-3 border-t border-[#E5E7EB] px-6 py-4">
+        <div className="flex justify-end gap-3 border-t border-[var(--color-border)] px-6 py-4">
           <Button variant="ghost" disabled={submitting} onClick={onClose}>Keep Pending</Button>
           <Button disabled={submitting || !canSubmit} onClick={() => onConfirm(reason.trim())}>
             {submitting ? 'Rejecting' : 'Reject'}
@@ -2585,7 +2540,7 @@ export function LeaveApprovalsPage() {
               <th className="px-5 py-3 text-right font-bold">Action</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#E5E7EB]">
+          <tbody className="divide-y divide-[var(--color-border)]">
             {loadingApprovals ? (
               <tr><td colSpan={5} className="px-5 py-8 text-center text-gray-500">Loading approvals...</td></tr>
             ) : totalApprovalRows === 0 ? (
@@ -2593,7 +2548,7 @@ export function LeaveApprovalsPage() {
             ) : (
               <>
                 {leaveApprovalRows.map((approval) => (
-                  <tr key={`leave-${approval.id}`} className="text-[#2F3437]">
+                  <tr key={`leave-${approval.id}`} className="text-[var(--color-brand-navy)]">
                     <td className="px-5 py-4 font-semibold">{approval.employee_name}</td>
                     <td className="px-5 py-4">
                       <div className="font-semibold">Leave - {approval.leave_type}</div>
@@ -2610,7 +2565,7 @@ export function LeaveApprovalsPage() {
                   </tr>
                 ))}
                 {requestApprovalRows.map((approval) => (
-                  <tr key={`request-${approval.id}`} className="text-[#2F3437]">
+                  <tr key={`request-${approval.id}`} className="text-[var(--color-brand-navy)]">
                     <td className="px-5 py-4 font-semibold">{approval.employee_name}</td>
                     <td className="px-5 py-4">
                       <div className="font-semibold">{approval.request_type_label || approval.title}</div>
@@ -2632,7 +2587,7 @@ export function LeaveApprovalsPage() {
                 {timesheetApprovalRows.map((approval) => {
                   const approvalKey = `${approval.employee_id}-${approval.week_start}`;
                   return (
-                    <tr key={`timesheet-${approvalKey}`} className="text-[#2F3437]">
+                    <tr key={`timesheet-${approvalKey}`} className="text-[var(--color-brand-navy)]">
                       <td className="px-5 py-4 font-semibold">{approval.employee_name}</td>
                       <td className="px-5 py-4">
                         <div className="font-semibold">Timesheet</div>
@@ -2658,31 +2613,31 @@ export function LeaveApprovalsPage() {
       </Card>
 
       {reviewTimesheet && createPortal((
-        <div className="animate-modal-backdrop fixed inset-0 z-[120] flex items-center justify-center overflow-hidden bg-[#111827]/68 p-4 backdrop-blur-sm sm:p-6 lg:p-8">
+        <div className="animate-modal-backdrop fixed inset-0 z-[120] flex items-center justify-center overflow-hidden bg-[var(--color-brand-navy)]/68 p-4 backdrop-blur-sm sm:p-6 lg:p-8">
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="timesheet-review-title"
-            className="animate-modal-pop relative flex max-h-[calc(100vh-2rem)] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-white/80 bg-[#FEFEFC] shadow-[0_32px_110px_rgba(0,0,0,0.42),0_10px_36px_rgba(17,24,39,0.22),0_0_0_1px_rgba(255,255,255,0.65)] ring-1 ring-black/10 sm:max-h-[calc(100vh-3rem)] lg:max-h-[calc(100vh-4rem)]"
+            className="animate-modal-pop relative flex max-h-[calc(100vh-2rem)] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-white/80 bg-[var(--color-brand-surface)] shadow-[0_32px_110px_rgba(0,0,0,0.42),0_10px_36px_rgba(17,24,39,0.22),0_0_0_1px_rgba(255,255,255,0.65)] ring-1 ring-black/10 sm:max-h-[calc(100vh-3rem)] lg:max-h-[calc(100vh-4rem)]"
           >
             <div className="h-1 shrink-0 bg-gradient-to-r from-olive via-sage to-status-info" />
-            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-[#DDE3EA] bg-white px-5 py-4 shadow-[0_1px_0_rgba(17,24,39,0.03)] sm:px-6">
+            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-[var(--color-border)] bg-white px-5 py-4 shadow-[0_1px_0_rgba(17,24,39,0.03)] sm:px-6">
               <div>
-                <div id="timesheet-review-title" className="text-lg font-bold text-[#2F3437]">Timesheet Review</div>
+                <div id="timesheet-review-title" className="text-lg font-bold text-[var(--color-brand-navy)]">Timesheet Review</div>
                 <div className="mt-1 text-sm text-gray-500">
                   {reviewTimesheet.employee_name} • {formatDate(reviewTimesheet.week_start)} - {formatDate(reviewTimesheet.week_end)}
                 </div>
               </div>
               <button
                 onClick={() => setReviewTimesheet(null)}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-transparent text-gray-400 transition-colors hover:border-[#DDE3EA] hover:bg-hover-bg hover:text-[#2F3437]"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-transparent text-gray-400 transition-colors hover:border-[var(--color-border)] hover:bg-hover-bg hover:text-[var(--color-brand-navy)]"
                 title="Close"
               >
                 <X size={17} />
               </button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto bg-[#F8F9F6] px-5 py-4 sm:px-6">
+            <div className="min-h-0 flex-1 overflow-y-auto bg-[var(--color-brand-canvas)] px-5 py-4 sm:px-6">
               <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-5">
                 {[
                   ['Logged', `${reviewTimesheet.total_hours}h`],
@@ -2691,14 +2646,14 @@ export function LeaveApprovalsPage() {
                   ['Leave', `${reviewTimesheet.leave_hours}h`],
                   ['Overtime', `${reviewTimesheet.overtime_hours}h`],
                 ].map(([label, value]) => (
-                  <div key={label} className="rounded-lg border border-[#E1E6DE] bg-white px-3 py-2.5 shadow-[0_1px_2px_rgba(17,24,39,0.04)]">
+                  <div key={label} className="rounded-lg border border-[var(--color-border)] bg-white px-3 py-2.5 shadow-[0_1px_2px_rgba(17,24,39,0.04)]">
                     <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">{label}</div>
-                    <div className={cn('mt-1 text-lg font-bold text-[#2F3437]', label === 'Overtime' && reviewTimesheet.overtime_hours > 0 && 'text-status-warning')}>{value}</div>
+                    <div className={cn('mt-1 text-lg font-bold text-[var(--color-brand-navy)]', label === 'Overtime' && reviewTimesheet.overtime_hours > 0 && 'text-status-warning')}>{value}</div>
                   </div>
                 ))}
               </div>
 
-              <div className="overflow-x-auto rounded-lg border border-[#DDE3EA] bg-white shadow-[0_8px_22px_rgba(17,24,39,0.06)]">
+              <div className="overflow-x-auto rounded-lg border border-[var(--color-border)] bg-white shadow-[0_8px_22px_rgba(17,24,39,0.06)]">
                 <table className="w-full min-w-[860px] text-left text-sm">
                   <thead className="bg-warm-bg text-[11px] uppercase tracking-wide text-gray-400">
                     <tr>
@@ -2709,7 +2664,7 @@ export function LeaveApprovalsPage() {
                       <th className="px-4 py-3 font-bold">Details</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#E5E7EB] bg-white">
+                  <tbody className="divide-y divide-[var(--color-border)] bg-white">
                     {reviewWeekDates.map((dateValue) => {
                       const dateKey = toDateInput(dateValue);
                       const leave = reviewLeaveForDate(dateKey);
@@ -2720,7 +2675,7 @@ export function LeaveApprovalsPage() {
                       const breakHours = reviewEntryHours(dateKey, 'BRK');
                       return (
                         <tr key={dateKey}>
-                          <td className="px-4 py-3 font-semibold text-[#2F3437]">
+                          <td className="px-4 py-3 font-semibold text-[var(--color-brand-navy)]">
                             {dateValue.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                           </td>
                           <td className="px-4 py-3 font-bold">{workHours}h</td>
@@ -2735,7 +2690,7 @@ export function LeaveApprovalsPage() {
                               <div className="space-y-1">
                                 {reviewEntriesForDate(dateKey).map((entry) => (
                                   <div key={entry.id}>
-                                    <span className="font-semibold text-[#2F3437]">{entry.project_name}</span>
+                                    <span className="font-semibold text-[var(--color-brand-navy)]">{entry.project_name}</span>
                                     <span className="text-gray-400"> • {entry.entry_code} • {entry.start_time?.slice(0, 5)}-{entry.end_time?.slice(0, 5)} • {entry.hours}h</span>
                                   </div>
                                 ))}
@@ -2765,7 +2720,7 @@ export function LeaveApprovalsPage() {
               )}
             </div>
 
-            <div className="flex shrink-0 justify-end gap-2 border-t border-[#DDE3EA] bg-white px-5 py-4 shadow-[0_-1px_0_rgba(17,24,39,0.02)] sm:px-6">
+            <div className="flex shrink-0 justify-end gap-2 border-t border-[var(--color-border)] bg-white px-5 py-4 shadow-[0_-1px_0_rgba(17,24,39,0.02)] sm:px-6">
               <Button variant="ghost" disabled={reviewingId === `${reviewTimesheet.employee_id}-${reviewTimesheet.week_start}`} onClick={() => openTimesheetRejection(reviewTimesheet)}>
                 Reject
               </Button>
@@ -2802,7 +2757,6 @@ function TimeEntryDetailsPanel({
   onAddBlock,
   onUpdateBlock,
   onUpdateBlockStart,
-  onUpdateBlockHours,
   onRemoveBlock,
   onSaveDraft,
 }: {
@@ -2816,7 +2770,6 @@ function TimeEntryDetailsPanel({
   onAddBlock: () => void;
   onUpdateBlock: (rowId: string, updates: Partial<TimesheetRow>) => void;
   onUpdateBlockStart: (block: TimesheetRow, startTime: string) => void;
-  onUpdateBlockHours: (block: TimesheetRow, hoursValue: string) => void;
   onRemoveBlock: (rowId: string) => void;
   onSaveDraft: () => void;
 }) {
@@ -2825,96 +2778,25 @@ function TimeEntryDetailsPanel({
     : '';
 
   return (
-    <aside className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm xl:sticky xl:top-24 xl:max-h-[calc(100vh-120px)] xl:overflow-hidden">
-      <div className="sticky top-0 z-10 border-b border-[#E5E7EB] bg-white px-4 py-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-sm font-bold text-[#2F3437]">Time Entry Details</div>
-            {activeCell && project ? (
-              <div className="mt-2">
-                <div className="truncate text-sm font-bold text-[#2F3437]">{project.name} ({project.code})</div>
-              </div>
-            ) : (
-              <div className="mt-1 text-xs text-gray-500">Select a weekday cell to edit time.</div>
-            )}
-          </div>
-        {activeCell && (
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 hover:bg-hover-bg hover:text-[#2F3437]"
-            title="Close details panel"
-          >
-            <X size={16} />
-          </button>
-        )}
+    <aside className="overflow-hidden rounded-2xl border border-[#ece5d8] bg-white shadow-[0_3px_10px_rgba(60,40,10,.025)] xl:sticky xl:top-5">
+      <div className="flex items-start justify-between border-b border-[#ece5d8] px-5 py-4"><div><h2 className="text-[17px] font-bold">Time Entry</h2><p className="mt-1 text-xs text-[#8a8371]">{activeCell ? 'Edit the selected day.' : 'Select a work-item day cell.'}</p></div>{activeCell && <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-[#a99e8a] hover:bg-[#fbf5ea]" aria-label="Close time entry"><X size={15} /></button>}</div>
+      {activeCell && project ? <>
+        <div className="max-h-[calc(100vh-240px)] overflow-y-auto p-5">
+          <div className="mb-5 rounded-xl border border-[#ead8bd] bg-[#fff7ef] px-4 py-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="truncate text-sm font-bold">{project.name}</div><div className="mt-1 text-xs text-[#8a8371]">{selectedDateLabel}</div></div><span className="whitespace-nowrap rounded-full bg-[#fbeee1] px-2.5 py-1 text-[10px] font-bold text-[#b8611f]">{formatNumber(totalHours)}h total</span></div></div>
+          <div className="mb-3 text-[10px] font-bold uppercase tracking-[.08em] text-[#a99e8a]">Time Blocks</div>
+          <div className="space-y-3">{blocks.map((block, index) => <div key={block.id} className="rounded-xl border border-[#ece5d8] bg-[#fffdf9] p-4">
+            <div className="mb-3 flex items-center justify-between"><span className="text-xs font-bold">Block {index + 1}</span><button type="button" onClick={() => onRemoveBlock(block.id)} className="text-[#a99e8a] hover:text-[#d64545]" aria-label={`Delete block ${index + 1}`}><Trash2 size={14} /></button></div>
+            <div className="grid grid-cols-2 gap-3"><label><span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[.07em] text-[#a99e8a]">From</span><input value={block.startTime} onChange={(event) => onUpdateBlockStart(block, event.target.value)} type="time" className="h-11 w-full rounded-[10px] border border-[#e4daca] bg-[#faf8f3] px-3 text-sm font-semibold outline-none focus:border-[#d97a34]" /></label><label><span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[.07em] text-[#a99e8a]">To</span><input value={block.endTime} onChange={(event) => onUpdateBlock(block.id, { endTime: event.target.value })} type="time" className="h-11 w-full rounded-[10px] border border-[#e4daca] bg-[#faf8f3] px-3 text-sm font-semibold outline-none focus:border-[#d97a34]" /></label></div>
+            <div className="mt-3 flex items-center justify-between border-t border-dashed border-[#e6dccb] pt-3 text-sm"><span className="text-[#8a8371]">Duration</span><strong className="text-lg text-[#d97a34]">{formatNumber(timeBlockHours(block))}h</strong></div>
+            <label className="mt-3 block"><span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[.07em] text-[#a99e8a]">Notes</span><textarea value={block.notes} onChange={(event) => onUpdateBlock(block.id, { notes: event.target.value })} rows={2} placeholder="What did you work on?" className="w-full resize-none rounded-[10px] border border-[#e4daca] bg-[#faf8f3] px-3 py-2 text-sm outline-none focus:border-[#d97a34]" /></label>
+          </div>)}</div>
+          <button type="button" onClick={onAddBlock} className="mt-4 w-full rounded-xl border border-dashed border-[#d9c5a6] px-4 py-3 text-xs font-bold text-[#9b611d] hover:border-[#d97a34] hover:bg-[#fff7ef]"><Plus size={14} className="mr-1 inline" /> Add another block</button>
         </div>
-        {activeCell && project && (
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs">
-            <span className="font-semibold text-gray-500">{selectedDateLabel}</span>
-            <span className="rounded-full bg-accent-light px-2 py-1 font-bold text-accent">Hours Added {totalHours}h Total</span>
-          </div>
-        )}
-      </div>
-
-      {activeCell && project ? (
-        <>
-          <div className="max-h-[calc(100vh-230px)] space-y-3 overflow-y-auto px-4 py-3">
-            <div className="space-y-3">
-              <div className="text-xs font-bold uppercase tracking-wide text-gray-400">Time Blocks</div>
-              {blocks.map((block, index) => (
-                <div key={block.id} className="rounded-lg border border-[#E5E7EB] bg-warm-bg/60 p-3">
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <div className="text-xs font-bold text-[#2F3437]">Block {index + 1}</div>
-                    <button
-                      type="button"
-                      onClick={() => onRemoveBlock(block.id)}
-                      className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-bold text-gray-500 hover:bg-white hover:text-status-error"
-                      title="Delete block"
-                    >
-                      <Trash2 size={12} /> Delete
-                    </button>
-                  </div>
-                  <div className="grid gap-2">
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_72px] xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_72px]">
-                    <label className="block">
-                      <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-400">From</span>
-                      <input value={block.startTime} onChange={(event) => onUpdateBlockStart(block, event.target.value)} type="time" className="w-full rounded-lg border border-[#E5E7EB] bg-white px-2 py-1.5 text-xs font-semibold outline-none focus:border-accent" aria-label="From time" />
-                    </label>
-                    <label className="block">
-                      <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-400">To</span>
-                      <input value={block.endTime} onChange={(event) => onUpdateBlock(block.id, { endTime: event.target.value })} type="time" className="w-full rounded-lg border border-[#E5E7EB] bg-white px-2 py-1.5 text-xs font-semibold outline-none focus:border-accent" aria-label="To time" />
-                    </label>
-                    <label className="block">
-                      <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-400">Hours</span>
-                      <input value={timeBlockHours(block)} onChange={(event) => onUpdateBlockHours(block, event.target.value)} type="number" min="0" max="24" step="0.25" className="w-full rounded-lg border border-[#E5E7EB] bg-white px-2 py-1.5 text-xs font-semibold outline-none focus:border-accent" aria-label="Hours" />
-                    </label>
-                    </div>
-                    <label className="block">
-                      <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-400">Notes</span>
-                      <textarea value={block.notes} onChange={(event) => onUpdateBlock(block.id, { notes: event.target.value })} placeholder={`${timeBlockHours(block)}h note`} rows={2} className="w-full resize-none rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm outline-none focus:border-accent" />
-                    </label>
-                  </div>
-                </div>
-              ))}
-              <Button variant="ghost" className="w-full" icon={<Plus size={14} />} onClick={onAddBlock}>
-                Add Another Block
-              </Button>
-            </div>
-          </div>
-          <div className="sticky bottom-0 border-t border-[#E5E7EB] bg-white px-4 py-3">
-            <Button className="w-full" disabled={!!saving || !hasTimeBlocks} onClick={onSaveDraft}>
-              {saving === 'draft' ? 'Saving' : 'Save'}
-            </Button>
-          </div>
-        </>
-      ) : (
-        <div className="px-4 py-10 text-center text-sm text-gray-500">
-          Pick an editable weekday cell to manage its time blocks.
-        </div>
-      )}
+        <div className="border-t border-[#ece5d8] p-4"><Button className="w-full bg-[#1f2430] hover:bg-[#303747]" disabled={!!saving || !hasTimeBlocks} onClick={onSaveDraft}>{saving === 'draft' ? 'Saving…' : 'Save Entry'}</Button></div>
+      </> : <div className="px-6 py-14 text-center"><Clock3 size={28} className="mx-auto text-[#d8cbb5]" /><div className="mt-3 text-sm font-bold">Pick a day cell</div><p className="mt-1 text-xs leading-5 text-[#8a8371]">Select an editable weekday cell to add or update its time blocks.</p></div>}
     </aside>
   );
+
 }
 
 export function TimesheetsPage() {
@@ -2966,7 +2848,7 @@ export function TimesheetsPage() {
   const availableProjectOptions = useMemo(() => {
     const preferred = [
       ...actualProjects,
-      ...projects.filter((project) => !project.disabled && ['POC', 'BRK', 'TRN', 'MTG', 'ADM'].includes(project.code)),
+      ...projects.filter((project) => !project.disabled && ['POC', 'TRN', 'MTG', 'ADM'].includes(project.code)),
     ];
     const unique = new Map<string, TimesheetProject>();
     preferred.forEach((project) => unique.set(project.id || project.code, project));
@@ -3207,13 +3089,6 @@ export function TimesheetsPage() {
     });
   };
 
-  const updateBlockHours = (block: TimesheetRow, hoursValue: string) => {
-    const hours = Number(hoursValue);
-    updateBlock(block.id, {
-      endTime: endTimeFromHours(block.startTime, Number.isFinite(hours) ? hours : 0),
-    });
-  };
-
   const removeBlock = (rowId: string) => {
     setSubmitCompliance(null);
     setComplianceCheckMessage(null);
@@ -3430,466 +3305,179 @@ export function TimesheetsPage() {
     setWeekStart(toDateInput(startOfLocalWeek(new Date(`${dateValue}T00:00:00`))));
   };
 
-  const summaryItems = [
-    { label: 'Logged', value: `${rows.filter((row) => !leaveByDate.has(row.workDate)).reduce((sum, row) => sum + timeBlockHours(row), 0)}h` },
-    { label: 'Working', value: `${currentWeek?.working_hours || 0}h` },
-    { label: 'Break', value: `${currentWeek?.break_hours || 0}h` },
-    { label: 'Leave', value: `${currentWeek?.leave_hours || 0}h` },
-    { label: 'Overtime', value: `${currentWeek?.overtime_hours || 0}h`, warning: !!currentWeek?.overtime_hours },
-  ];
+  const loggedHours = rows.filter((row) => !leaveByDate.has(row.workDate)).reduce((sum, row) => sum + timeBlockHours(row), 0);
+  const targetHours = currentWeek?.weekly_limit_hours || 40;
+  const regularHours = Math.min(targetHours, loggedHours);
+  const overtimeHours = Math.max(0, loggedHours - targetHours);
+  const remainingHours = Math.max(0, targetHours - loggedHours);
+  const projectColors = ['#d97a34', '#4b5673', '#5b8c5a', '#e0a23a', '#8a6a3a', '#778199'];
+  const projectBreakdown = gridProjects.map((project, index) => ({
+    project,
+    hours: projectTotal(project),
+    color: projectColors[index % projectColors.length],
+  }));
+  const maxProjectHours = Math.max(1, ...projectBreakdown.map((item) => item.hours));
+  const dailyDistribution = weekDates.map((dateValue) => {
+    const dateKey = toDateInput(dateValue);
+    const segments = projectBreakdown.map((item) => ({ ...item, hours: cellTotal(item.project, dateKey) })).filter((item) => item.hours > 0);
+    return { dateValue, dateKey, total: segments.reduce((sum, segment) => sum + segment.hours, 0), segments };
+  });
+  const maxDailyHours = Math.max(8, ...dailyDistribution.map((day) => day.total));
+  const statusText = !currentWeek?.status || currentWeek.status === 'not_started' ? 'draft' : currentWeek.status;
+  const statusTone = statusText === 'approved' ? 'bg-[#e5f3e5] text-[#3f7d3f]' : statusText === 'submitted' ? 'bg-[#fff1d8] text-[#a86a11]' : statusText === 'rejected' ? 'bg-[#fcecec] text-[#d64545]' : 'bg-[#fbeee1] text-[#b8611f]';
 
   return (
-    <PageShell title="Timesheets" description="Fill weekly project hours and submit them for approval.">
-      {error && (
-        <div className="mb-5 rounded-lg border border-status-error/20 bg-status-error/10 px-4 py-3 text-sm text-status-error">
-          {error}
-        </div>
-      )}
-      {success && (
-        <div className="mb-5 rounded-lg border border-status-success/20 bg-status-success/10 px-4 py-3 text-sm text-status-success">
-          {success}
-        </div>
-      )}
-      {complianceCheckMessage && (
-        <div className="mb-5 rounded-lg border border-status-warning/20 bg-status-warning/10 px-4 py-3 text-sm text-status-warning">
-          {complianceCheckMessage}
-        </div>
-      )}
-      {submitCompliance && (
-        <div className="mb-5">
-          <AllocationCompliancePanel
-            report={submitCompliance}
-            open={submitComplianceOpen}
-            onToggle={() => setSubmitComplianceOpen((current) => !current)}
-            action={(
-              <>
-                <Button
-                  variant="ghost"
-                  disabled={!!saving}
-                  onClick={() => {
-                    setSubmitCompliance(null);
-                    setSuccess('Review your time blocks, then submit again when ready.');
-                  }}
-                >
-                  Go Back and Review
-                </Button>
-                <Button disabled={!!saving} onClick={submitAfterComplianceWarning} icon={<CheckCircle2 size={15} />}>
-                  {saving === 'submit' ? 'Submitting' : 'Submit Anyway'}
-                </Button>
-              </>
-            )}
-          />
-        </div>
-      )}
-      {!!currentWeek?.warnings?.length && !selectedWeekApproved && (
-        <div className="mb-5 rounded-lg border border-status-warning/20 bg-status-warning/10 px-4 py-3 text-sm text-status-warning">
-          {currentWeek.warnings.map((warning) => (
-            <div key={warning}>{warning}</div>
-          ))}
-        </div>
-      )}
-      {!requiresTimesheet && (
-        <div className="mb-5 rounded-lg border border-status-warning/20 bg-status-warning/10 px-4 py-3 text-sm text-status-warning">
-          Timesheet submission may not be required for your workforce type. You can still save hours if your manager asks for it.
-        </div>
-      )}
-      {selectedWeekSubmitted && (
-        <div className="mb-5 rounded-lg border border-[#E5E7EB] bg-white px-4 py-3 text-sm text-gray-500">
-          This timesheet is submitted to {currentWeek?.submitted_to || 'your manager'} and awaiting approval. Recall the submission if you need to make changes.
-        </div>
-      )}
-      {selectedWeekApproved && (
-        <div className="mb-5 rounded-lg border border-status-success/20 bg-status-success/10 px-4 py-3 text-sm text-status-success">
-          This timesheet was approved{currentWeek?.reviewed_by ? ` by ${currentWeek.reviewed_by}` : ''}{currentWeek?.reviewed_at ? ` on ${formatDateTime(currentWeek.reviewed_at)}` : ''}. {currentWeek?.overtime_hours ? `${currentWeek.overtime_hours}h overtime is approved with this timesheet. ` : ''}It is now locked.
-        </div>
-      )}
-      {selectedWeekRejected && (
-        <div className="mb-5 rounded-lg border border-status-error/20 bg-status-error/10 px-4 py-3 text-sm text-status-error">
-          This timesheet was rejected{currentWeek?.reviewed_by ? ` by ${currentWeek.reviewed_by}` : ''}. {currentWeek?.reviewer_notes || 'Update the entries and submit it again.'}
-        </div>
-      )}
-
-      {taskModalOpen && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/35 px-4">
-          <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-[#E5E7EB] bg-warm-card shadow-card-lg">
-            <div className="flex items-center justify-between border-b border-[#E5E7EB] px-6 py-4">
-              <div>
-                <div className="text-lg font-bold text-[#2F3437]">Add Task</div>
-                <div className="text-xs text-gray-500">Create a work item for this week. Hours are saved only after Save Draft or Submit.</div>
-              </div>
-              <button
-                onClick={closeTaskModal}
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-400 hover:bg-hover-bg hover:text-[#2F3437]"
-                title="Close"
-              >
-                <X size={17} />
-              </button>
-            </div>
-            <div className="grid gap-5 px-6 py-5 md:grid-cols-2">
-              {taskModalError && (
-                <div className="rounded-lg border border-status-error/20 bg-status-error/10 px-3 py-2 text-sm text-status-error md:col-span-2">
-                  {taskModalError}
-                </div>
-              )}
-              <label className="space-y-1.5 md:col-span-2">
-                <span className="text-xs font-semibold text-gray-500">Work Item</span>
-                <select
-                  value={taskDraft.projectKey}
-                  onChange={(event) => {
-                    setTaskModalError(null);
-                    const selected = availableProjectOptions.find((item) => (item.id || item.code) === event.target.value);
-                    setTaskDraft((current) => ({
-                      ...current,
-                      projectKey: event.target.value,
-                      entryCode: selected?.id ? 'PRJ' : selected?.code || current.entryCode,
-                    }));
-                  }}
-                  className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2.5 text-sm font-semibold outline-none focus:border-olive"
-                >
-                  <optgroup label="PROJECTS">
-                    {actualProjects.length ? actualProjects.map((project) => (
-                      <option key={project.id || project.code} value={project.id || project.code}>
-                        {formatWorkItemOption(project)}
-                      </option>
-                    )) : (
-                      <option disabled value="__no_projects">No active project assignments</option>
-                    )}
-                  </optgroup>
-                  <optgroup label="INTERNAL ACTIVITIES">
-                    {internalActivityOptions.map((project) => (
-                      <option key={project.code} value={project.code}>
-                        {formatWorkItemOption(project)}
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="LEAVE ACTIVITIES">
-                    {leaveActivityOptions.map((project) => (
-                      <option key={project.code} value={project.code} disabled={project.disabled}>
-                        {formatWorkItemOption(project)}
-                      </option>
-                    ))}
-                  </optgroup>
-                </select>
-              </label>
-
-              <label className="space-y-1.5">
-                <span className="text-xs font-semibold text-gray-500">Activity Code</span>
-                <select
-                  value={taskDraft.entryCode}
-                  onChange={(event) => {
-                    setTaskModalError(null);
-                    setTaskDraft((current) => ({
-                      ...current,
-                      entryCode: event.target.value,
-                    }));
-                  }}
-                  disabled={taskActivityCodeOptions.length <= 1}
-                  className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2.5 text-sm font-semibold outline-none focus:border-olive"
-                >
-                  {taskActivityCodeOptions.map((code) => <option key={code.code} value={code.code}>{code.code} - {code.label}</option>)}
-                </select>
-                <div className="text-[11px] leading-4 text-gray-400">
-                  Activity code is controlled by the selected work item.
-                </div>
-              </label>
-
-              <label className="space-y-1.5">
-                <span className="text-xs font-semibold text-gray-500">Date Range</span>
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="date"
-                    value={taskDraft.startDate}
-                    onChange={(event) => { setTaskModalError(null); setTaskDraft((current) => ({ ...current, startDate: event.target.value })); }}
-                    className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-2.5 text-sm outline-none focus:border-olive"
-                  />
-                  <input
-                    type="date"
-                    value={taskDraft.endDate}
-                    onChange={(event) => { setTaskModalError(null); setTaskDraft((current) => ({ ...current, endDate: event.target.value })); }}
-                    className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-2.5 text-sm outline-none focus:border-olive"
-                  />
-                </div>
-              </label>
-
-              <label className="space-y-1.5 md:col-span-2">
-                <span className="text-xs font-semibold text-gray-500">Description</span>
-                <textarea
-                  value={taskDraft.description}
-                  onChange={(event) => { setTaskModalError(null); setTaskDraft((current) => ({ ...current, description: event.target.value })); }}
-                  placeholder="Example: Coding and self unit testing"
-                  rows={3}
-                  className="w-full resize-none rounded-lg border border-[#E5E7EB] bg-white px-3 py-2.5 text-sm outline-none focus:border-olive"
-                />
-              </label>
-            </div>
-            <div className="flex justify-end gap-2 border-t border-[#E5E7EB] px-6 py-4">
-              <Button variant="ghost" onClick={closeTaskModal}>Cancel</Button>
-              <Button disabled={!taskDraft.projectKey} icon={<Plus size={15} />} onClick={addProjectRow}>Add Task</Button>
-            </div>
+    <div className="-mx-[var(--layout-main-padding-x)] -my-[var(--layout-main-padding-y)] min-h-screen bg-[#f7f3ec] px-[var(--layout-main-padding-x)] py-[var(--layout-main-padding-y)] text-[#1f2430] animate-fade-up">
+      <header className="mb-5 flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+        <div><h1 className="text-2xl font-bold tracking-tight">Timesheet</h1><p className="mt-1 text-sm text-[#8a8371]">Log weekly project hours and submit for approval.</p></div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex h-10 items-center overflow-hidden rounded-[10px] border border-[#e4daca] bg-white">
+            <button type="button" disabled={!!saving} onClick={() => setWeekStart(toDateInput(addDays(new Date(`${weekStart}T00:00:00`), -7)))} className="h-full px-3 text-[#8a8371] hover:bg-[#fbf5ea] disabled:opacity-50" aria-label="Previous week">‹</button>
+            <label className="flex h-full items-center border-x border-[#eee5d7] px-3"><input type="date" value={weekStart} onChange={(event) => jumpToWeek(event.target.value)} className="w-0 opacity-0" aria-label="Select week" /><span className="whitespace-nowrap text-sm font-bold">{weekLabel(weekStart)}</span></label>
+            <button type="button" disabled={!!saving} onClick={() => setWeekStart(toDateInput(addDays(new Date(`${weekStart}T00:00:00`), 7)))} className="h-full px-3 text-[#8a8371] hover:bg-[#fbf5ea] disabled:opacity-50" aria-label="Next week">›</button>
           </div>
+          <Button variant="soft" disabled={!!saving} onClick={() => setWeekStart(toDateInput(startOfLocalWeek()))}>This Week</Button>
+          <Button variant="ghost" icon={<RefreshCw size={15} />} disabled={!!saving || selectedWeekLocked} onClick={copyPreviousWeek}>Copy Previous</Button>
         </div>
-      )}
+      </header>
 
-      <Card className="mb-5 p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="text-sm font-bold text-[#2F3437]">Week of {weekLabel(weekStart)}</div>
-            <div className="mt-1 text-xs text-gray-500">Local timezone: {timeZone}</div>
+      {error && <div className="mb-4 rounded-xl border border-[#d64545]/20 bg-[#fcecec] px-4 py-3 text-sm text-[#d64545]">{error}</div>}
+      {success && <div className="mb-4 rounded-xl border border-[#5b8c5a]/20 bg-[#e5f3e5] px-4 py-3 text-sm text-[#3f7d3f]">{success}</div>}
+      {complianceCheckMessage && <div className="mb-4 rounded-xl border border-[#e0a23a]/25 bg-[#fff1d8] px-4 py-3 text-sm text-[#a86a11]">{complianceCheckMessage}</div>}
+      {submitCompliance && <div className="mb-4"><AllocationCompliancePanel report={submitCompliance} open={submitComplianceOpen} onToggle={() => setSubmitComplianceOpen((current) => !current)} action={<><Button variant="ghost" disabled={!!saving} onClick={() => { setSubmitCompliance(null); setSuccess('Review your time blocks, then submit again when ready.'); }}>Go Back and Review</Button><Button disabled={!!saving} onClick={submitAfterComplianceWarning} icon={<CheckCircle2 size={15} />}>{saving === 'submit' ? 'Submitting' : 'Submit Anyway'}</Button></>} /></div>}
+      {!!currentWeek?.warnings?.length && !selectedWeekApproved && <div className="mb-4 rounded-xl border border-[#e0a23a]/25 bg-[#fff1d8] px-4 py-3 text-sm text-[#a86a11]">{currentWeek.warnings.map((warning) => <div key={warning}>{warning}</div>)}</div>}
+      {!requiresTimesheet && <div className="mb-4 rounded-xl border border-[#e0a23a]/25 bg-[#fff1d8] px-4 py-3 text-sm text-[#a86a11]">Timesheet submission may not be required for your workforce type. You can still save hours if your manager asks for it.</div>}
+      {selectedWeekSubmitted && <div className="mb-4 rounded-xl border border-[#ece5d8] bg-white px-4 py-3 text-sm text-[#8a8371]">This timesheet is awaiting approval from {currentWeek?.submitted_to || 'your manager'}. Recall it if changes are required.</div>}
+      {selectedWeekApproved && <div className="mb-4 rounded-xl border border-[#5b8c5a]/20 bg-[#e5f3e5] px-4 py-3 text-sm text-[#3f7d3f]">Approved{currentWeek?.reviewed_by ? ` by ${currentWeek.reviewed_by}` : ''}{currentWeek?.reviewed_at ? ` on ${formatDateTime(currentWeek.reviewed_at)}` : ''}. This week is locked.</div>}
+      {selectedWeekRejected && <div className="mb-4 rounded-xl border border-[#d64545]/20 bg-[#fcecec] px-4 py-3 text-sm text-[#d64545]">Rejected{currentWeek?.reviewed_by ? ` by ${currentWeek.reviewed_by}` : ''}. {currentWeek?.reviewer_notes || 'Update the entries and submit again.'}</div>}
+
+      {taskModalOpen && <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/35 p-4 backdrop-blur-sm">
+        <div className="w-full max-w-xl overflow-hidden rounded-2xl border border-[#ece5d8] bg-white shadow-[0_24px_70px_rgba(31,36,48,.22)]">
+          <div className="flex items-start justify-between border-b border-[#ece5d8] px-6 py-5"><div><h2 className="text-lg font-bold">Add Task</h2><p className="mt-1 text-xs text-[#8a8371]">Add a work item to {weekLabel(weekStart)}.</p></div><button type="button" onClick={closeTaskModal} className="rounded-lg p-2 text-[#8a8371] hover:bg-[#fbf5ea]" aria-label="Close add task"><X size={17} /></button></div>
+          <div className="space-y-5 px-6 py-5">
+            {taskModalError && <div className="rounded-lg border border-[#d64545]/20 bg-[#fcecec] px-3 py-2 text-sm text-[#d64545]">{taskModalError}</div>}
+            <label className="block"><span className="mb-2 block text-xs font-bold">Work Item</span><select value={taskDraft.projectKey} onChange={(event) => { setTaskModalError(null); const selected = availableProjectOptions.find((item) => (item.id || item.code) === event.target.value); setTaskDraft((current) => ({ ...current, projectKey: event.target.value, entryCode: selected?.id ? 'PRJ' : selected?.code || current.entryCode })); }} className="h-11 w-full rounded-[10px] border border-[#e4daca] bg-[#faf8f3] px-3 text-sm font-semibold outline-none focus:border-[#d97a34]"><optgroup label="PROJECTS">{actualProjects.length ? actualProjects.map((project) => <option key={project.id || project.code} value={project.id || project.code}>{formatWorkItemOption(project)}</option>) : <option disabled value="__no_projects">No active project assignments</option>}</optgroup><optgroup label="INTERNAL ACTIVITIES">{internalActivityOptions.map((project) => <option key={project.code} value={project.code}>{formatWorkItemOption(project)}</option>)}</optgroup><optgroup label="LEAVE ACTIVITIES">{leaveActivityOptions.map((project) => <option key={project.code} value={project.code} disabled={project.disabled}>{formatWorkItemOption(project)}</option>)}</optgroup></select></label>
+            <div><div className="mb-2 text-xs font-bold">Activity</div><div className="flex flex-wrap gap-2">{taskActivityCodeOptions.map((code) => <button key={code.code} type="button" onClick={() => setTaskDraft((current) => ({ ...current, entryCode: code.code }))} className={cn('rounded-full border px-3 py-2 text-xs font-bold transition', taskDraft.entryCode === code.code ? 'border-[#d97a34] bg-[#fbeee1] text-[#b8611f]' : 'border-[#e4daca] bg-[#faf8f3] text-[#8a8371] hover:border-[#d97a34]/50')}>{code.label}</button>)}</div><p className="mt-2 text-[11px] text-[#a99e8a]">Code {taskDraft.entryCode} is derived from the selected work item.</p></div>
+            <label className="block"><span className="mb-2 block text-xs font-bold">Description <span className="font-normal text-[#a99e8a]">(optional)</span></span><textarea value={taskDraft.description} onChange={(event) => setTaskDraft((current) => ({ ...current, description: event.target.value }))} rows={3} placeholder="What will you work on?" className="w-full resize-none rounded-[10px] border border-[#e4daca] bg-[#faf8f3] px-3 py-3 text-sm outline-none focus:border-[#d97a34]" /></label>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="flex h-9 items-center gap-2 rounded-btn border border-[#E5E7EB] bg-white px-3">
-              <span className="text-[12px] font-bold uppercase tracking-wide text-gray-400">Week</span>
-              <input
-                type="date"
-                value={weekStart}
-                onChange={(event) => jumpToWeek(event.target.value)}
-                className="bg-transparent text-[13px] font-semibold text-[#2F3437] outline-none"
-              />
-            </label>
-            <Button variant="soft" onClick={() => setWeekStart(toDateInput(startOfLocalWeek()))}>This Week</Button>
-            <Button variant="soft" icon={<RefreshCw size={15} />} disabled={!!saving || selectedWeekLocked} onClick={copyPreviousWeek}>
-              Copy Previous
-            </Button>
-            <Button variant="ghost" icon={<Trash2 size={15} />} disabled={!!saving || selectedWeekLocked} onClick={deleteTimesheet}>
-              Reset Week
-            </Button>
-          </div>
+          <div className="flex justify-end gap-2 border-t border-[#ece5d8] px-6 py-4"><Button variant="ghost" onClick={closeTaskModal}>Cancel</Button><Button disabled={!taskDraft.projectKey} icon={<Plus size={15} />} onClick={addProjectRow}>Add Task</Button></div>
         </div>
-      </Card>
+      </div>}
 
-      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-5">
-        {summaryItems.map((item) => (
-          <Card key={item.label} className="p-4">
-            <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">{item.label}</div>
-            <div className={cn('mt-1 text-xl font-bold', item.warning ? 'text-status-warning' : 'text-[#2F3437]')}>{item.value}</div>
-          </Card>
-        ))}
+      <section className="mb-5 flex flex-col gap-4 rounded-2xl border border-[#eadbc5] bg-[#fbf5ea] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3"><span className="text-[10px] font-bold uppercase tracking-[.08em] text-[#a99e8a]">Status</span><span className={cn('rounded-full px-3 py-1 text-xs font-bold capitalize', statusTone)}>● {statusText.replace('_', ' ')}</span></div>
+        <div className="flex flex-wrap gap-6 text-sm"><span className="text-[#8a8371]">Logged <strong className="ml-1 text-lg text-[#1f2430]">{formatNumber(loggedHours)}h</strong></span><span className="text-[#8a8371]">Target <strong className="ml-1 text-lg text-[#1f2430]">{formatNumber(targetHours)}h</strong></span><span className="text-[#8a8371]">Approver <strong className="ml-1 text-[#1f2430]">{currentWeek?.submitted_to || 'Not assigned'}</strong></span></div>
+      </section>
+
+      <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[{ label: 'Logged', value: `${formatNumber(loggedHours)}h`, detail: 'this week', color: '#d97a34' }, { label: 'Regular', value: `${formatNumber(regularHours)}h`, detail: 'within target', color: '#5b8c5a' }, { label: 'Overtime', value: `${formatNumber(overtimeHours)}h`, detail: overtimeHours ? 'above target' : '—', color: overtimeHours ? '#e0a23a' : '#c9bea9' }, { label: 'Remaining', value: `${formatNumber(remainingHours)}h`, detail: `to ${formatNumber(targetHours)}h target`, color: '#e0a23a' }].map((item) => <div key={item.label} className="rounded-2xl border border-[#ece5d8] bg-white p-5 shadow-[0_3px_10px_rgba(60,40,10,.025)]" style={{ borderTop: `3px solid ${item.color}` }}><div className="text-[10px] font-bold uppercase tracking-[.08em] text-[#a99e8a]">{item.label}</div><div className="mt-2 flex items-baseline gap-2"><strong className="text-[27px] tracking-[-.04em]">{item.value}</strong><span className="text-xs text-[#8a8371]">{item.detail}</span></div></div>)}
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-      <Card className="overflow-hidden">
-        {gridProjects.length > 0 && !selectedWeekLocked && (
-          <div className="flex justify-end border-b border-[#E5E7EB] px-5 py-3">
-            <Button size="sm" variant="ghost" icon={<Plus size={14} />} disabled={availableProjectOptions.length === 0} onClick={openTaskModal}>
-              Add Another Task
-            </Button>
-          </div>
-        )}
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1040px] text-left text-sm">
-            <thead className="bg-warm-bg text-[11px] uppercase tracking-wide text-gray-400">
-              <tr>
-                <th className="px-5 py-3 font-bold">Work Item</th>
-                {weekDates.map((dateValue) => {
-                  const isWeekend = isWeekendDate(dateValue);
-                  return (
-                    <th
-                      key={dateValue.toISOString()}
-                      className={cn('px-3 py-3 text-center font-bold', isWeekend && 'bg-gray-100 text-gray-400')}
-                    >
-                      {dateValue.toLocaleDateString('en-US', { weekday: 'short' })}
-                      <div className={cn('font-semibold normal-case text-gray-400', isWeekend && 'text-gray-300')}>
-                        {dateValue.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      </div>
-                    </th>
-                  );
-                })}
-                <th className="px-4 py-3 text-center font-bold">Total</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#E5E7EB]">
-              {loading ? (
-                <tr><td colSpan={9} className="px-5 py-8 text-center text-gray-500">Loading timesheet...</td></tr>
-              ) : gridProjects.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="px-5 py-10 text-center">
-                    <div className="text-sm font-bold text-[#2F3437]">Start by adding a work item</div>
-                    <div className="mx-auto mt-1 max-w-md text-sm text-gray-500">
-                      Choose one of your assigned projects or an internal activity. Then click a day cell to add exact start and end times.
-                    </div>
-                    <Button className="mt-5" icon={<Plus size={15} />} disabled={selectedWeekLocked || availableProjectOptions.length === 0} onClick={openTaskModal}>
-                      Add Task
-                    </Button>
-                  </td>
-                </tr>
-              ) : gridProjects.map((project) => (
-                <tr key={project.gridKey}>
-                  <td className="px-5 py-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate font-semibold text-[#2F3437]">
-                          {project.name}
-                          {project.duplicateLabel && <span className="ml-1 text-xs font-semibold text-gray-400">({project.duplicateLabel})</span>}
-                        </div>
-                        <div className="text-xs text-gray-400">
-                          {project.id && typeof project.allocation_percentage === 'number'
-                            ? `${project.code} · ${project.allocation_percentage}% allocated`
-                            : project.code}
-                        </div>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1">
-                        <button
-                          disabled={selectedWeekLocked}
-                          onClick={() => duplicateProjectRow(project)}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-hover-bg hover:text-olive disabled:opacity-40"
-                          title="Duplicate task"
-                        >
-                          <Copy size={14} />
-                        </button>
-                        <button
-                          disabled={selectedWeekLocked}
-                          onClick={() => removeProjectRow(project)}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-hover-bg hover:text-status-error disabled:opacity-40"
-                          title="Remove row"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  </td>
-                  {weekDates.map((dateValue) => {
-                    const dateKey = toDateInput(dateValue);
-                    const total = cellTotal(project, dateKey);
-                    const leave = leaveByDate.get(dateKey);
-                    const isWeekend = isWeekendDate(dateValue);
-                    const cellBlocks = rows.filter((row) => row.projectKey === project.gridKey && row.workDate === dateKey);
-                    return (
-                      <td key={dateKey} className={cn('px-3 py-3 align-top', isWeekend && 'bg-gray-50')}>
-                        <button
-                          data-timesheet-cell-anchor="true"
-                          disabled={selectedWeekLocked || !!leave || isWeekend}
-                          onClick={() => openCell(project, dateKey)}
-                          title={isWeekend ? 'Weekend entries are not allowed' : undefined}
-                          className={cn(
-                            'relative flex h-14 w-full flex-col items-center justify-center rounded-lg border px-2 text-center text-sm font-bold leading-tight transition-all',
-                            leave && 'h-16 text-xs',
-                            isWeekend
-                              ? 'cursor-not-allowed border-[#E5E7EB] bg-gray-50 text-gray-300'
-                              : leave
-                              ? 'cursor-not-allowed border-status-warning/20 bg-status-warning/10 text-status-warning'
-                              : activeCell?.projectKey === project.gridKey && activeCell.date === dateKey
-                              ? 'border-olive bg-olive/10 text-olive ring-2 ring-olive/10'
-                              : total > 0
-                                ? 'border-olive/20 bg-olive/5 text-[#2F3437] hover:border-olive/50'
-                                : 'border-[#E5E7EB] bg-white text-gray-300 hover:border-olive/30 hover:text-olive',
-                            isWeekend && !leave && total === 0 && 'bg-gray-50 text-gray-300 hover:bg-white'
-                          )}
-                        >
-                          {isWeekend ? '0h' : leave ? `${leave.status === 'approved' ? 'Approved' : 'Pending'} Leave` : total > 0 ? `${total}h` : '0h'}
-                          {leave && <div className="mt-0.5 whitespace-nowrap text-[10px] font-semibold leading-tight">{leave.hours}h {leave.leave_type}</div>}
-                          {!leave && total > 0 && <div className="mt-0.5 text-[10px] font-semibold text-gray-400">{cellBlocks.length} block{cellBlocks.length === 1 ? '' : 's'}</div>}
-                        </button>
-                      </td>
-                    );
-                  })}
-                  <td className="px-4 py-3 text-center font-bold text-[#2F3437]">{projectTotal(project)}h</td>
-                </tr>
-              ))}
-              {!loading && (
-                <tr className="bg-warm-bg/80">
-                  <td className="px-5 py-4 text-xs font-bold uppercase tracking-wide text-gray-400">Daily Total</td>
-                  {weekDates.map((dateValue) => {
-                    const dateKey = toDateInput(dateValue);
-                    const isWeekend = isWeekendDate(dateValue);
-                    const leave = leaveByDate.get(dateKey);
-                    const workedHours = dayTotal(dateKey);
-                    return (
-                      <td key={dateKey} className={cn('px-3 py-4 text-center text-sm font-bold text-[#2F3437]', isWeekend && 'bg-gray-100 text-gray-400')}>
-                        {leave ? (
-                          <div className="leading-tight">
-                            <div className="text-status-warning">{leave.hours}h leave</div>
-                            <div className="mt-0.5 text-[10px] font-semibold text-gray-400">{workedHours}h work</div>
-                          </div>
-                        ) : `${workedHours}h`}
-                      </td>
-                    );
-                  })}
-                  <td className="px-4 py-4 text-center text-sm font-bold text-olive">{rows.filter((row) => !leaveByDate.has(row.workDate)).reduce((sum, row) => sum + timeBlockHours(row), 0)}h</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
+        <div className="space-y-5">
+          <section className="overflow-hidden rounded-2xl border border-[#ece5d8] bg-white shadow-[0_3px_10px_rgba(60,40,10,.025)]">
+            <div className="flex items-center justify-between border-b border-[#ece5d8] px-5 py-4"><h2 className="text-[17px] font-bold">Work Items</h2>{!selectedWeekLocked && <Button size="sm" icon={<Plus size={14} />} disabled={!availableProjectOptions.length} onClick={openTaskModal}>Add Task</Button>}</div>
+            <div className="overflow-x-auto p-4"><div className="min-w-[1000px]">
+              <div className="grid grid-cols-[150px_repeat(7,minmax(0,1fr))_56px] gap-1 rounded-xl bg-[#faf8f3] px-2 py-3 text-[10px] font-bold uppercase tracking-[.06em] text-[#b09f82]"><div className="px-2">Work Item</div>{weekDates.map((dateValue) => <div key={dateValue.toISOString()} className={cn('text-center', isWeekendDate(dateValue) && 'opacity-55')}>{dateValue.toLocaleDateString('en-US', { weekday: 'short' })}<div className="mt-0.5 normal-case">{dateValue.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div></div>)}<div className="text-center">Total</div></div>
+              {loading ? <div className="py-10 text-center text-sm text-[#8a8371]">Loading timesheet…</div> : !gridProjects.length ? <div className="py-12 text-center"><div className="text-sm font-bold">Start by adding a work item</div><p className="mt-1 text-sm text-[#8a8371]">Choose an assigned project or internal activity, then select a day.</p><Button className="mt-4" icon={<Plus size={15} />} disabled={selectedWeekLocked || !availableProjectOptions.length} onClick={openTaskModal}>Add Task</Button></div> : gridProjects.map((project, projectIndex) => <div key={project.gridKey} className="grid grid-cols-[150px_repeat(7,minmax(0,1fr))_56px] items-center gap-1 border-b border-[#eee7dc] px-2 py-3 last:border-0">
+                <div className="flex min-w-0 items-center gap-2 px-2"><span className="h-10 w-1.5 shrink-0 rounded-full" style={{ background: projectColors[projectIndex % projectColors.length] }} /><div className="min-w-0 flex-1"><div className="truncate text-sm font-bold">{project.name}</div><div className="truncate text-[10px] text-[#a99e8a]">{project.code} · {project.id ? 'Project work' : codes.find((code) => code.code === project.code)?.label || project.code}</div></div><div className="flex flex-col"><button type="button" disabled={selectedWeekLocked} onClick={() => duplicateProjectRow(project)} className="text-[#a99e8a] hover:text-[#d97a34] disabled:opacity-30" aria-label={`Duplicate ${project.name}`}><Copy size={12} /></button><button type="button" disabled={selectedWeekLocked} onClick={() => removeProjectRow(project)} className="mt-1 text-[#a99e8a] hover:text-[#d64545] disabled:opacity-30" aria-label={`Remove ${project.name}`}><X size={12} /></button></div></div>
+                {weekDates.map((dateValue) => { const dateKey = toDateInput(dateValue); const total = cellTotal(project, dateKey); const leave = leaveByDate.get(dateKey); const weekend = isWeekendDate(dateValue); const blocks = rows.filter((row) => row.projectKey === project.gridKey && row.workDate === dateKey); const selected = activeCell?.projectKey === project.gridKey && activeCell.date === dateKey; return <div key={dateKey} className={cn('px-0.5', weekend && 'opacity-55')}><button type="button" disabled={selectedWeekLocked || !!leave || weekend} onClick={() => openCell(project, dateKey)} className={cn('flex h-14 w-full flex-col items-center justify-center rounded-[10px] border text-sm font-bold transition', weekend ? 'cursor-not-allowed border-[#ece5d8] bg-[#f3efe8] text-[#c7b99f]' : leave ? 'cursor-not-allowed border-[#d8dbe5] bg-[#edeef5] px-1 text-[10px] text-[#4b5673]' : selected ? 'border-2 border-[#d97a34] bg-[#fff7ef] text-[#b8611f] shadow-[0_3px_10px_rgba(217,122,52,.12)]' : total > 0 ? 'border-[#e7dccb] bg-white text-[#1f2430] hover:border-[#d97a34]/50' : 'border-[#ece5d8] bg-[#faf8f3] text-[#c2b59f] hover:border-[#d97a34]/40')}>{leave ? `${leave.hours}h leave` : `${formatNumber(total)}h`}{selected && total > 0 && <span className="mt-0.5 text-[9px] font-semibold text-[#d97a34]">{blocks.length} block{blocks.length === 1 ? '' : 's'}</span>}</button></div>; })}
+                <div className="text-center text-sm font-bold text-[#d97a34]">{formatNumber(projectTotal(project))}h</div>
+              </div>)}
+              {!loading && <div className="grid grid-cols-[150px_repeat(7,minmax(0,1fr))_56px] items-center gap-1 px-2 py-4"><div className="px-2 text-[10px] font-bold uppercase tracking-[.06em] text-[#a99e8a]">Daily Total</div>{weekDates.map((dateValue) => { const dateKey = toDateInput(dateValue); return <div key={dateKey} className={cn('text-center text-sm font-bold', isWeekendDate(dateValue) ? 'text-[#c7b99f]' : 'text-[#1f2430]')}>{formatNumber(dayTotal(dateKey))}h</div>; })}<div className="text-center text-sm font-bold text-[#d97a34]">{formatNumber(loggedHours)}h</div></div>}
+            </div></div>
+          </section>
 
-      <TimeEntryDetailsPanel
-        activeCell={activeCell}
-        project={selectedProject}
-        blocks={activeBlocks}
-        totalHours={activeBlocks.reduce((sum, block) => sum + timeBlockHours(block), 0)}
-        saving={saving}
-        hasTimeBlocks={hasTimeBlocks}
-        onClose={closeTimeBlockEditor}
-        onAddBlock={() => addBlock(selectedProject, activeCell?.date || weekStart)}
-        onUpdateBlock={updateBlock}
-        onUpdateBlockStart={updateBlockStart}
-        onUpdateBlockHours={updateBlockHours}
-        onRemoveBlock={removeBlock}
-        onSaveDraft={() => saveTimesheet('draft')}
-      />
+          <section className="rounded-2xl border border-[#ece5d8] bg-white p-5 shadow-[0_3px_10px_rgba(60,40,10,.025)] sm:p-6"><h2 className="mb-5 text-[17px] font-bold">Week Breakdown</h2><div className="grid gap-8 lg:grid-cols-2">
+            <div><div className="mb-4 text-[10px] font-bold uppercase tracking-[.08em] text-[#a99e8a]">By Project</div><div className="space-y-4">{projectBreakdown.length ? projectBreakdown.map((item) => <div key={item.project.gridKey}><div className="mb-2 flex items-center justify-between gap-3 text-sm"><span className="flex min-w-0 items-center gap-2"><span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: item.color }} /><span className="truncate">{item.project.name}</span></span><strong>{formatNumber(item.hours)}h</strong></div><div className="h-2 overflow-hidden rounded-full bg-[#eee8dd]"><div className="h-full rounded-full" style={{ width: `${(item.hours / maxProjectHours) * 100}%`, background: item.color }} /></div></div>) : <div className="text-sm text-[#8a8371]">Add work items to see the breakdown.</div>}</div></div>
+            <div><div className="mb-4 text-[10px] font-bold uppercase tracking-[.08em] text-[#a99e8a]">Daily Distribution</div><div className="flex h-32 items-end gap-2 border-b border-[#e6dccb]">{dailyDistribution.map((day) => <div key={day.dateKey} className="flex h-full min-w-0 flex-1 flex-col justify-end"><div className="flex w-full flex-col-reverse overflow-hidden rounded-t-lg" style={{ height: `${Math.max(4, (day.total / maxDailyHours) * 100)}%` }}>{day.segments.map((segment) => <div key={segment.project.gridKey} style={{ height: `${day.total ? (segment.hours / day.total) * 100 : 0}%`, background: segment.color }} title={`${segment.project.name}: ${segment.hours}h`} />)}</div><div className="mt-1.5 text-center text-[10px] text-[#a99e8a]">{day.dateValue.toLocaleDateString('en-US', { weekday: 'narrow' })}</div></div>)}</div><div className="mt-4 flex flex-wrap gap-x-4 gap-y-2">{projectBreakdown.map((item) => <span key={item.project.gridKey} className="flex items-center gap-1.5 text-[10px] text-[#8a8371]"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: item.color }} />{item.project.name}</span>)}</div></div>
+          </div></section>
+        </div>
+
+        <TimeEntryDetailsPanel activeCell={activeCell} project={selectedProject} blocks={activeBlocks} totalHours={activeBlocks.reduce((sum, block) => sum + timeBlockHours(block), 0)} saving={saving} hasTimeBlocks={hasTimeBlocks} onClose={closeTimeBlockEditor} onAddBlock={() => addBlock(selectedProject, activeCell?.date || weekStart)} onUpdateBlock={updateBlock} onUpdateBlockStart={updateBlockStart} onRemoveBlock={removeBlock} onSaveDraft={() => saveTimesheet('draft')} />
       </div>
 
-      <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="text-sm text-gray-500">
-          Logged: <span className="font-bold text-[#2F3437]">{rows.filter((row) => !leaveByDate.has(row.workDate)).reduce((sum, row) => sum + timeBlockHours(row), 0)}h</span>
-          {currentWeek && <span className="ml-3">Working: <span className="font-bold text-[#2F3437]">{currentWeek.working_hours}h</span></span>}
-          {currentWeek && <span className="ml-3">Break: <span className="font-bold text-[#2F3437]">{currentWeek.break_hours}h</span></span>}
-          {currentWeek && <span className="ml-3">Leave: <span className="font-bold text-[#2F3437]">{currentWeek.leave_hours}h</span></span>}
-          {currentWeek && <span className="ml-3">Regular: <span className="font-bold text-[#2F3437]">{currentWeek.regular_hours}h</span></span>}
-          {!!currentWeek?.overtime_hours && <span className="ml-3">Overtime: <span className="font-bold text-status-warning">{currentWeek.overtime_hours}h</span></span>}
-          {currentWeek?.submitted_to && currentWeek.status === 'submitted' && (
-            <span className="ml-3">Sent to: <span className="font-bold text-[#2F3437]">{currentWeek.submitted_to}</span></span>
-          )}
-          {currentWeek?.reviewed_by && ['approved', 'rejected'].includes(currentWeek.status) && (
-            <span className="ml-3">Reviewed by: <span className="font-bold text-[#2F3437]">{currentWeek.reviewed_by}</span></span>
-          )}
-          {currentWeek?.status && (
-            <span className="ml-3">Status: <Badge variant={currentWeek.status === 'approved' ? 'success' : currentWeek.status === 'submitted' ? 'warning' : currentWeek.status === 'rejected' ? 'error' : 'neutral'}>
-              {currentWeek.status.replace('_', ' ')}
-            </Badge></span>
-          )}
-        </div>
-        <div className="flex gap-2">
-          {selectedWeekSubmitted ? (
-            <Button variant="ghost" disabled={!!saving} onClick={recallTimesheet} icon={<RefreshCw size={15} />}>
-              {saving === 'draft' ? 'Recalling' : 'Recall Submission'}
-            </Button>
-          ) : selectedWeekApproved ? (
-            <Badge variant="success">approved</Badge>
-          ) : (
-            <>
-              <Button variant="ghost" disabled={!!saving || !hasTimeBlocks} onClick={() => saveTimesheet('draft')}>Save Draft</Button>
-              <Button disabled={!!saving || !hasTimeBlocks} onClick={() => saveTimesheet('submit')} icon={<CheckCircle2 size={15} />}>
-                {saving === 'submit' ? 'Submitting' : 'Submit Timesheet'}
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
-    </PageShell>
+      <footer className="mt-5 flex flex-col gap-4 rounded-2xl border border-[#ece5d8] bg-white px-5 py-4 shadow-[0_3px_10px_rgba(60,40,10,.025)] sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-sm text-[#8a8371]">You&apos;ve logged <strong className="text-[#1f2430]">{formatNumber(loggedHours)} of {formatNumber(targetHours)}h</strong> this week. <span className={remainingHours ? 'text-[#b8611f]' : 'text-[#5b8c5a]'}>{remainingHours ? `${formatNumber(remainingHours)}h remaining before target.` : 'Weekly target reached.'}</span></div>
+        <div className="flex gap-2">{selectedWeekSubmitted ? <Button variant="ghost" disabled={!!saving} onClick={recallTimesheet} icon={<RefreshCw size={15} />}>{saving === 'draft' ? 'Recalling…' : 'Recall Submission'}</Button> : selectedWeekApproved ? <span className="rounded-full bg-[#e5f3e5] px-4 py-2 text-xs font-bold text-[#3f7d3f]">Approved</span> : <><Button variant="ghost" disabled={!!saving || !hasTimeBlocks} onClick={() => saveTimesheet('draft')}>Save Draft</Button><Button disabled={!!saving || !hasTimeBlocks} onClick={() => saveTimesheet('submit')} icon={<CheckCircle2 size={15} />}>{saving === 'submit' ? 'Submitting…' : 'Submit for Approval'}</Button></>}</div>
+      </footer>
+    </div>
   );
+
 }
 
 export function CheckInOutPage() {
-  const { today, history, loading, actionLoading, error, checkIn, checkOut } = useAttendance();
+  const { today, history, joiningDate, loading, historyLoading, actionLoading, error, checkIn, checkOut, loadHistory } = useAttendance();
   const [clockNow, setClockNow] = useState(new Date());
+  const todayInput = toDateInput(new Date());
+  const defaultFrom = toDateInput(addDays(new Date(`${todayInput}T00:00:00`), -29));
+  const [dateFrom, setDateFrom] = useState(defaultFrom);
+  const [dateTo, setDateTo] = useState(todayInput);
+  const [filterError, setFilterError] = useState<string | null>(null);
   const isCheckedIn = !!today?.is_checked_in;
   const isCheckedOut = !!today?.check_out;
   const canCheckInToday = !loading && !isCheckedIn && !isCheckedOut;
+  const checkInDate = parseApiDateTime(today?.check_in);
+  const liveWorkedHours = isCheckedIn && checkInDate
+    ? Math.max(0, (clockNow.getTime() - checkInDate.getTime()) / 3_600_000)
+    : Number(today?.total_hours || 0);
   const sessionHours = isCheckedIn ? formatElapsed(today?.check_in, clockNow) : formatHours(today?.total_hours ?? null);
-  const statusLabel = loading
-    ? 'Loading attendance'
-    : isCheckedIn
-      ? 'Currently checked in'
-      : isCheckedOut
-        ? 'Checked out for today'
-        : 'Ready to check in';
-  const statusDescription = isCheckedIn
-    ? 'Your work session is active. Check out when you are done for the day.'
-    : isCheckedOut
-      ? 'You have completed today’s attendance. A new check-in will be available tomorrow.'
-      : 'Start your day by checking in. Your working time starts from that moment.';
-  const recentAttendance = history.filter((item) => item.date !== today?.date).slice(0, 3);
+  const ringPercent = Math.min(100, Math.max(0, (liveWorkedHours / 8) * 100));
+  const expectedOut = checkInDate ? new Date(checkInDate.getTime() + 8 * 3_600_000) : null;
+  const todayStatus = (today?.status || (isCheckedIn || isCheckedOut ? 'present' : 'absent')).replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+  const historyRows = history.map((row) => ({
+    date: formatDate(row.date),
+    checkIn: formatTime(row.check_in),
+    checkOut: row.check_out ? formatTime(row.check_out) : row.is_checked_in ? 'In progress' : 'Not recorded',
+    hours: formatHours(row.total_hours),
+    status: row.status.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()),
+  }));
+  const monday = new Date();
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  monday.setHours(0, 0, 0, 0);
+  const weekDays = Array.from({ length: 5 }, (_, index) => {
+    const day = addDays(monday, index);
+    const dateKey = toDateInput(day);
+    const record = history.find((item) => item.date === dateKey) || (today?.date === dateKey ? today : null);
+    const hours = dateKey === today?.date && isCheckedIn ? liveWorkedHours : Number(record?.total_hours || 0);
+    return { label: day.toLocaleDateString('en-US', { weekday: 'narrow' }), dateKey, record, hours };
+  });
+  const daysPresent = weekDays.filter(({ record }) => record && !['absent', 'leave', 'on_leave'].includes(record.status.toLowerCase())).length;
+  const weekHours = weekDays.reduce((sum, day) => sum + day.hours, 0);
+  const weekCheckIns = weekDays.map(({ record }) => parseApiDateTime(record?.check_in)).filter((value): value is Date => Boolean(value));
+  const averageCheckInMinutes = weekCheckIns.length
+    ? Math.round(weekCheckIns.reduce((sum, value) => sum + value.getHours() * 60 + value.getMinutes(), 0) / weekCheckIns.length)
+    : null;
+  const averageCheckInLabel = averageCheckInMinutes === null
+    ? '—'
+    : new Date(2000, 0, 1, Math.floor(averageCheckInMinutes / 60), averageCheckInMinutes % 60).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+  useEffect(() => {
+    if (!joiningDate) return;
+    const allowedDefault = joiningDate > defaultFrom ? joiningDate : defaultFrom;
+    setDateFrom((current) => current < joiningDate ? allowedDefault : current);
+  }, [defaultFrom, joiningDate]);
+
+  const applyAttendanceFilter = () => {
+    if (!dateFrom || !dateTo) {
+      setFilterError('Select both a From date and a To date.');
+      return;
+    }
+    if (joiningDate && dateFrom < joiningDate) {
+      setFilterError(`From date cannot be before your joining date (${formatDate(joiningDate)}).`);
+      return;
+    }
+    if (dateTo > todayInput) {
+      setFilterError('To date cannot be in the future.');
+      return;
+    }
+    if (dateFrom > dateTo) {
+      setFilterError('From date must be on or before To date.');
+      return;
+    }
+    setFilterError(null);
+    loadHistory(dateFrom, dateTo);
+  };
 
   useEffect(() => {
     if (!isCheckedIn) return;
@@ -3897,146 +3485,90 @@ export function CheckInOutPage() {
     return () => window.clearInterval(intervalId);
   }, [isCheckedIn]);
 
+  const attendancePillClass = (status: string) => {
+    const normalized = status.toLowerCase();
+    if (normalized === 'present') return 'bg-[#e5f3e5] text-[#3f7d3f]';
+    if (normalized === 'late') return 'bg-[#fbeee1] text-[#b8611f]';
+    if (normalized.includes('leave')) return 'bg-[#edeef5] text-[#4b5673]';
+    if (normalized === 'absent') return 'bg-[#fcecec] text-[#d64545]';
+    return 'bg-[#f1eee7] text-[#8a8371]';
+  };
+
   return (
-    <PageShell title="Check In / Out" description="Track today's attendance and break time.">
-      {error && (
-        <div className="mb-5 max-w-3xl rounded-lg border border-status-error/20 bg-status-error/10 px-4 py-3 text-sm text-status-error">
-          {error}
+    <PageShell
+      title="Check In / Out"
+      description="Track today's attendance and working hours."
+      className="-mx-[var(--layout-main-padding-x)] -my-[var(--layout-main-padding-y)] min-h-screen bg-[#f7f3ec] px-[var(--layout-main-padding-x)] py-[var(--layout-main-padding-y)]"
+    >
+      {error && <div className="mb-5 rounded-xl border border-[#d64545]/20 bg-[#fcecec] px-4 py-3 text-sm text-[#d64545]">{error}</div>}
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(320px,1fr)] xl:items-start">
+        <div className="space-y-5">
+          <section className="rounded-[18px] border border-[#ece5d8] bg-white p-5 shadow-[0_3px_10px_rgba(60,40,10,.025)] sm:p-7">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center">
+              <div className="relative flex h-[166px] w-[166px] shrink-0 items-center justify-center rounded-full" style={{ background: `conic-gradient(#d97a34 ${ringPercent}%, #eee8dd ${ringPercent}% 100%)` }}>
+                <div className="flex h-[130px] w-[130px] flex-col items-center justify-center rounded-full bg-white text-center shadow-[inset_0_0_0_1px_rgba(236,229,216,.75)]">
+                  <span className="text-[10px] font-bold uppercase tracking-[.1em] text-[#a99e8a]">Worked</span>
+                  <strong className="mt-1 text-[27px] tracking-[-.04em] text-[#1f2430]">{loading ? '…' : sessionHours}</strong>
+                  <span className="mt-0.5 text-xs text-[#8a8371]">of 8h</span>
+                </div>
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className={cn('flex items-center gap-2 text-xs font-bold uppercase tracking-[.07em]', isCheckedIn ? 'text-[#3f7d3f]' : 'text-[#8a8371]')}>
+                  <span className={cn('h-3 w-3 rounded-full', isCheckedIn ? 'animate-pulse bg-[#43c979] ring-4 ring-[#e5f3e5]' : 'bg-[#b8b3a9] ring-4 ring-[#f1eee7]')} />
+                  {loading ? 'Loading' : isCheckedIn ? 'Checked In' : isCheckedOut ? 'Checked Out' : 'Not Checked In'}
+                </div>
+                <div className="mt-3 text-sm text-[#8a8371]">
+                  {today?.check_in ? <>Since <strong className="text-[#1f2430]">{formatTime(today.check_in)}</strong> · {formatDate(today.date)}</> : <>Ready for {formatDate(today?.date || todayInput)}</>}
+                </div>
+                <div className="mt-5">
+                  {isCheckedIn ? <Button onClick={checkOut} disabled={!!actionLoading} className="border-[#d97a34] bg-[#d97a34] px-6 shadow-[0_8px_18px_rgba(217,122,52,.2)] hover:bg-[#c9611f]" icon={<LogIn size={16} />}>{actionLoading === 'check-out' ? 'Checking Out…' : 'Check Out'}</Button> : canCheckInToday ? <Button onClick={checkIn} disabled={!!actionLoading} className="border-[#d97a34] bg-[#d97a34] px-6 shadow-[0_8px_18px_rgba(217,122,52,.2)] hover:bg-[#c9611f]" icon={<LogIn size={16} />}>{actionLoading === 'check-in' ? 'Checking In…' : 'Check In'}</Button> : isCheckedOut ? <span className="inline-flex rounded-full bg-[#e5f3e5] px-4 py-2 text-xs font-bold text-[#3f7d3f]">Today&apos;s attendance is complete</span> : null}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-7 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-[#ece5d8] bg-[#fffdf9] px-5 py-4"><div className="text-[10px] font-bold uppercase tracking-[.08em] text-[#a99e8a]">Check In</div><div className="mt-1.5 text-[19px] font-bold">{today?.check_in ? formatTime(today.check_in) : '—'}</div></div>
+              <div className="rounded-xl border border-[#ece5d8] bg-[#fffdf9] px-5 py-4"><div className="text-[10px] font-bold uppercase tracking-[.08em] text-[#a99e8a]">Expected Out</div><div className="mt-1.5 text-[19px] font-bold">{expectedOut ? expectedOut.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '—'}</div></div>
+              <div className="rounded-xl border border-[#ece5d8] bg-[#fffdf9] px-5 py-4"><div className="text-[10px] font-bold uppercase tracking-[.08em] text-[#a99e8a]">Status</div><div className={cn('mt-1.5 text-[19px] font-bold', todayStatus === 'Late' ? 'text-[#b8611f]' : todayStatus === 'Present' ? 'text-[#3f7d3f]' : 'text-[#4b5673]')}>{todayStatus}</div></div>
+            </div>
+          </section>
+
+          <section className="overflow-hidden rounded-2xl border border-[#ece5d8] bg-white shadow-[0_3px_10px_rgba(60,40,10,.025)]" aria-labelledby="attendance-history-heading">
+            <div className="flex flex-col gap-4 border-b border-[#ece5d8] px-5 py-5 sm:px-7 lg:flex-row lg:items-end lg:justify-between">
+              <div><h2 id="attendance-history-heading" className="text-[17px] font-bold">Attendance History</h2>{joiningDate && <p className="mt-1 text-xs text-[#8a8371]">Available from your joining date: {formatDate(joiningDate)}</p>}</div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                <label><span className="mb-1 block text-[10px] font-bold uppercase tracking-[.08em] text-[#a99e8a]">From</span><input type="date" value={dateFrom} min={joiningDate || undefined} max={dateTo || todayInput} onChange={(event) => { setDateFrom(event.target.value); setFilterError(null); }} className="h-10 rounded-[10px] border border-[#e4daca] bg-[#faf8f3] px-3 text-sm outline-none focus:border-[#d97a34]" /></label>
+                <label><span className="mb-1 block text-[10px] font-bold uppercase tracking-[.08em] text-[#a99e8a]">To</span><input type="date" value={dateTo} min={dateFrom || joiningDate || undefined} max={todayInput} onChange={(event) => { setDateTo(event.target.value); setFilterError(null); }} className="h-10 rounded-[10px] border border-[#e4daca] bg-[#faf8f3] px-3 text-sm outline-none focus:border-[#d97a34]" /></label>
+                <Button onClick={applyAttendanceFilter} disabled={historyLoading || loading} className="h-10">{historyLoading ? 'Loading…' : 'Apply'}</Button>
+              </div>
+            </div>
+            {filterError && <div className="mx-5 mt-4 rounded-lg border border-[#d64545]/20 bg-[#fcecec] px-4 py-3 text-sm text-[#d64545] sm:mx-7">{filterError}</div>}
+            {historyLoading ? <div className="px-7 py-10 text-center text-sm text-[#8a8371]">Loading attendance history…</div> : historyRows.length ? <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="bg-[#faf8f3] text-[10px] font-bold uppercase tracking-[.08em] text-[#a99e8a]"><tr><th className="px-7 py-3">Date</th><th className="px-5 py-3">Check In</th><th className="px-5 py-3">Check Out</th><th className="px-5 py-3">Hours</th><th className="px-5 py-3">Status</th></tr></thead><tbody className="divide-y divide-[#eee7dc]">{historyRows.map((row) => <tr key={row.date}><td className="px-7 py-4 font-bold">{row.date}</td><td className="px-5 py-4 text-[#8a8371]">{row.checkIn}</td><td className="px-5 py-4 text-[#8a8371]">{row.checkOut}</td><td className="px-5 py-4 text-[#8a8371]">{row.hours}</td><td className="px-5 py-4"><span className={cn('inline-flex rounded-full px-3 py-1 text-[11px] font-bold', attendancePillClass(row.status))}>{row.status}</span></td></tr>)}</tbody></table></div> : <div className="m-5 rounded-xl border border-dashed border-[#ddd1bc] px-5 py-9 text-center text-sm text-[#8a8371] sm:m-7">No attendance records found for this date range.</div>}
+          </section>
         </div>
-      )}
-      <div className="grid max-w-6xl gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
-        <Card className="relative overflow-hidden p-6 sm:p-7">
-          <div className="absolute right-6 top-6 h-24 w-24 rounded-full bg-olive/10 blur-2xl" />
-          <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-center gap-4">
-              <div className="relative">
-                {isCheckedIn && <span className="absolute inset-0 rounded-2xl bg-olive/20 animate-ping" />}
-                <div className={cn(
-                  'relative flex h-20 w-20 items-center justify-center rounded-2xl border text-olive',
-                  isCheckedIn ? 'border-olive/20 bg-olive/10' : isCheckedOut ? 'border-[#E5E7EB] bg-hover-bg text-olive-dark' : 'border-[#E5E7EB] bg-white'
-                )}>
-                  {isCheckedOut ? <CheckCircle2 size={34} /> : <Clock3 size={34} />}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm font-bold uppercase tracking-wide text-gray-400">{statusLabel}</div>
-                <div className="mt-1 text-5xl font-bold tracking-tight text-[#2F3437]">{loading ? '...' : sessionHours}</div>
-                <div className="mt-2 max-w-xl text-sm text-gray-500">{statusDescription}</div>
-              </div>
-            </div>
 
-            <div className="flex shrink-0 flex-wrap gap-2 lg:flex-col">
-              {isCheckedIn ? (
-                <Button onClick={checkOut} disabled={!!actionLoading} icon={<LogIn size={15} />}>
-                  {actionLoading === 'check-out' ? 'Checking Out' : 'Check Out'}
-                </Button>
-              ) : (
-                <Button onClick={checkIn} disabled={!!actionLoading || !canCheckInToday} icon={<LogIn size={15} />}>
-                  {actionLoading === 'check-in' ? 'Checking In' : 'Check In'}
-                </Button>
-              )}
-              <Button variant="ghost" disabled>Breaks coming soon</Button>
+        <div className="space-y-5">
+          <section className="rounded-2xl border border-[#ece5d8] bg-white p-5 shadow-[0_3px_10px_rgba(60,40,10,.025)] sm:p-7">
+            <div className="mb-6 flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#fbeee1] text-[#d97a34]"><CalendarClock size={18} /></span><h2 className="text-[17px] font-bold">Today&apos;s Timeline</h2></div>
+            <div className="relative ml-1 space-y-0">
+              <div className="absolute bottom-6 left-[6px] top-3 w-0.5 bg-[#e3d8c6]" />
+              <div className="relative flex gap-4 pb-7"><span className={cn('relative z-10 mt-1 h-3.5 w-3.5 shrink-0 rounded-full ring-4 ring-white', today?.check_in ? 'bg-[#d97a34]' : 'border-2 border-[#d8cbb5] bg-white')} /><div><div className="text-sm font-bold">Checked in</div><div className="mt-0.5 text-xs text-[#8a8371]">{today?.check_in ? formatTime(today.check_in) : 'Not recorded'}</div></div></div>
+              <div className="relative flex gap-4"><span className={cn('relative z-10 mt-1 h-3.5 w-3.5 shrink-0 rounded-full ring-4 ring-white', today?.check_out ? 'bg-[#d97a34]' : 'border-2 border-[#d8cbb5] bg-white')} /><div><div className={cn('text-sm font-bold', today?.check_out ? 'text-[#1f2430]' : 'text-[#8a8371]')}>Check out</div><div className="mt-0.5 text-xs text-[#a99e8a]">{today?.check_out ? formatTime(today.check_out) : isCheckedIn ? 'Pending — still working' : 'Not recorded'}</div></div></div>
             </div>
-          </div>
+          </section>
 
-          <div className="relative mt-7 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-lg border border-[#E5E7EB] bg-white px-4 py-3">
-              <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Check In</div>
-              <div className="mt-1 text-lg font-bold text-[#2F3437]">{formatTime(today?.check_in)}</div>
-            </div>
-            <div className="rounded-lg border border-[#E5E7EB] bg-white px-4 py-3">
-              <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Check Out</div>
-              <div className="mt-1 text-lg font-bold text-[#2F3437]">{today?.check_out ? formatTime(today.check_out) : isCheckedIn ? 'In progress' : 'Not recorded'}</div>
-            </div>
-            <div className="rounded-lg border border-[#E5E7EB] bg-white px-4 py-3">
-              <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Status</div>
-              <div className="mt-1"><Badge variant={isCheckedIn ? 'success' : isCheckedOut ? 'neutral' : 'warning'}>{today?.status?.replace(/_/g, ' ') || 'not checked in'}</Badge></div>
-            </div>
-          </div>
-
-          {isCheckedOut && (
-            <div className="relative mt-4 rounded-lg border border-olive/15 bg-olive/5 px-4 py-3 text-sm text-olive-dark">
-              You cannot check in again after checking out for the day. This prevents duplicate attendance sessions for the same date.
-            </div>
-          )}
-        </Card>
-
-        <div className="grid gap-5">
-          <Card className="p-5">
-            <CardHeader title="Today Timeline" icon={<CalendarClock size={17} />} />
-            <div className="mt-4 space-y-4">
-              {[
-                { label: 'Checked in', value: formatTime(today?.check_in), active: !!today?.check_in },
-                { label: 'Checked out', value: today?.check_out ? formatTime(today.check_out) : isCheckedIn ? 'Waiting' : 'Not recorded', active: !!today?.check_out },
-              ].map((item, index) => (
-                <div key={item.label} className="flex gap-3">
-                  <div className="flex flex-col items-center">
-                    <div className={cn('h-3 w-3 rounded-full', item.active ? 'bg-olive' : 'bg-[#DDE3EA]')} />
-                    {index === 0 && <div className="mt-1 h-10 w-px bg-[#E5E7EB]" />}
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold text-[#2F3437]">{item.label}</div>
-                    <div className="text-sm text-gray-500">{item.value}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          <Card className="p-5">
-            <CardHeader title="Recent Days" icon={<CalendarCheck size={17} />} />
-            <div className="mt-3 divide-y divide-[#E5E7EB]">
-              {recentAttendance.length ? recentAttendance.map((item) => (
-                <div key={item.id || item.date} className="flex items-center justify-between gap-3 py-3 text-sm">
-                  <div>
-                    <div className="font-semibold text-[#2F3437]">{formatDate(item.date)}</div>
-                    <div className="text-xs text-gray-500">{formatTime(item.check_in)} - {item.check_out ? formatTime(item.check_out) : 'In progress'}</div>
-                  </div>
-                  <div className="font-bold text-[#2F3437]">{formatHours(item.total_hours)}</div>
-                </div>
-              )) : (
-                <div className="py-6 text-sm text-gray-500">No recent attendance yet.</div>
-              )}
-            </div>
-          </Card>
+          <section className="rounded-2xl border border-[#eadbc5] bg-[#fbf5ea] p-5 shadow-[0_3px_10px_rgba(60,40,10,.02)] sm:p-7">
+            <h2 className="mb-5 text-[17px] font-bold">This Week</h2>
+            <div className="space-y-4 text-sm"><div className="flex justify-between"><span className="text-[#8a6a3a]">Days present</span><strong>{daysPresent} / 5</strong></div><div className="flex justify-between"><span className="text-[#8a6a3a]">Total hours</span><strong>{formatHours(weekHours)}</strong></div><div className="flex justify-between"><span className="text-[#8a6a3a]">Avg. check-in</span><strong>{averageCheckInLabel}</strong></div></div>
+            <div className="mt-5 border-t border-[#e2d3bc] pt-4"><div className="grid grid-cols-5 gap-2">{weekDays.map((day) => <div key={day.dateKey} className="text-center"><div className="flex h-12 items-center justify-center rounded-lg bg-[#d97a34] text-[10px] font-bold text-white" style={{ opacity: day.hours > 0 ? Math.max(.45, Math.min(1, day.hours / 8)) : .14 }}>{day.hours > 0 ? `${Math.round(day.hours * 10) / 10}h` : '—'}</div><div className="mt-1.5 text-[11px] text-[#a78254]">{day.label}</div></div>)}</div></div>
+          </section>
         </div>
       </div>
     </PageShell>
   );
-}
 
-export function AttendanceHistoryPage() {
-  const { history, loading, error } = useAttendance();
-  const rows = history.length
-    ? history.map((row) => ({
-      date: formatDate(row.date),
-      checkIn: formatTime(row.check_in),
-      checkOut: row.check_out ? formatTime(row.check_out) : row.is_checked_in ? 'In progress' : 'Not recorded',
-      hours: formatHours(row.total_hours),
-      status: row.status.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()),
-    }))
-    : attendanceRows;
-
-  return (
-    <PageShell title="Attendance History" description="Review daily check-ins, check-outs, and status.">
-      {error && (
-        <div className="mb-5 rounded-lg border border-status-error/20 bg-status-error/10 px-4 py-3 text-sm text-status-error">
-          {error}
-        </div>
-      )}
-      {loading && <div className="mb-4 text-sm text-gray-500">Loading attendance history...</div>}
-      <SimpleTable
-        headers={['Date', 'Check In', 'Check Out', 'Hours', 'Status']}
-        rows={rows.map((row) => [
-          <span className="font-semibold">{row.date}</span>,
-          row.checkIn,
-          row.checkOut,
-          row.hours,
-          <Badge variant={row.status === 'Late' ? 'warning' : 'success'}>{row.status}</Badge>,
-        ])}
-      />
-    </PageShell>
-  );
 }
 
 export function EmployeeRequestsPage() {
@@ -4048,7 +3580,7 @@ export function EmployeeRequestsPage() {
             <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-olive/10 text-olive">
               <Send size={18} />
             </div>
-            <div className="text-sm font-bold text-[#2F3437]">{request}</div>
+            <div className="text-sm font-bold text-[var(--color-brand-navy)]">{request}</div>
             <div className="mt-1 text-xs text-gray-500">Dummy request workflow</div>
           </Card>
         ))}
@@ -4178,7 +3710,7 @@ export function CompanyHandbookPage() {
             <CardHeader title="Holiday Handbook" icon={<BookOpen size={17} />} />
             <div className="grid gap-4 px-5 py-5 lg:grid-cols-[1.4fr_1fr]">
               <div>
-                <h2 className="text-xl font-bold text-[#2F3437]">Leave and holiday policy guide</h2>
+                <h2 className="text-xl font-bold text-[var(--color-brand-navy)]">Leave and holiday policy guide</h2>
                 <p className="mt-2 text-sm leading-6 text-gray-500">
                   Use this handbook to understand which leave type to apply, how holidays affect working days,
                   and what requires manager or HR approval. Your visible leave types may vary based on your profile,
@@ -4202,10 +3734,10 @@ export function CompanyHandbookPage() {
             <CardHeader title="Leave Types" icon={<WalletCards size={17} />} />
             <div className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-4">
               {leavePolicies.map((policy) => (
-                <div key={policy.code} className="rounded-xl border border-[#E5E7EB] bg-white p-4">
+                <div key={policy.code} className="rounded-xl border border-[var(--color-border)] bg-white p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="text-sm font-bold text-[#2F3437]">{policy.name}</div>
+                      <div className="text-sm font-bold text-[var(--color-brand-navy)]">{policy.name}</div>
                       <div className="mt-1 text-xs font-semibold uppercase tracking-wide text-gray-400">{policy.code}</div>
                     </div>
                     <Badge variant="neutral">{policy.badge}</Badge>
@@ -4213,7 +3745,7 @@ export function CompanyHandbookPage() {
                   <div className="mt-4 space-y-3 text-sm">
                     <div>
                       <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Balance</div>
-                      <div className="mt-1 font-semibold text-[#2F3437]">{policy.balance}</div>
+                      <div className="mt-1 font-semibold text-[var(--color-brand-navy)]">{policy.balance}</div>
                     </div>
                     <div>
                       <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Use For</div>
@@ -4237,11 +3769,11 @@ export function CompanyHandbookPage() {
             <CardHeader title="Holiday Types" icon={<CalendarCheck size={17} />} />
             <div className="grid gap-3 p-5 md:grid-cols-2">
               {holidayPolicies.map((holiday) => (
-                <div key={holiday.title} className="rounded-xl border border-[#E5E7EB] bg-white p-4">
+                <div key={holiday.title} className="rounded-xl border border-[var(--color-border)] bg-white p-4">
                   <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-accent-light text-accent">
                     <CalendarCheck size={18} />
                   </div>
-                  <div className="text-sm font-bold text-[#2F3437]">{holiday.title}</div>
+                  <div className="text-sm font-bold text-[var(--color-brand-navy)]">{holiday.title}</div>
                   <p className="mt-2 text-sm leading-6 text-gray-600">{holiday.description}</p>
                   <p className="mt-2 text-xs leading-5 text-gray-500">{holiday.detail}</p>
                 </div>
@@ -4251,7 +3783,7 @@ export function CompanyHandbookPage() {
 
           <div className="grid gap-4 lg:grid-cols-3">
             <Card className="p-4">
-              <div className="flex items-center gap-2 text-sm font-bold text-[#2F3437]">
+              <div className="flex items-center gap-2 text-sm font-bold text-[var(--color-brand-navy)]">
                 <Briefcase size={16} className="text-accent" />
                 Region Rules
               </div>
@@ -4261,7 +3793,7 @@ export function CompanyHandbookPage() {
               </p>
             </Card>
             <Card className="p-4">
-              <div className="flex items-center gap-2 text-sm font-bold text-[#2F3437]">
+              <div className="flex items-center gap-2 text-sm font-bold text-[var(--color-brand-navy)]">
                 <Clock3 size={16} className="text-accent" />
                 Working Days
               </div>
@@ -4271,7 +3803,7 @@ export function CompanyHandbookPage() {
               </p>
             </Card>
             <Card className="p-4">
-              <div className="flex items-center gap-2 text-sm font-bold text-[#2F3437]">
+              <div className="flex items-center gap-2 text-sm font-bold text-[var(--color-brand-navy)]">
                 <CheckCircle2 size={16} className="text-accent" />
                 Approvals
               </div>
@@ -4361,16 +3893,16 @@ export function EmployeeNotificationsPage() {
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-olive/10 text-olive">
               <Bell size={22} />
             </div>
-            <div className="text-sm font-bold text-[#2F3437]">No notifications yet</div>
+            <div className="text-sm font-bold text-[var(--color-brand-navy)]">No notifications yet</div>
             <div className="mt-1 text-xs text-gray-500">Approval updates and HR alerts will appear here.</div>
           </div>
         ) : (
-          <div className="divide-y divide-[#E5E7EB]">
+          <div className="divide-y divide-[var(--color-border)]">
             {items.map((item) => (
               <div key={item.id} className={cn('grid gap-3 px-5 py-4 md:grid-cols-[1fr_150px_120px]', !item.is_read && 'bg-olive/5')}>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <div className="truncate text-sm font-bold text-[#2F3437]">{item.title}</div>
+                    <div className="truncate text-sm font-bold text-[var(--color-brand-navy)]">{item.title}</div>
                     {!item.is_read && <span className="h-2 w-2 shrink-0 rounded-full bg-olive" />}
                   </div>
                   <div className="mt-1 text-sm text-gray-500">{item.message || 'New update'}</div>

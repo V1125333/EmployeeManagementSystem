@@ -43,6 +43,12 @@ class AllocationOut(BaseModel):
     employee_email: str | None = None
     project_id: str | None = None
     project_name: str | None = None
+    project_code: str | None = None
+    project_client_name: str | None = None
+    project_status: str | None = None
+    project_start_date: date | None = None
+    project_end_date: date | None = None
+    project_location: str | None = None
     manager_id: str
     manager_name: str | None = None
     allocation_percentage: int

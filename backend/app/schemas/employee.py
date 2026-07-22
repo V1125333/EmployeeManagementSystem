@@ -26,6 +26,9 @@ class AddEmployeeRequest(BaseModel):
     reporting_manager: str
     joining_date: date
     work_location: str
+    work_city: Optional[str] = Field(default=None, max_length=120)
+    work_state: Optional[str] = Field(default=None, max_length=120)
+    work_country: Optional[str] = Field(default=None, max_length=120)
 
 
 class AddEmployeeResponse(BaseModel):
@@ -47,11 +50,18 @@ class UpdateEmployeeRequest(BaseModel):
     country_code: Optional[str] = None
     date_of_birth: Optional[date] = None
     gender: Optional[str] = None
+    department: Optional[str] = Field(default=None, max_length=100)
     designation: Optional[str] = None
+    role: Optional[str] = Field(default=None, max_length=50)
     workforce_type: Optional[str] = None
     workforce_status: Optional[str] = None
     employment_status: Optional[str] = None
     work_location: Optional[str] = None
+    work_city: Optional[str] = Field(default=None, max_length=120)
+    work_state: Optional[str] = Field(default=None, max_length=120)
+    work_country: Optional[str] = Field(default=None, max_length=120)
+    reporting_manager: Optional[str] = Field(default=None, max_length=100)
+    joining_date: Optional[date] = None
     location: Optional[str] = None
     date_of_exit: Optional[date] = None
     inactive_reason: Optional[str] = None
@@ -66,6 +76,7 @@ class UpdateEmployeeRequest(BaseModel):
     mfa_enabled: Optional[bool] = None
     device_assigned: Optional[bool] = None
     notes: Optional[str] = None
+    change_reason: Optional[str] = Field(default=None, max_length=500)
 
 
 # ═══════════════════════════════════════
@@ -171,9 +182,6 @@ class ForgotPasswordInitiateRequest(BaseModel):
 class ForgotPasswordInitiateResponse(BaseModel):
     success: bool
     message: str
-    reset_token: Optional[str] = None
-    has_mfa: bool = False
-    expires_in_minutes: Optional[int] = None
 
 
 class ForgotPasswordVerifyMfaRequest(BaseModel):

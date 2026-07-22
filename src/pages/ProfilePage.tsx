@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Mail, Phone, MapPin, Calendar, Briefcase, Building2, User, Shield,
-  Heart, Home, Clock, Pencil, Camera, Trash2, Save, X, Loader2,
+  Briefcase, User, Heart, Pencil, Camera, Trash2, Save, X, Loader2, KeyRound,
 } from 'lucide-react';
 import { Card, Badge, Button } from '@/components/ui';
+import { AllocationMixBar } from '@/components/allocations/AllocationMixBar';
 import { AuditTimeline } from '@/components/audit/AuditTimeline';
 import { CareerProfilePanel } from '@/components/career/CareerProfilePanel';
+import { OrganizationChart } from '@/components/organization/OrganizationChart';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/utils/cn';
@@ -29,6 +30,9 @@ interface ProfileData {
   workforce_type: string;
   employment_status: string;
   work_location: string;
+  work_city: string | null;
+  work_state: string | null;
+  work_country: string | null;
   joining_date: string | null;
   reporting_manager: string;
   profile_image_url: string | null;
@@ -40,6 +44,9 @@ interface ProfileData {
   created_at: string;
   last_updated_at: string | null;
   updated_by: string | null;
+  last_login_at: string | null;
+  last_active_at: string | null;
+  mfa_enabled: boolean;
 }
 
 interface ProfileForm {
@@ -52,12 +59,17 @@ interface ProfileForm {
   emergency_contact_name: string;
   emergency_contact_phone: string;
   emergency_contact_relation: string;
+  work_city: string;
+  work_state: string;
+  work_country: string;
 }
 
 interface AllocationRecord {
   id: string;
   project_id: string | null;
   project_name: string | null;
+  project_code?: string | null;
+  project_location?: string | null;
   manager_name: string | null;
   allocation_percentage: number;
   allocation_role: string;
@@ -67,15 +79,11 @@ interface AllocationRecord {
   end_date: string | null;
 }
 
-interface AllocationSummaryRecord {
-  total_active_allocation_percentage: number;
-  available_capacity_percentage: number;
-  allocation_status: string;
-  active_projects_count: number;
-  next_end_date: string | null;
+interface AllocationDisplayRow extends AllocationRecord {
+  isDerivedAvailability?: boolean;
 }
 
-type ProfileTab = 'overview' | 'allocations' | 'activity' | 'career';
+type ProfileTab = 'overview' | 'organization' | 'allocations' | 'activity' | 'career';
 
 const roleLabels: Record<string, string> = {
   super_admin: 'Super Admin',
@@ -85,15 +93,9 @@ const roleLabels: Record<string, string> = {
   trainee: 'Trainee',
 };
 
-const statusVariant: Record<string, 'success' | 'warning' | 'error' | 'neutral' | 'info'> = {
-  active: 'success',
-  inactive: 'neutral',
-  onboarding: 'info',
-  offboarding: 'warning',
-};
-
 const allocationStatusVariant: Record<string, 'olive' | 'success' | 'warning' | 'error' | 'neutral' | 'info'> = {
   active: 'olive',
+  available: 'info',
   upcoming: 'info',
   completed: 'neutral',
   cancelled: 'error',
@@ -115,15 +117,6 @@ function makeInitials(name: string) {
   return name.split(' ').filter(Boolean).map((part) => part[0]).join('').toUpperCase().slice(0, 2);
 }
 
-function splitName(fullName: string) {
-  const parts = fullName.trim().split(/\s+/);
-  const firstName = parts.shift() || '';
-  return {
-    first_name: firstName,
-    last_name: parts.join(' ') || firstName,
-  };
-}
-
 function profileToForm(profile: ProfileData): ProfileForm {
   return {
     full_name: `${profile.first_name} ${profile.last_name}`.trim(),
@@ -135,6 +128,9 @@ function profileToForm(profile: ProfileData): ProfileForm {
     emergency_contact_name: profile.emergency_contact_name || '',
     emergency_contact_phone: profile.emergency_contact_phone || '',
     emergency_contact_relation: profile.emergency_contact_relation || '',
+    work_city: profile.work_city || '',
+    work_state: profile.work_state || '',
+    work_country: profile.work_country || '',
   };
 }
 
@@ -156,6 +152,69 @@ function formatShortDate(value: string | null) {
   });
 }
 
+function formatDateTime(value: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function formatTenure(joiningDate: string | null) {
+  const joined = parseDateOnly(joiningDate);
+  if (!joined) return 'Not available';
+  const today = new Date();
+  if (joined > today) return 'Starts soon';
+  let months = (today.getFullYear() - joined.getFullYear()) * 12 + today.getMonth() - joined.getMonth();
+  if (today.getDate() < joined.getDate()) months -= 1;
+  if (months < 12) return `${Math.max(0, months)} mo`;
+  const years = Math.floor(months / 12);
+  const remainingMonths = months % 12;
+  return remainingMonths ? `${years}y ${remainingMonths}m` : `${years} ${years === 1 ? 'yr' : 'yrs'}`;
+}
+
+function formatWorkLocation(city?: string | null, state?: string | null, country?: string | null) {
+  const locality = [city?.trim(), state?.trim()].filter(Boolean).join(', ');
+  return locality || country?.trim() || 'Location not set';
+}
+
+function parseDateOnly(value?: string | null) {
+  if (!value) return null;
+  const date = new Date(`${value.slice(0, 10)}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function addDays(value: Date, days: number) {
+  const next = new Date(value);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function toIsoDate(value: Date) {
+  return value.toISOString().slice(0, 10);
+}
+
+function isCurrentAllocation(allocation: AllocationRecord) {
+  if (allocation.status !== 'active') return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const start = parseDateOnly(allocation.start_date);
+  const end = parseDateOnly(allocation.end_date);
+  return Boolean(start && start <= today && (!end || end >= today));
+}
+
+function effectiveAllocationStatus(allocation: AllocationRecord) {
+  if (allocation.status === 'active' && !isCurrentAllocation(allocation)) {
+    return 'completed';
+  }
+  return allocation.status;
+}
+
 function formatAllocationStatus(value: string) {
   return value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
@@ -164,10 +223,42 @@ function projectDisplayName(allocation: AllocationRecord) {
   return allocation.project_name || 'Project not named';
 }
 
-function capacityTone(value: number) {
-  if (value >= 50) return 'bg-status-success text-status-success border-status-success/20';
-  if (value >= 20) return 'bg-status-warning text-status-warning border-status-warning/20';
-  return 'bg-status-error text-status-error border-status-error/20';
+function projectCode(allocation: AllocationRecord) {
+  return allocation.project_code || '-';
+}
+
+function buildAvailabilityRow(allocations: AllocationRecord[]): AllocationDisplayRow | null {
+  const currentAllocations = allocations.filter(isCurrentAllocation);
+  const activeTotal = currentAllocations.reduce(
+    (total, allocation) => total + Number(allocation.allocation_percentage || 0),
+    0
+  );
+  if (activeTotal >= 100) return null;
+
+  const endedDates = allocations
+    .filter((allocation) => allocation.status !== 'cancelled')
+    .map((allocation) => parseDateOnly(allocation.end_date))
+    .filter((value): value is Date => Boolean(value))
+    .sort((a, b) => b.getTime() - a.getTime());
+  const benchStart = endedDates[0] ? addDays(endedDates[0], 1) : new Date();
+  benchStart.setHours(0, 0, 0, 0);
+  const reviewDate = addDays(benchStart, 30);
+
+  return {
+    id: 'derived-availability',
+    project_id: null,
+    project_name: activeTotal === 0 ? 'Bench / Available' : 'Available Capacity',
+    project_code: activeTotal === 0 ? 'BENCH' : 'AVAILABLE',
+    project_location: allocations[0]?.project_location || 'Remote',
+    manager_name: currentAllocations[0]?.manager_name || allocations[0]?.manager_name || 'Resource Management',
+    allocation_percentage: 100 - activeTotal,
+    allocation_role: activeTotal === 0 ? 'Bench' : 'Available capacity',
+    billing_type: 'internal',
+    status: activeTotal === 0 ? 'bench' : 'available',
+    start_date: toIsoDate(benchStart),
+    end_date: toIsoDate(reviewDate),
+    isDerivedAvailability: true,
+  };
 }
 
 function normalizeRole(role: string | undefined) {
@@ -176,12 +267,6 @@ function normalizeRole(role: string | undefined) {
 
 function normalizedRoleKey(role: string | undefined) {
   return normalizeRole(role).toLowerCase().replace(/\s+/g, '_');
-}
-
-function canEditEmployeeProfile(userRole: string | undefined, viewerId: string | undefined, targetId: string | undefined) {
-  const isOwnProfile = Boolean(viewerId && targetId && viewerId === targetId);
-  const role = normalizedRoleKey(userRole);
-  return isOwnProfile || ['super_admin', 'admin', 'hr_admin', 'global_access'].includes(role);
 }
 
 function canViewEmployeeActivity(userRole: string | undefined) {
@@ -225,12 +310,30 @@ function InfoRow({
   value: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start gap-3 py-3 border-b border-[#E5E7EB] last:border-b-0">
+    <div className="flex items-start gap-3 py-3 border-b border-[var(--color-border)] last:border-b-0">
       <span className="text-gray-400 mt-0.5 shrink-0">{icon}</span>
       <div className="flex-1 min-w-0">
         <div className="text-[11px] text-gray-400 font-medium uppercase tracking-wider mb-0.5">{label}</div>
-        <div className="text-[14px] text-[#2F3437] font-medium break-words">{value || '—'}</div>
+        <div className="text-[14px] text-[var(--color-brand-navy)] font-medium break-words">{value || '—'}</div>
       </div>
+    </div>
+  );
+}
+
+function ProfileInfoItem({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400">{label}</div>
+      <div className="break-words text-[14px] font-semibold text-[var(--color-brand-navy)]">{value || '—'}</div>
+    </div>
+  );
+}
+
+function EmploymentRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-6 border-b border-[var(--color-border)] py-3.5 last:border-b-0">
+      <span className="text-[13px] text-gray-500">{label}</span>
+      <span className="text-right text-[14px] font-semibold text-[var(--color-brand-navy)]">{value || '—'}</span>
     </div>
   );
 }
@@ -253,15 +356,15 @@ function Field({
   options?: { value: string; label: string }[] | string[];
 }) {
   const inputClass = cn(
-    'w-full rounded-xl text-[14px] font-medium bg-warm-bg border text-[#2F3437]',
+    'w-full rounded-xl text-[14px] font-medium bg-warm-bg border text-[var(--color-brand-navy)]',
     'outline-none transition-all duration-150 focus:border-olive/40 focus:ring-2 focus:ring-olive/10',
-    error ? 'border-status-error/40' : 'border-[#E5E7EB]',
+    error ? 'border-status-error/40' : 'border-[var(--color-border)]',
     textarea ? 'px-3.5 py-3 min-h-[94px] resize-none' : 'px-3.5 py-2.5'
   );
 
   return (
     <div>
-      <label className="block text-[13px] font-semibold text-[#2F3437] mb-1.5">{label}</label>
+      <label className="block text-[13px] font-semibold text-[var(--color-brand-navy)] mb-1.5">{label}</label>
       {options ? (
         <select value={value} onChange={(e) => onChange(e.target.value)} className={inputClass}>
           {options.map((option) => {
@@ -298,12 +401,12 @@ export function ProfilePage() {
   const [removeImage, setRemoveImage] = useState(false);
   const [confirmRemoveEmergency, setConfirmRemoveEmergency] = useState(false);
   const [activeTab, setActiveTab] = useState<ProfileTab>(
-    requestedTab === 'allocations' || requestedTab === 'activity' || requestedTab === 'career' ? requestedTab : 'overview'
+    requestedTab === 'organization' || requestedTab === 'allocations' || requestedTab === 'activity' || requestedTab === 'career' ? requestedTab : 'overview'
   );
   const [allocations, setAllocations] = useState<AllocationRecord[]>([]);
-  const [allocationSummary, setAllocationSummary] = useState<AllocationSummaryRecord | null>(null);
   const [allocationsLoading, setAllocationsLoading] = useState(false);
   const [allocationsError, setAllocationsError] = useState('');
+  const [passwordResetLoading, setPasswordResetLoading] = useState(false);
 
   const loadProfile = async () => {
     if (!user?.email && !employeeIdParam) {
@@ -344,7 +447,7 @@ export function ProfilePage() {
   }, [employeeIdParam, user?.email, user?.id, user?.role]);
 
   useEffect(() => {
-    if (requestedTab === 'allocations' || requestedTab === 'activity' || requestedTab === 'overview' || requestedTab === 'career') {
+    if (requestedTab === 'organization' || requestedTab === 'allocations' || requestedTab === 'activity' || requestedTab === 'overview' || requestedTab === 'career') {
       setActiveTab(requestedTab);
     }
   }, [requestedTab]);
@@ -365,22 +468,8 @@ export function ProfilePage() {
         throw new Error(data.detail || 'Unable to load allocations');
       }
       setAllocations(Array.isArray(data) ? data : []);
-
-      const summaryRes = await fetch(`${API_BASE}/allocations/employee/${employeeId}/summary`, {
-        headers: {
-          'x-user-id': user?.id || employeeId,
-          'x-user-role': normalizeRole(user?.role),
-          'x-user-email': user?.email || profile?.work_email || '',
-        },
-      });
-      const summaryData = await summaryRes.json();
-      if (!summaryRes.ok) {
-        throw new Error(summaryData.detail || 'Unable to load allocation summary');
-      }
-      setAllocationSummary(summaryData);
     } catch (err) {
       setAllocations([]);
-      setAllocationSummary(null);
       setAllocationsError(err instanceof Error ? err.message : 'Unable to load allocations');
     } finally {
       setAllocationsLoading(false);
@@ -415,17 +504,82 @@ export function ProfilePage() {
       profile.emergency_contact_relation?.trim()
     )
   );
-  const canEditProfile = canEditEmployeeProfile(user?.role, user?.id, profile?.id);
+  const isOwnProfile = Boolean(profile && user && (profile.id === user.id || profile.work_email.toLowerCase() === user.email?.toLowerCase()));
+  const canEditProfile = isOwnProfile;
   const canViewActivity = canViewEmployeeActivity(user?.role);
   const visibleTabs = useMemo(
     () => [
       { key: 'overview' as const, label: 'Overview' },
+      { key: 'organization' as const, label: 'Organization' },
       { key: 'allocations' as const, label: 'Allocations' },
       ...(canViewActivity ? [{ key: 'activity' as const, label: 'Activity' }] : []),
       { key: 'career' as const, label: 'Career Profile' },
     ],
     [canViewActivity]
   );
+  const currentAllocations = useMemo(() => allocations.filter(isCurrentAllocation), [allocations]);
+  const allocationRows = useMemo<AllocationDisplayRow[]>(() => {
+    const availabilityRow = buildAvailabilityRow(allocations);
+    return availabilityRow ? [...allocations, availabilityRow] : allocations;
+  }, [allocations]);
+  const derivedAllocationSummary = useMemo(() => {
+    const totalActive = currentAllocations.reduce(
+      (total, allocation) => total + Number(allocation.allocation_percentage || 0),
+      0
+    );
+    const activeProjectIds = new Set(
+      currentAllocations.map((allocation) => allocation.project_id || allocation.project_name || allocation.id)
+    );
+    const activeEndDates = currentAllocations
+      .map((allocation) => allocation.end_date)
+      .filter(Boolean)
+      .sort() as string[];
+    let allocationStatus = 'bench';
+    if (totalActive > 100) allocationStatus = 'overallocated';
+    else if (totalActive === 100) allocationStatus = 'fully_allocated';
+    else if (totalActive > 0) allocationStatus = 'partially_allocated';
+
+    return {
+      total_active_allocation_percentage: totalActive,
+      available_capacity_percentage: Math.max(0, 100 - totalActive),
+      allocation_status: allocationStatus,
+      active_projects_count: activeProjectIds.size,
+      next_end_date: activeEndDates[0] || null,
+    };
+  }, [currentAllocations]);
+
+  const completeness = useMemo(() => {
+    if (!profile || !form) return { percent: 0, firstMissing: null as null | { label: string; sectionId: string } };
+    const fields = [
+      { value: form.full_name, label: 'your name', sectionId: 'profile-personal' },
+      { value: profile.work_email, label: 'your work email', sectionId: 'profile-personal' },
+      { value: form.personal_email, label: 'your personal email', sectionId: 'profile-personal' },
+      { value: form.phone, label: 'your phone number', sectionId: 'profile-personal' },
+      { value: form.date_of_birth, label: 'your date of birth', sectionId: 'profile-personal' },
+      { value: form.gender, label: 'your gender', sectionId: 'profile-personal' },
+      { value: form.current_address, label: 'your address', sectionId: 'profile-personal' },
+      { value: profile.department, label: 'your department', sectionId: 'profile-employment' },
+      { value: profile.designation, label: 'your designation', sectionId: 'profile-employment' },
+      { value: form.work_city, label: 'your work city', sectionId: 'profile-personal' },
+      { value: form.work_country, label: 'your work country', sectionId: 'profile-personal' },
+      { value: profile.joining_date, label: 'your joining date', sectionId: 'profile-employment' },
+      { value: form.emergency_contact_name, label: 'an emergency contact', sectionId: 'profile-emergency' },
+      { value: form.emergency_contact_phone, label: 'an emergency contact phone', sectionId: 'profile-emergency' },
+      { value: form.emergency_contact_relation, label: 'an emergency contact relationship', sectionId: 'profile-emergency' },
+    ];
+    const filled = fields.filter((field) => String(field.value || '').trim()).length;
+    const firstMissingField = fields.find((field) => !String(field.value || '').trim());
+    return {
+      percent: Math.round((filled / fields.length) * 100),
+      firstMissing: firstMissingField ? { label: firstMissingField.label, sectionId: firstMissingField.sectionId } : null,
+    };
+  }, [form, profile]);
+
+  const isOnline = useMemo(() => {
+    if (!profile?.last_active_at) return false;
+    const lastActive = new Date(profile.last_active_at).getTime();
+    return Number.isFinite(lastActive) && Date.now() - lastActive <= 15 * 60 * 1000;
+  }, [profile?.last_active_at]);
 
   useEffect(() => {
     if (activeTab === 'activity' && !canViewActivity) {
@@ -452,6 +606,30 @@ export function ProfilePage() {
     setErrors({});
     setConfirmRemoveEmergency(false);
     setEditMode(true);
+  };
+
+  const openProfileSection = (sectionId: string) => {
+    if (!editMode && canEditProfile && sectionId !== 'profile-employment') startEdit();
+    window.setTimeout(() => document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
+  };
+
+  const requestPasswordReset = async () => {
+    if (!profile || !isOwnProfile) return;
+    setPasswordResetLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/auth/forgot-password/initiate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: profile.work_email.toLowerCase() }),
+      });
+      const result = await res.json().catch(() => null);
+      if (!res.ok || !result?.success) throw new Error(result?.detail || result?.message || 'Could not start password reset.');
+      showToast({ message: 'Password reset instructions were sent to your work email.' });
+    } catch (err) {
+      showToast({ message: err instanceof Error ? err.message : 'Could not start password reset.' });
+    } finally {
+      setPasswordResetLoading(false);
+    }
   };
 
   const cancelEdit = () => {
@@ -509,7 +687,6 @@ export function ProfilePage() {
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
-    const nameParts = splitName(form.full_name);
     const headers = {
       'Content-Type': 'application/json',
       'x-user-id': user?.id || profile.id,
@@ -521,7 +698,6 @@ export function ProfilePage() {
     setSaving(true);
     try {
       const body = {
-        ...nameParts,
         personal_email: form.personal_email || null,
         phone: form.phone,
         date_of_birth: form.date_of_birth || null,
@@ -654,12 +830,12 @@ export function ProfilePage() {
     return (
       <div>
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-[#2F3437] tracking-tight mb-1">My Profile</h1>
+          <h1 className="text-2xl font-bold text-[var(--color-brand-navy)] tracking-tight mb-1">My Profile</h1>
           <p className="text-sm text-gray-500">Your personal and employment information</p>
         </div>
         <Card className="flex items-center justify-center py-20">
           <div className="text-center">
-            <div className="text-[15px] font-semibold text-[#2F3437] mb-1">Profile unavailable</div>
+            <div className="text-[15px] font-semibold text-[var(--color-brand-navy)] mb-1">Profile unavailable</div>
             <div className="text-sm text-gray-500">{error || 'Profile data is only available for registered employees.'}</div>
           </div>
         </Card>
@@ -669,23 +845,36 @@ export function ProfilePage() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-[#2F3437] tracking-tight mb-1">My Profile</h1>
-        <p className="text-sm text-gray-500">Your personal and employment information</p>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="mb-1 text-2xl font-bold tracking-tight text-[var(--color-brand-navy)]">{isOwnProfile ? 'My Profile' : 'Employee Profile'}</h1>
+          <p className="text-sm text-gray-500">{isOwnProfile ? 'Your personal and employment information.' : `${fullName}'s personal and employment information.`}</p>
+        </div>
+        {canEditProfile && (editMode ? (
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" icon={<X size={14} />} onClick={cancelEdit} disabled={saving}>Cancel</Button>
+            <Button icon={saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} onClick={saveProfile} disabled={!dirty || saving}>
+              {saving ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </div>
+        ) : (
+          <Button icon={<Pencil size={14} />} onClick={startEdit}>Edit Profile</Button>
+        ))}
       </div>
 
-      <Card className="mb-5">
-        <div className="px-6 py-6 flex flex-col gap-5 border-b border-[#E5E7EB] md:flex-row md:items-center md:justify-between">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            <div className="relative w-24 h-24 shrink-0">
+      <div className="relative mb-5 overflow-hidden rounded-3xl border border-[#ece0cb] bg-[#fbf5ea] px-6 py-7 text-[#1f2430] shadow-[0_10px_30px_rgba(60,40,10,0.05)] md:px-8">
+        <div className="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(217,122,52,0.16),transparent_70%)]" />
+        <div className="relative flex flex-col gap-7 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+            <div className="relative h-24 w-24 shrink-0">
               <button
                 type="button"
                 disabled={!editMode || !canEditProfile}
                 onClick={() => editMode && canEditProfile && fileInputRef.current?.click()}
                 className={cn(
-                  'w-24 h-24 rounded-full overflow-hidden bg-olive text-white flex items-center justify-center text-2xl font-bold',
-                  'ring-4 ring-olive/10 transition-all duration-200',
-                  editMode && canEditProfile && 'hover:ring-olive/25 cursor-pointer'
+                  'flex h-24 w-24 items-center justify-center overflow-hidden rounded-full bg-[linear-gradient(135deg,#e79a55,#c9611f)] text-2xl font-bold text-white',
+                  'ring-[3px] ring-white shadow-[0_4px_12px_rgba(201,97,31,0.25)] transition-all duration-200',
+                  editMode && canEditProfile && 'cursor-pointer hover:ring-white'
                 )}
               >
                 {currentImage ? (
@@ -711,43 +900,67 @@ export function ProfilePage() {
                   type="button"
                   onClick={handleRemoveImage}
                   title="Remove photo"
-                  className="absolute -right-1 -bottom-1 w-8 h-8 rounded-full bg-warm-card border border-[#E5E7EB] text-status-error flex items-center justify-center shadow-card hover:bg-status-error/5 transition-colors"
+                  className="absolute -right-1 -bottom-1 w-8 h-8 rounded-full bg-warm-card border border-[var(--color-border)] text-status-error flex items-center justify-center shadow-card hover:bg-status-error/5 transition-colors"
                 >
                   <Trash2 size={15} />
                 </button>
               )}
+              <span
+                title={isOnline ? 'Online' : 'Offline'}
+                className={cn('absolute bottom-1 right-1 h-4 w-4 rounded-full border-[3px] border-[#fbf5ea]', isOnline ? 'bg-emerald-400' : 'bg-gray-400')}
+              />
             </div>
 
             <div className="min-w-0">
-              <div className="text-xl font-bold text-[#2F3437] mb-0.5">{fullName}</div>
-              <div className="text-[14px] text-gray-500 mb-2">{profile.designation || roleLabels[profile.role] || profile.role}</div>
+              <div className="mb-0.5 text-2xl font-bold text-[#1f2430]">{fullName}</div>
+              <div className="mb-3 text-[14px] text-[#8a8371]">
+                {profile.designation || roleLabels[profile.role] || profile.role} <span className="text-[#8a8371]">·</span> {profile.department || 'Department not set'}
+              </div>
               <div className="flex flex-wrap gap-2">
-                <Badge variant={statusVariant[profile.employment_status] || 'neutral'}>
-                  {profile.employment_status}
-                </Badge>
-                <Badge variant="olive">{roleLabels[profile.role] || profile.role}</Badge>
-                <Badge variant="neutral">{profile.workforce_type}</Badge>
+                <span className="rounded-full bg-[#e5f3e5] px-3 py-1 text-xs font-bold text-[#3f7d3f]">• {formatAllocationStatus(profile.employment_status)}</span>
+                <span className="rounded-full bg-[#fbeee1] px-3 py-1 text-xs font-bold text-[#b8611f]">{roleLabels[profile.role] || profile.role}</span>
+                <span className="rounded-full bg-[#efe7d8] px-3 py-1 text-xs font-bold text-[#7a7263]">{formatAllocationStatus(profile.workforce_type)}</span>
               </div>
               {errors.image && <div className="mt-2 text-[12px] font-medium text-status-error">{errors.image}</div>}
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {canEditProfile && (editMode ? (
-              <>
-                <Button variant="ghost" icon={<X size={14} />} onClick={cancelEdit} disabled={saving}>Cancel</Button>
-                <Button icon={saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} onClick={saveProfile} disabled={!dirty || saving}>
-                  {saving ? 'Saving...' : 'Save Changes'}
-                </Button>
-              </>
-            ) : (
-              <Button icon={<Pencil size={14} />} onClick={startEdit}>Edit Profile</Button>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[
+              { label: 'Tenure', value: formatTenure(profile.joining_date), detail: profile.joining_date ? `Since ${formatShortDate(profile.joining_date)}` : 'Joining date not set' },
+              { label: 'Work Location', value: formatWorkLocation(profile.work_city, profile.work_state, profile.work_country), detail: profile.work_location || 'Work arrangement not set' },
+              { label: 'Reporting Manager', value: profile.reporting_manager || '—', detail: profile.reporting_manager ? 'Reports to' : 'No manager assigned' },
+            ].map((stat) => (
+              <div key={stat.label} className="min-w-[142px] rounded-2xl border border-[#ece0cb] bg-white px-5 py-4">
+                <div className="text-xs font-medium text-[#8a8371]">{stat.label}</div>
+                <div className="mt-1 max-w-[180px] truncate text-xl font-bold text-[#1f2430]" title={stat.value}>{stat.value}</div>
+                <div className="mt-1 max-w-[180px] truncate text-[11px] text-[#a99e8a]">{stat.detail}</div>
+              </div>
             ))}
           </div>
         </div>
+      </div>
+
+      <Card className="mb-5 p-5">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="text-[13px] font-bold text-[var(--color-brand-navy)]">Profile completeness</div>
+          <div className="text-[13px] font-bold text-[var(--color-brand-orange)]">{completeness.percent}%</div>
+        </div>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-[var(--color-border)]">
+            <div className="h-full rounded-full bg-gradient-to-r from-[var(--color-brand-orange)] to-olive transition-all" style={{ width: `${completeness.percent}%` }} />
+          </div>
+          {completeness.firstMissing ? (
+            <button type="button" onClick={() => openProfileSection(completeness.firstMissing!.sectionId)} className="text-left text-[13px] text-gray-500 hover:text-[var(--color-brand-orange)] lg:min-w-[300px] lg:text-right">
+              Add <span className="font-semibold text-[var(--color-brand-orange)]">{completeness.firstMissing.label}</span> to improve your profile.
+            </button>
+          ) : (
+            <div className="text-[13px] font-semibold text-status-success">Your profile is complete.</div>
+          )}
+        </div>
       </Card>
 
-      <div className="mb-5 flex border-b border-[#E5E7EB]">
+      <div className="mb-5 flex border-b border-[var(--color-border)]">
         {visibleTabs.map((tab) => (
           <button
             key={tab.key}
@@ -756,8 +969,8 @@ export function ProfilePage() {
             className={cn(
               'border-b-2 px-4 py-3 text-[13px] font-bold transition-colors',
               activeTab === tab.key
-                ? 'border-olive text-[#2F3437]'
-                : 'border-transparent text-gray-400 hover:text-[#2F3437]'
+                ? 'border-olive text-[var(--color-brand-navy)]'
+                : 'border-transparent text-gray-400 hover:text-[var(--color-brand-navy)]'
             )}
           >
             {tab.label}
@@ -766,15 +979,16 @@ export function ProfilePage() {
       </div>
 
       {activeTab === 'overview' && (
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-        <Card>
-          <div className="px-6 py-4 border-b border-[#E5E7EB]">
-            <div className="text-[13px] font-bold text-[#2F3437]">Personal Information</div>
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-5">
+        <div className="space-y-5 xl:col-span-3">
+        <Card id="profile-personal">
+          <div className="flex items-center gap-3 px-6 pt-6">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--color-brand-orange)]/10 text-[var(--color-brand-orange)]"><User size={16} /></div>
+            <div className="text-[15px] font-bold text-[var(--color-brand-navy)]">Personal Information</div>
           </div>
-          <div className="px-6 py-2">
+          <div className="px-6 pb-6 pt-5">
             {editMode ? (
-              <div className="grid grid-cols-1 gap-4 py-4 md:grid-cols-2">
-                <Field label="Full Name" value={form.full_name} onChange={(v) => updateForm('full_name', v)} error={errors.full_name} />
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                 <Field label="Personal Email" value={form.personal_email} onChange={(v) => updateForm('personal_email', v)} error={errors.personal_email} type="email" />
                 <Field label="Phone Number" value={form.phone} onChange={(v) => updateForm('phone', v)} error={errors.phone} />
                 <Field label="Date of Birth" value={form.date_of_birth} onChange={(v) => updateForm('date_of_birth', v)} type="date" />
@@ -784,39 +998,26 @@ export function ProfilePage() {
                 </div>
               </div>
             ) : (
-              <>
-                <InfoRow icon={<Mail size={15} />} label="Work Email" value={profile.work_email} />
-                <InfoRow icon={<Mail size={15} />} label="Personal Email" value={profile.personal_email} />
-                <InfoRow icon={<Phone size={15} />} label="Phone" value={profile.phone ? `${profile.country_code || ''} ${profile.phone}` : null} />
-                <InfoRow icon={<Calendar size={15} />} label="Date of Birth" value={formatDate(profile.date_of_birth)} />
-                <InfoRow icon={<User size={15} />} label="Gender" value={profile.gender ? profile.gender.replace(/_/g, ' ') : null} />
-                <InfoRow icon={<Home size={15} />} label="Address" value={profile.current_address} />
-              </>
+              <div className="grid grid-cols-1 gap-x-10 gap-y-6 md:grid-cols-2">
+                <ProfileInfoItem label="Work Email" value={profile.work_email} />
+                <ProfileInfoItem label="Personal Email" value={profile.personal_email} />
+                <ProfileInfoItem label="Phone" value={profile.phone ? `${profile.country_code || ''} ${profile.phone}`.trim() : null} />
+                <ProfileInfoItem label="Date of Birth" value={formatDate(profile.date_of_birth)} />
+                <ProfileInfoItem label="Gender" value={profile.gender ? formatAllocationStatus(profile.gender) : null} />
+                <ProfileInfoItem label="Address" value={profile.current_address} />
+              </div>
             )}
           </div>
         </Card>
 
-        <Card>
-          <div className="px-6 py-4 border-b border-[#E5E7EB]">
-            <div className="text-[13px] font-bold text-[#2F3437]">Employment Details</div>
+        <Card id="profile-emergency">
+          <div className="flex items-center gap-3 px-6 pt-6">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--color-brand-orange)]/10 text-[var(--color-brand-orange)]"><Heart size={16} /></div>
+            <div className="text-[15px] font-bold text-[var(--color-brand-navy)]">Emergency Contact</div>
           </div>
-          <div className="px-6 py-2">
-            <InfoRow icon={<Building2 size={15} />} label="Department" value={profile.department} />
-            <InfoRow icon={<Briefcase size={15} />} label="Designation" value={profile.designation} />
-            <InfoRow icon={<Shield size={15} />} label="Role" value={roleLabels[profile.role] || profile.role} />
-            <InfoRow icon={<User size={15} />} label="Reporting Manager" value={profile.reporting_manager} />
-            <InfoRow icon={<MapPin size={15} />} label="Work Location" value={profile.work_location} />
-            <InfoRow icon={<Calendar size={15} />} label="Joining Date" value={formatDate(profile.joining_date)} />
-          </div>
-        </Card>
-
-        <Card>
-          <div className="px-6 py-4 border-b border-[#E5E7EB]">
-            <div className="text-[13px] font-bold text-[#2F3437]">Emergency Contact</div>
-          </div>
-          <div className="px-6 py-2">
+          <div className="px-6 pb-6 pt-4">
             {editMode ? (
-              <div className="space-y-4 py-4">
+              <div className="space-y-4">
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <Field label="Contact Name *" value={form.emergency_contact_name} onChange={(v) => updateForm('emergency_contact_name', v)} error={errors.emergency_contact_name} />
                   <Field label="Contact Phone *" value={form.emergency_contact_phone} onChange={(v) => updateForm('emergency_contact_phone', v)} error={errors.emergency_contact_phone} />
@@ -829,7 +1030,7 @@ export function ProfilePage() {
                     {confirmRemoveEmergency ? (
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
-                          <div className="text-[13px] font-semibold text-[#2F3437]">Remove emergency contact?</div>
+                          <div className="text-[13px] font-semibold text-[var(--color-brand-navy)]">Remove emergency contact?</div>
                           <div className="text-[12px] text-gray-500">This clears the saved contact name, phone, and relationship.</div>
                         </div>
                         <div className="flex gap-2">
@@ -860,88 +1061,100 @@ export function ProfilePage() {
                 )}
               </div>
             ) : hasSavedEmergencyContact ? (
-              <>
-                <InfoRow icon={<Heart size={15} />} label="Contact Name" value={profile.emergency_contact_name} />
-                <InfoRow icon={<Phone size={15} />} label="Contact Phone" value={profile.emergency_contact_phone} />
-                <InfoRow icon={<User size={15} />} label="Relationship" value={profile.emergency_contact_relation} />
-              </>
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+                <ProfileInfoItem label="Contact Name" value={profile.emergency_contact_name} />
+                <ProfileInfoItem label="Contact Phone" value={profile.emergency_contact_phone} />
+                <ProfileInfoItem label="Relationship" value={profile.emergency_contact_relation} />
+              </div>
             ) : (
-              <div className="flex min-h-[180px] flex-col items-center justify-center text-center">
-                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-warm-bg text-olive">
-                  <Heart size={20} />
-                </div>
-                <div className="text-[14px] font-semibold text-[#2F3437]">No emergency contact on file.</div>
-                <div className="mt-1 text-[13px] text-gray-500">Edit your profile to add an emergency contact.</div>
+              <div className="flex min-h-[120px] flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--color-brand-orange)]/30 bg-[var(--color-brand-orange)]/[0.025] px-5 text-center">
+                <div className="text-[13px] text-gray-500">No emergency contact added yet.</div>
+                {canEditProfile && <button type="button" onClick={() => openProfileSection('profile-emergency')} className="mt-2 text-[13px] font-bold text-[var(--color-brand-orange)] hover:underline">+ Add contact</button>}
               </div>
             )}
           </div>
         </Card>
+        </div>
 
-        <Card>
-          <div className="px-6 py-4 border-b border-[#E5E7EB]">
-            <div className="text-[13px] font-bold text-[#2F3437]">Account Information</div>
+        <div className="space-y-5 xl:col-span-2">
+        <Card id="profile-employment">
+          <div className="flex items-center gap-3 px-6 pt-6">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-olive/10 text-olive"><Briefcase size={16} /></div>
+            <div className="text-[15px] font-bold text-[var(--color-brand-navy)]">Employment Details</div>
           </div>
-          <div className="px-6 py-2">
-            <InfoRow icon={<Shield size={15} />} label="Account Status" value={profile.is_active ? 'Active' : 'Deactivated'} />
-            <InfoRow icon={<Clock size={15} />} label="Member Since" value={formatDate(profile.created_at)} />
-            <InfoRow icon={<Clock size={15} />} label="Last Updated On" value={formatDate(profile.last_updated_at)} />
-            <InfoRow icon={<User size={15} />} label="Updated By" value={profile.updated_by} />
+          <div className="px-6 pb-4 pt-3">
+            <EmploymentRow label="Department" value={profile.department} />
+            <EmploymentRow label="Designation" value={profile.designation} />
+            <EmploymentRow label="Role" value={roleLabels[profile.role] || profile.role} />
+            <EmploymentRow label="Reporting Manager" value={profile.reporting_manager} />
+            <EmploymentRow label="Work Arrangement" value={profile.work_location} />
+            <EmploymentRow label="Work Location" value={formatWorkLocation(profile.work_city, profile.work_state, profile.work_country)} />
+            <EmploymentRow label="Employment Type" value={formatAllocationStatus(profile.workforce_type)} />
+            <EmploymentRow label="Joining Date" value={formatDate(profile.joining_date)} />
           </div>
         </Card>
+
+        <Card>
+          <div className="flex items-center gap-3 px-6 pt-6">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-500"><KeyRound size={16} /></div>
+            <div className="text-[15px] font-bold text-[var(--color-brand-navy)]">Account &amp; Security</div>
+          </div>
+          <div className="px-6 pb-5 pt-3">
+            <EmploymentRow label="Username" value={profile.work_email} />
+            <EmploymentRow label="Last Login" value={formatDateTime(profile.last_login_at) || 'Not recorded'} />
+            <EmploymentRow label="Two-Factor Authentication" value={<span className={profile.mfa_enabled ? 'text-status-success' : 'text-status-warning'}>{profile.mfa_enabled ? 'Enabled' : 'Not enabled'}</span>} />
+            {isOwnProfile && (
+              <Button className="mt-4" variant="ghost" icon={passwordResetLoading ? <Loader2 size={14} className="animate-spin" /> : <KeyRound size={14} />} onClick={requestPasswordReset} disabled={passwordResetLoading}>
+                {passwordResetLoading ? 'Sending reset link...' : 'Change password'}
+              </Button>
+            )}
+          </div>
+        </Card>
+        </div>
       </div>
+      )}
+
+      {activeTab === 'organization' && (
+        <OrganizationChart initialView="my-line" focusedEmployeeId={profile.id} />
       )}
 
       {activeTab === 'allocations' && (
         <div className="space-y-5">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {[
-              {
-                title: 'Current Allocation',
-                value: `${allocationSummary?.total_active_allocation_percentage ?? 0}%`,
-                progress: allocationSummary?.total_active_allocation_percentage ?? 0,
-              },
-              {
-                title: 'Available Capacity',
-                value: `${allocationSummary?.available_capacity_percentage ?? 0}%`,
-                progress: allocationSummary?.available_capacity_percentage ?? 0,
-                tone: capacityTone(allocationSummary?.available_capacity_percentage ?? 0),
-              },
-              {
-                title: 'Active Projects',
-                value: String(allocationSummary?.active_projects_count ?? 0),
-              },
-              {
-                title: 'Next End Date',
-                value: allocationSummary?.next_end_date ? formatShortDate(allocationSummary.next_end_date) : 'Open-ended',
-              },
-            ].map((item) => (
-              <Card key={item.title} className="p-5">
-                <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">{item.title}</div>
-                <div className={cn('mt-2 text-2xl font-bold text-[#2F3437]', item.tone && 'inline-flex rounded-lg border px-2.5 py-1 text-xl', item.tone)}>
-                  {item.value}
+            <Card className="p-5 md:col-span-2">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Allocation Mix</div>
+              <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
+                <div className="text-2xl font-bold text-[var(--color-brand-navy)]">
+                  {derivedAllocationSummary.total_active_allocation_percentage}% allocated
                 </div>
-                {typeof item.progress === 'number' && (
-                  <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-hover-bg">
-                    <div
-                      className="h-full rounded-full bg-olive transition-all"
-                      style={{ width: `${Math.min(100, Math.max(0, item.progress))}%` }}
-                    />
-                  </div>
-                )}
-              </Card>
-            ))}
+                <div className="text-sm font-bold text-status-success">
+                  {derivedAllocationSummary.available_capacity_percentage}% available
+                </div>
+              </div>
+              <AllocationMixBar allocated={derivedAllocationSummary.total_active_allocation_percentage} className="mt-4" />
+            </Card>
+            <Card className="p-5">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Active Projects</div>
+              <div className="mt-2 text-2xl font-bold text-[var(--color-brand-navy)]">{derivedAllocationSummary.active_projects_count}</div>
+            </Card>
+            <Card className="p-5">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Next End Date</div>
+              <div className="mt-2 text-2xl font-bold text-[var(--color-brand-navy)]">
+                {derivedAllocationSummary.next_end_date ? formatShortDate(derivedAllocationSummary.next_end_date) : 'None'}
+              </div>
+            </Card>
           </div>
 
           <div className="flex items-center gap-2">
             <span className="text-[12px] font-bold uppercase tracking-wide text-gray-400">Allocation Status</span>
-            <Badge variant={allocationStatusVariant[allocationSummary?.allocation_status || 'bench'] || 'neutral'}>
-              {formatAllocationStatus(allocationSummary?.allocation_status || 'bench')}
+            <Badge variant={allocationStatusVariant[derivedAllocationSummary.allocation_status] || 'neutral'}>
+              {formatAllocationStatus(derivedAllocationSummary.allocation_status)}
             </Badge>
           </div>
 
           <Card>
-            <div className="px-6 py-4 border-b border-[#E5E7EB]">
-              <div className="text-[13px] font-bold text-[#2F3437]">Allocations</div>
+            <div className="px-6 py-4 border-b border-[var(--color-border)]">
+              <div className="text-[13px] font-bold text-[var(--color-brand-navy)]">Allocations</div>
             </div>
           {allocationsLoading ? (
             <div className="flex items-center justify-center px-6 py-16 text-sm text-gray-400">
@@ -949,48 +1162,54 @@ export function ProfilePage() {
             </div>
           ) : allocationsError ? (
             <div className="px-6 py-10 text-center">
-              <div className="text-[15px] font-semibold text-[#2F3437] mb-1">Allocations unavailable</div>
+              <div className="text-[15px] font-semibold text-[var(--color-brand-navy)] mb-1">Allocations unavailable</div>
               <div className="text-sm text-gray-500">{allocationsError}</div>
             </div>
-          ) : allocations.length === 0 ? (
+          ) : allocationRows.length === 0 ? (
             <div className="px-6 py-16 text-center">
               <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-olive/10 text-olive">
                 <Briefcase size={20} />
               </div>
-              <div className="text-[15px] font-semibold text-[#2F3437]">No allocations found</div>
+              <div className="text-[15px] font-semibold text-[var(--color-brand-navy)]">No allocations found</div>
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[860px] text-left">
+              <table className="w-full min-w-[980px] text-left">
                 <thead className="bg-warm-bg">
                   <tr className="text-[11px] font-bold uppercase tracking-wide text-gray-400">
-                    <th className="px-6 py-3">Project</th>
-                    <th className="px-4 py-3">Role</th>
-                    <th className="px-4 py-3">Allocation %</th>
+                    <th className="px-6 py-3">Project Code</th>
+                    <th className="px-4 py-3">Project Name</th>
                     <th className="px-4 py-3">Manager</th>
+                    <th className="px-4 py-3">Project Location</th>
+                    <th className="px-4 py-3">Allocation %</th>
                     <th className="px-4 py-3">Start Date</th>
-                    <th className="px-4 py-3">End Date</th>
-                    <th className="px-4 py-3">Billing Type</th>
+                    <th className="px-4 py-3">End / Review Date</th>
                     <th className="px-4 py-3">Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {allocations.map((allocation) => (
-                    <tr key={allocation.id} className="border-t border-[#E5E7EB] text-[14px] text-[#2F3437]">
-                      <td className="px-6 py-4 font-semibold">{projectDisplayName(allocation)}</td>
-                      <td className="px-4 py-4 text-gray-600">{allocation.allocation_role}</td>
-                      <td className="px-4 py-4 font-semibold">{allocation.allocation_percentage}%</td>
+                  {allocationRows.map((allocation) => {
+                    const rowStatus = allocation.isDerivedAvailability ? allocation.status : effectiveAllocationStatus(allocation);
+                    return (
+                    <tr key={allocation.id} className="border-t border-[var(--color-border)] text-[14px] text-[var(--color-brand-navy)]">
+                      <td className="px-6 py-4 font-semibold">{projectCode(allocation)}</td>
+                      <td className="px-4 py-4">
+                        <div className="font-semibold">{projectDisplayName(allocation)}</div>
+                        <div className="text-xs text-gray-500">{allocation.allocation_role}</div>
+                      </td>
                       <td className="px-4 py-4 text-gray-600">{allocation.manager_name || 'Not assigned'}</td>
+                      <td className="px-4 py-4 text-gray-600">{allocation.project_location || 'Remote'}</td>
+                      <td className="px-4 py-4 font-semibold">{allocation.allocation_percentage}%</td>
                       <td className="px-4 py-4 text-gray-600">{formatDate(allocation.start_date) || '-'}</td>
                       <td className="px-4 py-4 text-gray-600">{formatDate(allocation.end_date) || '-'}</td>
-                      <td className="px-4 py-4 text-gray-600">{allocation.billing_type.replace(/_/g, ' ')}</td>
                       <td className="px-4 py-4">
-                        <Badge variant={allocationStatusVariant[allocation.status] || 'neutral'}>
-                          {allocation.status}
+                        <Badge variant={allocationStatusVariant[rowStatus] || 'neutral'}>
+                          {formatAllocationStatus(rowStatus)}
                         </Badge>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

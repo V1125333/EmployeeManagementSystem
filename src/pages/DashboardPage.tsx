@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { UserPlus, CheckCircle, Megaphone } from 'lucide-react';
 import { Button } from '@/components/ui';
 import {
@@ -15,13 +16,14 @@ import { AddEmployeeDrawer } from '@/components/dashboard/AddEmployeeDrawer';
 export function DashboardPage() {
   const [showAddEmployee, setShowAddEmployee] = useState(false);
   const [showAnnouncement, setShowAnnouncement] = useState(false);
+  const navigate = useNavigate();
 
   return (
     <div>
       {/* Page Header */}
       <div className="flex items-start justify-between mb-7 animate-fade-up">
         <div>
-          <h1 className="text-2xl font-bold text-[#2F3437] tracking-tight mb-1">
+          <h1 className="text-2xl font-bold text-[var(--color-brand-navy)] tracking-tight mb-1">
             Workforce Hub
           </h1>
           <p className="text-sm text-gray-500 leading-relaxed max-w-xl">
@@ -35,7 +37,7 @@ export function DashboardPage() {
           >
             Add Employee
           </Button>
-          <Button icon={<CheckCircle size={14} />}>Approve Leave</Button>
+          <Button icon={<CheckCircle size={14} />} onClick={() => navigate('/time-off?tab=leave')}>Approve Leave</Button>
           <Button icon={<Megaphone size={14} />} onClick={() => setShowAnnouncement(true)}>Create Announcement</Button>
         </div>
       </div>

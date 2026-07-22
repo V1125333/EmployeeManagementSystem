@@ -130,6 +130,33 @@ def ensure_employee_sensitive_columns():
             connection.execute(text(statement))
 
 
+def ensure_employee_work_location_columns():
+    """Add structured work-location fields without deriving them from private addresses."""
+    inspector = inspect(engine)
+    if "employees" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("employees")}
+    column_definitions = {
+        "work_city": "VARCHAR(120)",
+        "work_state": "VARCHAR(120)",
+        "work_country": "VARCHAR(120)",
+    }
+    dialect = engine.dialect.name
+    statements = []
+    for column_name, definition in column_definitions.items():
+        if column_name in existing_columns:
+            continue
+        if dialect == "postgresql":
+            statements.append(f"ALTER TABLE employees ADD COLUMN IF NOT EXISTS {column_name} {definition}")
+        else:
+            statements.append(f"ALTER TABLE employees ADD COLUMN {column_name} {definition}")
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+
+
 def ensure_account_recovery_tables():
     """Safely add account recovery columns and reset sessions for existing databases."""
     from app.models.password_reset import PasswordResetSession  # noqa: F401
@@ -461,9 +488,16 @@ def ensure_project_workflow_tables():
         else:
             statements.append("ALTER TABLE projects ADD COLUMN project_manager_id VARCHAR(36)")
 
+    if "client_id" not in project_columns:
+        if dialect == "postgresql":
+            statements.append("ALTER TABLE projects ADD COLUMN IF NOT EXISTS client_id VARCHAR(36) REFERENCES clients(id)")
+        else:
+            statements.append("ALTER TABLE projects ADD COLUMN client_id VARCHAR(36)")
+
     if dialect == "postgresql":
         statements.extend([
             "CREATE INDEX IF NOT EXISTS idx_projects_manager ON projects (project_manager_id)",
+            "CREATE INDEX IF NOT EXISTS idx_projects_client ON projects (client_id)",
             "CREATE INDEX IF NOT EXISTS idx_pd_project_id ON project_documents (project_id)",
             "CREATE INDEX IF NOT EXISTS idx_pd_is_deleted ON project_documents (is_deleted)",
         ])
@@ -601,6 +635,8 @@ def ensure_employee_request_tables():
         "exp_description": "TEXT",
         "exp_paid_at": "TIMESTAMP",
         "exp_paid_by_id": "VARCHAR(36)",
+        "issue_category": "VARCHAR(80)",
+        "issue_description": "TEXT",
         "reviewed_by_id": "VARCHAR(36)",
         "reviewed_at": "TIMESTAMP",
         "reviewer_notes": "TEXT",

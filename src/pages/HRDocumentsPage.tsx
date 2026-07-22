@@ -137,7 +137,7 @@ export function HRDocumentsPage() {
     <div className="animate-fade-up">
       <div className="mb-7 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="mb-1 text-2xl font-bold tracking-tight text-[#2F3437]">HR Documents</h1>
+          <h1 className="mb-1 text-2xl font-bold tracking-tight text-[var(--color-brand-navy)]">HR Documents</h1>
           <p className="text-sm text-gray-500">
             Generate formal ReKnew HR letters from approved templates.
           </p>
@@ -156,8 +156,8 @@ export function HRDocumentsPage() {
                   key={template.key}
                   className={`flex w-full items-center gap-3 rounded-lg border px-3 py-3 text-left transition-all ${
                     template.active
-                      ? 'border-olive bg-hover-bg text-[#2F3437]'
-                      : 'border-[#E5E7EB] text-gray-500'
+                      ? 'border-olive bg-hover-bg text-[var(--color-brand-navy)]'
+                      : 'border-[var(--color-border)] text-gray-500'
                   }`}
                   disabled={!template.active}
                 >
@@ -192,7 +192,7 @@ export function HRDocumentsPage() {
                 <input
                   value={internName}
                   onChange={(event) => setInternName(event.target.value)}
-                  className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
+                  className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
                   placeholder="Anusreya Sundararajan"
                 />
               </label>
@@ -202,7 +202,7 @@ export function HRDocumentsPage() {
                 <input
                   value={programme}
                   onChange={(event) => setProgramme(event.target.value)}
-                  className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
+                  className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
                   placeholder="Agentic Commerce"
                 />
               </label>
@@ -214,7 +214,7 @@ export function HRDocumentsPage() {
                     value={startDate}
                     onChange={(event) => setStartDate(event.target.value)}
                     type="date"
-                    className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
+                    className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
                   />
                 </label>
                 <label className="space-y-1.5">
@@ -223,7 +223,7 @@ export function HRDocumentsPage() {
                     value={endDate}
                     onChange={(event) => setEndDate(event.target.value)}
                     type="date"
-                    className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
+                    className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
                   />
                 </label>
               </div>
@@ -234,7 +234,7 @@ export function HRDocumentsPage() {
                   value={issuedDate}
                   onChange={(event) => setIssuedDate(event.target.value)}
                   type="date"
-                  className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
+                  className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
                 />
               </label>
 
@@ -244,7 +244,7 @@ export function HRDocumentsPage() {
                   value={responsibilitySummary}
                   onChange={(event) => setResponsibilitySummary(event.target.value)}
                   rows={6}
-                  className="w-full resize-none rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm leading-6 outline-none focus:border-olive"
+                  className="w-full resize-none rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm leading-6 outline-none focus:border-olive"
                 />
               </label>
 
@@ -270,8 +270,8 @@ export function HRDocumentsPage() {
 
           <Card>
             <CardHeader title="Letter Preview" icon={<ScrollText size={17} />} />
-            <div className="bg-[#F3F4F1] p-5">
-              <div className="mx-auto min-h-[760px] max-w-[650px] bg-white px-14 py-10 text-[13px] leading-6 text-[#171717] shadow-sm">
+            <div className="bg-[var(--color-brand-canvas)] p-5">
+              <div className="mx-auto min-h-[760px] max-w-[650px] bg-white px-14 py-10 text-[13px] leading-6 text-[var(--color-brand-navy)] shadow-sm">
                 <div className="mb-12 flex justify-end">
                   <img src="/reknew-wordmark.png" alt="ReKnew" className="h-8 w-auto object-contain" />
                 </div>

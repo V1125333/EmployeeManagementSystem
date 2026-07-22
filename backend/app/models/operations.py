@@ -21,6 +21,7 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    client_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("clients.id"), nullable=True, index=True)
     client_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)

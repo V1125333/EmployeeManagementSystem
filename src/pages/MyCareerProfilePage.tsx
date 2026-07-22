@@ -55,7 +55,7 @@ export function MyCareerProfilePage() {
     return (
       <div className="p-6">
         <Card className="p-8 text-center">
-          <div className="font-bold text-[#2F3437]">Career profile unavailable</div>
+          <div className="font-bold text-[var(--color-brand-navy)]">Career profile unavailable</div>
           <div className="mt-1 text-sm text-gray-500">{error || 'Profile data was not found.'}</div>
         </Card>
       </div>
@@ -65,7 +65,7 @@ export function MyCareerProfilePage() {
   return (
     <div className="p-6 lg:p-8">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-[#2F3437]">My Career Profile</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-[var(--color-brand-navy)]">My Career Profile</h1>
         <p className="mt-1 text-sm text-gray-500">Maintain your skills, project experience, resume, and career preferences.</p>
       </div>
       <CareerProfilePanel

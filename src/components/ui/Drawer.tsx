@@ -53,16 +53,16 @@ export function Drawer({
         ref={drawerRef}
         className={cn(
           width,
-          'relative h-full bg-warm-card border-l border-[#E5E7EB] shadow-[-8px_0_30px_rgba(47,52,55,0.08)]',
+          'relative h-full bg-warm-card border-l border-[var(--color-border)] shadow-[-8px_0_30px_rgba(47,52,55,0.08)]',
           'flex min-h-0 flex-col',
           'animate-[slideInRight_0.3s_cubic-bezier(0.16,1,0.3,1)]'
         )}
       >
         {/* Header */}
-        <div className="px-7 pt-7 pb-5 border-b border-[#E5E7EB] shrink-0">
+        <div className="px-7 pt-7 pb-5 border-b border-[var(--color-border)] shrink-0">
           <div className="flex items-start justify-between">
             <div>
-              <h2 className="text-xl font-bold text-[#2F3437] tracking-tight">
+              <h2 className="text-xl font-bold text-[var(--color-brand-navy)] tracking-tight">
                 {title}
               </h2>
               {subtitle && (
@@ -85,7 +85,7 @@ export function Drawer({
 
         {/* Footer */}
         {footer && (
-          <div className="shrink-0 border-t border-[#E5E7EB] bg-warm-card px-7 py-3 shadow-[0_-8px_20px_rgba(47,52,55,0.04)]">
+          <div className="shrink-0 border-t border-[var(--color-border)] bg-warm-card px-7 py-3 shadow-[0_-8px_20px_rgba(47,52,55,0.04)]">
             {footer}
           </div>
         )}

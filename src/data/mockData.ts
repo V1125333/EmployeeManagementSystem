@@ -10,21 +10,21 @@ import type {
 
 // ─── KPI Metrics (realistic for 45 employees) ───
 export const kpiMetrics: KpiMetric[] = [
-  { label: 'Total Employees', value: '45', trend: '+2', trendUp: true, icon: 'Users', color: '#66785F' },
-  { label: 'Active Employees', value: '42', trend: '+1', trendUp: true, icon: 'UserCheck', color: '#7BAE7F' },
-  { label: 'Inactive', value: '3', trend: '-1', trendUp: true, icon: 'UserX', color: '#9CA3AF' },
-  { label: 'Pending Leave', value: '4', trend: '+2', trendUp: false, icon: 'Calendar', color: '#D6A85F' },
-  { label: "Today's Attendance", value: '91%', trend: '+2.3%', trendUp: true, icon: 'CheckCircle', color: '#7E9BB7' },
-  { label: 'Upcoming Birthdays', value: '2', trend: 'this week', trendUp: null, icon: 'Cake', color: '#D97C7C' },
-  { label: 'Work Anniversaries', value: '1', trend: 'this month', trendUp: null, icon: 'Award', color: '#A3B18A' },
+  { label: 'Total Employees', value: '45', trend: '+2', trendUp: true, icon: 'Users', color: 'var(--color-brand-navy)' },
+  { label: 'Active Employees', value: '42', trend: '+1', trendUp: true, icon: 'UserCheck', color: 'var(--color-brand-orange)' },
+  { label: 'Inactive', value: '3', trend: '-1', trendUp: true, icon: 'UserX', color: 'var(--color-text-muted)' },
+  { label: 'Pending Leave', value: '4', trend: '+2', trendUp: false, icon: 'Calendar', color: 'var(--color-brand-orange)' },
+  { label: "Today's Attendance", value: '91%', trend: '+2.3%', trendUp: true, icon: 'CheckCircle', color: 'var(--color-brand-navy)' },
+  { label: 'Upcoming Birthdays', value: '2', trend: 'this week', trendUp: null, icon: 'Cake', color: 'var(--color-brand-orange)' },
+  { label: 'Work Anniversaries', value: '1', trend: 'this month', trendUp: null, icon: 'Award', color: 'var(--color-text-muted)' },
 ];
 
 // ─── Pending Tasks (only 4 items for MVP) ───
 export const pendingTasks: PendingTask[] = [
-  { label: 'Leave Approvals', count: 4, urgent: 1, color: '#D6A85F' },
-  { label: 'Attendance Corrections', count: 2, urgent: 0, color: '#7E9BB7' },
-  { label: 'Onboarding Tasks', count: 3, urgent: 1, color: '#7BAE7F' },
-  { label: 'Profile Updates', count: 5, urgent: 2, color: '#A3B18A' },
+  { label: 'Leave Approvals', count: 4, urgent: 1, color: 'var(--color-brand-orange)' },
+  { label: 'Attendance Corrections', count: 2, urgent: 0, color: 'var(--color-brand-navy)' },
+  { label: 'Onboarding Tasks', count: 3, urgent: 1, color: 'var(--color-brand-orange)' },
+  { label: 'Profile Updates', count: 5, urgent: 2, color: 'var(--color-text-muted)' },
 ];
 
 // ─── Department Data (realistic for 45 employees) ───
@@ -40,8 +40,14 @@ export const departmentData: DepartmentCount[] = [
 ];
 
 export const deptChartColors = [
-  '#66785F', '#A3B18A', '#7E9BB7', '#D6A85F',
-  '#D97C7C', '#7BAE7F', '#8B9F82', '#B8C4A8',
+  'var(--color-brand-navy)',
+  'var(--color-brand-orange)',
+  'var(--color-text-muted)',
+  'var(--color-accent-mid)',
+  'var(--color-brand-navy)',
+  'var(--color-brand-orange)',
+  'var(--color-text-muted)',
+  'var(--color-accent-mid)',
 ];
 
 // ─── Attendance Trend ───
@@ -126,7 +132,6 @@ export const employeeNavItems: NavItem[] = [
   { key: 'leave-approvals', label: 'Approvals', icon: 'ClipboardCheck', path: '/employee/approvals' },
   { key: 'timesheets', label: 'Timesheets', icon: 'Clock3', path: '/employee/timesheets' },
   { key: 'check-in', label: 'Check In / Out', icon: 'LogIn', path: '/employee/check-in' },
-  { key: 'attendance-history', label: 'Attendance History', icon: 'CalendarDays', path: '/employee/attendance' },
   { key: 'requests', label: 'Requests', icon: 'Send', path: '/employee/requests' },
   { key: 'documents', label: 'Documents', icon: 'Files', path: '/employee/documents' },
   { key: 'projects', label: 'My Allocations', icon: 'Briefcase', path: '/projects' },

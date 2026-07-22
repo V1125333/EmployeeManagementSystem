@@ -48,6 +48,9 @@ class EmployeeRequest(Base):
     exp_paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     exp_paid_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("employees.id"), nullable=True)
 
+    issue_category: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    issue_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     reviewed_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("employees.id"), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     reviewer_notes: Mapped[str | None] = mapped_column(Text, nullable=True)

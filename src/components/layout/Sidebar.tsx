@@ -75,14 +75,15 @@ export function Sidebar() {
         onClick={() => navigate(item.path)}
         title={collapsed ? displayLabel : undefined}
         className={cn(
-          'w-full flex items-center gap-2.5 rounded-lg text-[13.5px] font-medium transition-all duration-150 mb-0.5',
+          'relative w-full flex items-center gap-2.5 rounded-lg text-[13.5px] font-medium transition-all duration-150 mb-0.5',
           collapsed ? 'justify-center px-0 py-2.5' : 'px-3.5 py-2.5',
           active
-            ? 'bg-[#252B3A] text-white shadow-sm'
-            : 'text-gray-500 hover:bg-hover-bg hover:text-[#252B3A]'
+            ? 'border border-accent-mid bg-accent-light text-[var(--color-nav-active-text)] shadow-sm'
+            : 'border border-transparent text-gray-500 hover:border-accent-mid hover:bg-hover-bg hover:text-[var(--color-nav-active-text)]'
         )}
       >
-        <IconComp size={18} className={cn('shrink-0', active && 'text-accent')} />
+        {active && <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-[var(--color-nav-active-bar)]" />}
+        <IconComp size={18} className={cn('shrink-0', active ? 'text-[var(--color-nav-active-bar)]' : 'text-gray-500')} />
         {!collapsed && <span className="truncate">{displayLabel}</span>}
       </button>
     );
@@ -91,15 +92,15 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'fixed top-0 left-0 h-screen bg-warm-card border-r border-[#E5E7EB] z-50 flex flex-col transition-all duration-250',
+        'fixed top-0 left-0 h-screen bg-warm-card border-r border-[var(--color-border)] z-50 flex flex-col transition-all duration-250',
         collapsed ? 'w-16' : 'w-60'
       )}
     >
       {/* Logo */}
       <div
         className={cn(
-          'flex items-center border-b border-[#E5E7EB] shrink-0',
-          collapsed ? 'justify-center px-2 py-5' : 'justify-between px-5 py-5'
+          'flex h-14 shrink-0 items-center border-b border-[var(--color-border)]',
+          collapsed ? 'justify-center px-2' : 'justify-between px-5'
         )}
       >
         <div className={cn('flex items-center overflow-hidden', collapsed && 'hidden')}>
@@ -117,7 +118,7 @@ export function Sidebar() {
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           className={cn(
             'h-8 w-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-hover-bg hover:text-accent transition-all duration-150',
-            collapsed && 'h-10 w-10 border border-[#E5E7EB] bg-white p-1'
+            collapsed && 'h-10 w-10 border border-[var(--color-border)] bg-warm-card p-1'
           )}
         >
           {collapsed ? (
@@ -138,11 +139,11 @@ export function Sidebar() {
 
             <div className={cn('my-3', collapsed ? 'px-1' : 'px-3.5')}>
               {!collapsed && (
-                <div className="text-[10px] font-bold text-gray-400 tracking-widest uppercase">
+                <div className="text-[10px] font-semibold text-gray-400 tracking-widest uppercase">
                   Resource Management
                 </div>
               )}
-              {collapsed && <div className="h-px bg-[#E5E7EB]" />}
+              {collapsed && <div className="h-px bg-[var(--color-border)]" />}
             </div>
 
             {resourceNavItems.map((item) => (
@@ -152,11 +153,11 @@ export function Sidebar() {
             {/* Admin section divider */}
             <div className={cn('my-3', collapsed ? 'px-1' : 'px-3.5')}>
               {!collapsed && (
-                <div className="text-[10px] font-bold text-gray-400 tracking-widest uppercase">
+                <div className="text-[10px] font-semibold text-gray-400 tracking-widest uppercase">
                   Admin Console
                 </div>
               )}
-              {collapsed && <div className="h-px bg-[#E5E7EB]" />}
+              {collapsed && <div className="h-px bg-[var(--color-border)]" />}
             </div>
 
             {adminNavItems.map((item) => (
@@ -172,11 +173,11 @@ export function Sidebar() {
               <>
                 <div className={cn('my-3', collapsed ? 'px-1' : 'px-3.5')}>
                   {!collapsed && (
-                    <div className="text-[10px] font-bold text-gray-400 tracking-widest uppercase">
+                    <div className="text-[10px] font-semibold text-gray-400 tracking-widest uppercase">
                       Career & Work
                     </div>
                   )}
-                  {collapsed && <div className="h-px bg-[#E5E7EB]" />}
+                  {collapsed && <div className="h-px bg-[var(--color-border)]" />}
                 </div>
                 {careerEmployeeNavigation.map((item) => (
                   <NavButton key={item.key} item={item} />
@@ -187,11 +188,11 @@ export function Sidebar() {
               <>
                 <div className={cn('my-3', collapsed ? 'px-1' : 'px-3.5')}>
                   {!collapsed && (
-                    <div className="text-[10px] font-bold text-gray-400 tracking-widest uppercase">
+                    <div className="text-[10px] font-semibold text-gray-400 tracking-widest uppercase">
                       Resource Management
                     </div>
                   )}
-                  {collapsed && <div className="h-px bg-[#E5E7EB]" />}
+                  {collapsed && <div className="h-px bg-[var(--color-border)]" />}
                 </div>
                 {resourceNavItems.map((item) => (
                   <NavButton key={item.key} item={item} />
@@ -202,7 +203,7 @@ export function Sidebar() {
         )}
       </nav>
 
-      <div className="shrink-0 border-t border-[#E5E7EB] px-3 py-3">
+      <div className="shrink-0 border-t border-[var(--color-border)] px-3 py-3">
         <ProfileDropdown
           user={currentUser}
           variant={collapsed ? 'collapsed' : 'sidebar'}

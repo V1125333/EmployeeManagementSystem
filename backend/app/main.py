@@ -15,6 +15,7 @@ from app.core.database import (
     ensure_audit_log_table,
     ensure_employee_audit_columns,
     ensure_employee_sensitive_columns,
+    ensure_employee_work_location_columns,
     ensure_account_recovery_tables,
     ensure_announcement_columns,
     ensure_notification_columns,
@@ -46,8 +47,10 @@ from app.models import (
     SensitiveAccessAuditLog,
     AuditLog,
     EmployeeRequest, RequestAttachment, RequestComment, RequestStatusHistory,
+    EmailOutbox, AccountActivationToken, SecurityRateLimit,
 )
 from app.services.auth_service import hash_password
+from app.services.allocation_service import ensure_allocation_ending_notifications
 from app.api.dashboard import router as dashboard_router
 from app.api.employees import router as employees_router
 from app.api.auth import router as auth_router
@@ -247,6 +250,7 @@ async def lifespan(app: FastAPI):
     ensure_audit_log_table()
     ensure_employee_audit_columns()
     ensure_employee_sensitive_columns()
+    ensure_employee_work_location_columns()
     ensure_account_recovery_tables()
     ensure_announcement_columns()
     ensure_notification_columns()
@@ -268,6 +272,9 @@ async def lifespan(app: FastAPI):
         seed_company_holidays(db)
         seed_default_channels(db)
         seed_admin(db)
+        created_notifications = ensure_allocation_ending_notifications(db)
+        if created_notifications:
+            logger.info(f"Created {created_notifications} allocation ending notifications")
         logger.info("Database seeding complete")
     finally:
         db.close()

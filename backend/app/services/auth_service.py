@@ -8,6 +8,7 @@ import logging
 import hashlib
 import secrets
 import string
+from urllib.parse import urlencode
 from datetime import datetime, timedelta
 import bcrypt
 import pyotp
@@ -21,8 +22,10 @@ from app.models.login_challenge import LoginChallengeSession
 from app.models.operations import Notification
 from app.models.password_reset import PasswordResetSession
 from app.models.unlock_request import AccountUnlockRequest
+from app.models.transactional_email import AccountActivationToken
 from app.services.audit_service import log_audit, mask_email
 from app.services.preferences_service import get_or_create_preferences
+from app.services.transactional_email_service import enqueue_email, verify_activation_token
 
 logger = logging.getLogger(__name__)
 
@@ -303,13 +306,10 @@ def _audit(
     db.commit()
 
 
-def _generic_reset_response(reset_token: str | None = None, has_mfa: bool = False) -> dict:
+def _generic_reset_response() -> dict:
     return {
         "success": True,
         "message": "If the account exists and is eligible, reset instructions have been prepared.",
-        "reset_token": reset_token,
-        "has_mfa": has_mfa,
-        "expires_in_minutes": settings.RESET_TOKEN_EXPIRY_MINUTES if reset_token else None,
     }
 
 
@@ -339,13 +339,13 @@ def check_email(db: Session, email: str) -> dict:
 
 
 def verify_setup_code(db: Session, email: str, code: str) -> bool:
-    """Verify the setup code for first-time login."""
+    """Verify a random, hashed, expiring activation token."""
     employee = find_employee_by_email(db, email)
 
     if not employee:
         return False
 
-    return employee.setup_code and employee.setup_code.upper() == code.upper()
+    return bool(verify_activation_token(db, employee.id, code))
 
 
 def set_password_and_get_qr(db: Session, email: str, setup_code: str, password: str) -> dict:
@@ -355,8 +355,9 @@ def set_password_and_get_qr(db: Session, email: str, setup_code: str, password: 
     if not employee:
         return {"success": False, "message": "Employee not found"}
 
-    if not employee.setup_code or employee.setup_code.upper() != setup_code.upper():
-        return {"success": False, "message": "Invalid setup code"}
+    activation = verify_activation_token(db, employee.id, setup_code)
+    if not activation:
+        return {"success": False, "message": "Invalid or expired activation link"}
 
     # Hash and store password
     employee.password_hash = hash_password(password)
@@ -366,6 +367,7 @@ def set_password_and_get_qr(db: Session, email: str, setup_code: str, password: 
     # Generate TOTP secret
     totp_secret = generate_totp_secret()
     employee.totp_secret = totp_secret
+    activation.used_at = datetime.utcnow()
 
     db.commit()
 
@@ -572,14 +574,19 @@ def reset_password(db: Session, email: str, totp_code: str, new_password: str) -
 
 
 def initiate_reset(db: Session, email: str) -> dict:
-    """Start password reset. In dev, return the one-time token for manual testing."""
+    """Create a one-time reset token and queue it for email without returning it."""
     normalized_email = normalize_email(email)
     employee = find_employee_by_email(db, normalized_email)
     metadata = {"email": mask_email(normalized_email)}
 
     if not employee or not employee.is_active or is_reset_locked(employee):
+        logger.info(
+            "password_reset_queue matching_user_found=%s eligible=%s outbox_enqueued=false",
+            bool(employee),
+            bool(employee and employee.is_active and not is_reset_locked(employee)),
+        )
         _audit(db, employee, "password_reset_requested", getattr(employee, "id", None), metadata=metadata)
-        return _generic_reset_response(None, False)
+        return _generic_reset_response()
 
     token, token_hash = generate_reset_token()
     expires_at = datetime.utcnow() + timedelta(minutes=settings.RESET_TOKEN_EXPIRY_MINUTES)
@@ -594,9 +601,24 @@ def initiate_reset(db: Session, email: str) -> dict:
         reset_token_hash=token_hash,
         expires_at=expires_at,
     ))
+    query = urlencode({"email": normalized_email, "reset_token": token, "has_mfa": "1" if employee.totp_secret else "0"})
+    outbox_row = enqueue_email(
+        db,
+        recipient=employee.work_email,
+        template_name="password_reset",
+        idempotency_key=f"password-reset:{employee.id}:{token_hash}",
+        context={
+            "reset_url": f"{settings.FRONTEND_BASE_URL.rstrip('/')}/login?{query}",
+            "expires_minutes": settings.RESET_TOKEN_EXPIRY_MINUTES,
+        },
+    )
     db.commit()
+    logger.info(
+        "password_reset_queue matching_user_found=true eligible=true outbox_enqueued=%s",
+        bool(outbox_row),
+    )
     _audit(db, employee, "password_reset_requested", employee.id, metadata=metadata)
-    return _generic_reset_response(token, bool(employee.totp_secret))
+    return _generic_reset_response()
 
 
 def _active_reset_session(db: Session, reset_token: str) -> tuple[PasswordResetSession | None, Employee | None]:
@@ -661,6 +683,13 @@ def complete_reset(db: Session, reset_token: str, new_password: str, confirm_pas
         PasswordResetSession.employee_id == employee.id,
         PasswordResetSession.id != session.id,
     ).delete(synchronize_session=False)
+    enqueue_email(
+        db,
+        recipient=employee.work_email,
+        template_name="password_changed",
+        idempotency_key=f"password-changed:{session.id}",
+        context={"first_name": employee.first_name, "changed_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M")},
+    )
     db.commit()
     _audit(db, employee, "user_password_changed", employee.id, reason="Self-service password reset")
     return {"success": True, "message": "Password reset successfully. You can now log in."}

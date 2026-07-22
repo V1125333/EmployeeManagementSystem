@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models.allocation import Allocation
+from app.models.client_onboarding import Client
 from app.models.employee import Employee
 from app.schemas.allocation import AllocationOut
 from app.schemas.operations import ProjectCreate, ProjectManagerSchema, ProjectOut, ProjectUpdate
@@ -173,6 +174,21 @@ async def assignable_employees(
         "employees": [_employee_payload(employee) for employee in employees],
         "managers": [_employee_payload(manager) for manager in managers],
     }
+
+
+@router.get("/client-options", response_model=list[dict])
+async def project_client_options(
+    db: Session = Depends(get_db),
+    current_user_id: str | None = Header(None, alias="x-user-id"),
+    current_user_email: str | None = Header(None, alias="x-user-email"),
+):
+    actor = get_current_employee(db, current_user_id, current_user_email)
+    _require_project_admin(db, actor, "project.client_options.view")
+    clients = db.query(Client).order_by(Client.client_name.asc()).all()
+    return [
+        {"id": client.id, "client_name": client.client_name, "status": client.status}
+        for client in clients
+    ]
 
 
 @router.get("/{project_id}", response_model=ProjectOut)

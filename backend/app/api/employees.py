@@ -3,13 +3,14 @@ Employee API endpoints.
 """
 
 import logging
+import re
 from urllib.parse import quote
 from typing import Optional
 from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Header, UploadFile, File
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func, literal, or_
+from sqlalchemy import and_, exists, func, literal, or_
 from app.core.database import get_db
 from app.models.employee import Employee, EmployeeAuditLog, EmployeePerformanceSnapshot
 from app.models.leave_attendance import LeaveBalance, LeaveRequest
@@ -32,8 +33,6 @@ router = APIRouter(prefix="/employees", tags=["Employees"])
 
 
 SELF_PROFILE_FIELDS = {
-    "first_name",
-    "last_name",
     "personal_email",
     "phone",
     "country_code",
@@ -45,6 +44,45 @@ SELF_PROFILE_FIELDS = {
     "current_address",
     "permanent_address",
     "profile_image_url",
+}
+
+ADMIN_EMPLOYEE_FIELDS = SELF_PROFILE_FIELDS | {
+    "first_name",
+    "last_name",
+    "department",
+    "designation",
+    "role",
+    "workforce_type",
+    "workforce_status",
+    "employment_status",
+    "work_location",
+    "work_city",
+    "work_state",
+    "work_country",
+    "reporting_manager",
+    "joining_date",
+    "date_of_exit",
+    "inactive_reason",
+    "onboarding_type",
+    "notes",
+}
+
+SENSITIVE_EMPLOYMENT_FIELDS = {
+    "department",
+    "designation",
+    "role",
+    "workforce_type",
+    "workforce_status",
+    "employment_status",
+    "work_location",
+    "work_city",
+    "work_state",
+    "work_country",
+    "reporting_manager",
+    "joining_date",
+    "date_of_exit",
+    "inactive_reason",
+    "onboarding_type",
 }
 
 
@@ -67,6 +105,9 @@ def serialize_employee(emp: Employee) -> dict:
         "workforce_status": emp.workforce_status,
         "employment_status": emp.employment_status,
         "work_location": emp.work_location,
+        "work_city": emp.work_city,
+        "work_state": emp.work_state,
+        "work_country": emp.work_country,
         "location": emp.location,
         "joining_date": str(emp.joining_date) if emp.joining_date else None,
         "reporting_manager": emp.reporting_manager,
@@ -93,6 +134,84 @@ def serialize_employee(emp: Employee) -> dict:
 
 def employee_name(emp: Employee) -> str:
     return " ".join(part.strip() for part in [emp.first_name, emp.last_name] if part and part.strip())
+
+
+def normalize_person_reference(value: str | None) -> str:
+    return " ".join(re.findall(r"[a-z0-9]+", (value or "").lower()))
+
+
+def resolve_manager_id(employee: Employee, employees: list[Employee]) -> str | None:
+    by_id = {row.id: row for row in employees}
+    if employee.manager_id and employee.manager_id != employee.id and employee.manager_id in by_id:
+        return employee.manager_id
+    reference = normalize_person_reference(employee.reporting_manager)
+    if not reference or reference in {"self", "none", "not assigned", "unassigned"}:
+        return None
+    exact_matches = [
+        row for row in employees
+        if row.id != employee.id and reference in {
+            normalize_person_reference(employee_name(row)),
+            normalize_person_reference(row.work_email),
+        }
+    ]
+    if len(exact_matches) == 1:
+        return exact_matches[0].id
+    reference_tokens = set(reference.split())
+    partial_matches = [
+        row for row in employees
+        if row.id != employee.id and reference_tokens and reference_tokens.issubset(
+            set(normalize_person_reference(employee_name(row)).split())
+        )
+    ]
+    return partial_matches[0].id if len(partial_matches) == 1 else None
+
+
+def creates_reporting_cycle(db: Session, employee_id: str, manager_id: str) -> bool:
+    employees = db.query(Employee).all()
+    manager_ids = {employee.id: resolve_manager_id(employee, employees) for employee in employees}
+    manager_ids[employee_id] = manager_id
+    current_id: str | None = manager_id
+    visited: set[str] = set()
+    while current_id and current_id not in visited:
+        if current_id == employee_id:
+            return True
+        visited.add(current_id)
+        current_id = manager_ids.get(current_id)
+    return False
+
+
+def stabilize_manager_map(employees: list[Employee], manager_ids: dict[str, str | None]) -> dict[str, str | None]:
+    """Break legacy reporting cycles while retaining the most connected leader in each cycle."""
+    stable = dict(manager_ids)
+    employee_ids = {employee.id for employee in employees}
+    root = next((employee.id for employee in employees if normalize_role(employee.role) == "super_admin"), None)
+    for employee_id, manager_id in list(stable.items()):
+        if manager_id not in employee_ids or manager_id == employee_id:
+            stable[employee_id] = None
+
+    while True:
+        cycle: list[str] | None = None
+        for start_id in employee_ids:
+            path: list[str] = []
+            positions: dict[str, int] = {}
+            current_id: str | None = start_id
+            while current_id and current_id in employee_ids:
+                if current_id in positions:
+                    cycle = path[positions[current_id]:]
+                    break
+                positions[current_id] = len(path)
+                path.append(current_id)
+                current_id = stable.get(current_id)
+            if cycle:
+                break
+        if not cycle:
+            return stable
+        inbound_counts = {
+            employee_id: sum(1 for manager_id in stable.values() if manager_id == employee_id)
+            for employee_id in cycle
+        }
+        leader_id = max(cycle, key=lambda employee_id: (inbound_counts[employee_id], employee_id))
+        stable[leader_id] = root if root and root not in cycle and root != leader_id else None
 
 
 def can_view_employee_detail(actor: Employee, target: Employee) -> bool:
@@ -137,6 +256,13 @@ def log_employee_changes(
         "workforce_status",
         "mfa_enabled",
         "device_assigned",
+        "joining_date",
+        "date_of_exit",
+        "inactive_reason",
+        "onboarding_type",
+        "work_city",
+        "work_state",
+        "work_country",
     }
 
     for field in important_fields.intersection(updates.keys()):
@@ -163,6 +289,8 @@ async def list_employees(
     status: Optional[str] = Query(None),
     role: Optional[str] = Query(None),
     location: Optional[str] = Query(None),
+    project_status: Optional[str] = Query(None, pattern="^(in_project|bench|trainee)$"),
+    reporting_manager: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -173,6 +301,19 @@ async def list_employees(
     require_admin_employee(db, current_user_id, current_user_email)
     query = db.query(Employee).filter(Employee.work_email != "superadmin@reknew.ai")
     organization_total = query.count()
+    manager_references = db.query(Employee.manager_id, Employee.reporting_manager).filter(
+        Employee.work_email != "superadmin@reknew.ai"
+    ).all()
+    referenced_manager_ids = {manager_id for manager_id, _ in manager_references if manager_id}
+    referenced_managers = {
+        manager.id: employee_name(manager)
+        for manager in db.query(Employee).filter(Employee.id.in_(referenced_manager_ids)).all()
+    } if referenced_manager_ids else {}
+    reporting_manager_options = sorted({
+        referenced_managers.get(manager_id) or (legacy_name or "").strip()
+        for manager_id, legacy_name in manager_references
+        if referenced_managers.get(manager_id) or (legacy_name or "").strip()
+    }, key=str.lower)
 
     # Search
     if search:
@@ -191,6 +332,9 @@ async def list_employees(
                 Employee.designation,
                 Employee.role,
                 Employee.work_location,
+                Employee.work_city,
+                Employee.work_state,
+                Employee.work_country,
                 Employee.location,
                 full_name,
             ]
@@ -217,6 +361,35 @@ async def list_employees(
         query = query.filter(role_value == normalized_role)
     if location:
         query = query.filter(Employee.work_location.ilike(location))
+    if reporting_manager:
+        normalized_manager = reporting_manager.strip()
+        matching_manager_ids = [
+            manager_id for manager_id, manager_name in referenced_managers.items()
+            if manager_name.lower() == normalized_manager.lower()
+        ]
+        manager_filters = [Employee.reporting_manager.ilike(normalized_manager)]
+        if matching_manager_ids:
+            manager_filters.append(Employee.manager_id.in_(matching_manager_ids))
+        query = query.filter(or_(*manager_filters))
+    if project_status:
+        today = date.today()
+        trainee_expression = or_(
+            func.lower(func.replace(func.replace(Employee.role, " ", "_"), "-", "_")) == "trainee",
+            func.lower(Employee.workforce_type).like("%trainee%"),
+        )
+        active_project_exists = exists().where(and_(
+            Allocation.employee_id == Employee.id,
+            Allocation.project_id.isnot(None),
+            Allocation.status == "active",
+            Allocation.start_date <= today,
+            or_(Allocation.end_date.is_(None), Allocation.end_date >= today),
+        ))
+        if project_status == "trainee":
+            query = query.filter(trainee_expression)
+        elif project_status == "in_project":
+            query = query.filter(~trainee_expression, active_project_exists)
+        else:
+            query = query.filter(~trainee_expression, ~active_project_exists)
 
     # Count total before pagination
     total = query.count()
@@ -225,6 +398,31 @@ async def list_employees(
     employees = query.order_by(Employee.created_at.desc()).offset(
         (page - 1) * per_page
     ).limit(per_page).all()
+
+    employee_ids = [employee.id for employee in employees]
+    today = date.today()
+    allocated_employee_ids = {
+        employee_id
+        for (employee_id,) in db.query(Allocation.employee_id).filter(
+            Allocation.employee_id.in_(employee_ids),
+            Allocation.project_id.isnot(None),
+            Allocation.status == "active",
+            Allocation.start_date <= today,
+            or_(Allocation.end_date.is_(None), Allocation.end_date >= today),
+        ).distinct().all()
+    } if employee_ids else set()
+    manager_ids = {employee.manager_id for employee in employees if employee.manager_id}
+    manager_names = {
+        manager.id: employee_name(manager)
+        for manager in db.query(Employee).filter(Employee.id.in_(manager_ids)).all()
+    } if manager_ids else {}
+
+    def project_status(employee: Employee) -> str:
+        normalized_role = (employee.role or "").strip().lower().replace(" ", "_").replace("-", "_")
+        normalized_workforce_type = (employee.workforce_type or "").strip().lower().replace(" ", "_").replace("-", "_")
+        if normalized_role == "trainee" or "trainee" in normalized_workforce_type:
+            return "trainee"
+        return "in_project" if employee.id in allocated_employee_ids else "bench"
 
     return {
         "employees": [
@@ -241,8 +439,12 @@ async def list_employees(
                 "workforce_type": emp.workforce_type,
                 "employment_status": emp.employment_status,
                 "work_location": emp.work_location,
+                "work_city": emp.work_city,
+                "work_state": emp.work_state,
+                "work_country": emp.work_country,
                 "joining_date": str(emp.joining_date) if emp.joining_date else None,
-                "reporting_manager": emp.reporting_manager,
+                "reporting_manager": manager_names.get(emp.manager_id) or emp.reporting_manager or "Not assigned",
+                "project_status": project_status(emp),
                 "profile_image_url": emp.profile_image_url,
                 "is_active": emp.is_active,
                 "is_first_login": emp.is_first_login,
@@ -253,6 +455,7 @@ async def list_employees(
         ],
         "total": total,
         "organization_total": organization_total,
+        "reporting_manager_options": reporting_manager_options,
         "page": page,
         "per_page": per_page,
         "total_pages": (total + per_page - 1) // per_page,
@@ -266,6 +469,8 @@ async def export_employees(
     status: Optional[str] = Query(None),
     role: Optional[str] = Query(None),
     location: Optional[str] = Query(None),
+    project_status: Optional[str] = Query(None, pattern="^(in_project|bench|trainee)$"),
+    reporting_manager: Optional[str] = Query(None),
     level: str = Query("basic", pattern="^(basic|hr|payroll)$"),
     db: Session = Depends(get_db),
     current_user_id: str | None = Header(None, alias="x-user-id"),
@@ -292,6 +497,9 @@ async def export_employees(
                 Employee.designation,
                 Employee.role,
                 Employee.work_location,
+                Employee.work_city,
+                Employee.work_state,
+                Employee.work_country,
                 Employee.location,
                 full_name,
             ]
@@ -315,6 +523,37 @@ async def export_employees(
         query = query.filter(role_value == normalized_role)
     if location:
         query = query.filter(Employee.work_location.ilike(location))
+    if reporting_manager:
+        normalized_manager = reporting_manager.strip()
+        manager_name = (
+            func.coalesce(Employee.first_name, "")
+            + literal(" ")
+            + func.coalesce(Employee.last_name, "")
+        )
+        matching_manager_ids = db.query(Employee.id).filter(manager_name.ilike(normalized_manager)).all()
+        manager_filters = [Employee.reporting_manager.ilike(normalized_manager)]
+        if matching_manager_ids:
+            manager_filters.append(Employee.manager_id.in_([row[0] for row in matching_manager_ids]))
+        query = query.filter(or_(*manager_filters))
+    if project_status:
+        today = date.today()
+        trainee_expression = or_(
+            func.lower(func.replace(func.replace(Employee.role, " ", "_"), "-", "_")) == "trainee",
+            func.lower(Employee.workforce_type).like("%trainee%"),
+        )
+        active_project_exists = exists().where(and_(
+            Allocation.employee_id == Employee.id,
+            Allocation.project_id.isnot(None),
+            Allocation.status == "active",
+            Allocation.start_date <= today,
+            or_(Allocation.end_date.is_(None), Allocation.end_date >= today),
+        ))
+        if project_status == "trainee":
+            query = query.filter(trainee_expression)
+        elif project_status == "in_project":
+            query = query.filter(~trainee_expression, active_project_exists)
+        else:
+            query = query.filter(~trainee_expression, ~active_project_exists)
 
     employees = query.order_by(Employee.created_at.desc()).limit(10000).all()
     log_sensitive_access(
@@ -334,6 +573,8 @@ async def export_employees(
                 "status": status,
                 "role": role,
                 "location": location,
+                "project_status": project_status,
+                "reporting_manager": reporting_manager,
             },
         },
     )
@@ -346,6 +587,51 @@ async def export_employees(
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/organization", response_model=dict)
+async def organization_chart(
+    db: Session = Depends(get_db),
+    current_user_id: str | None = Header(None, alias="x-user-id"),
+    current_user_email: str | None = Header(None, alias="x-user-email"),
+):
+    """Return the minimal flat employee graph needed to render reporting lines."""
+    actor = get_current_employee(db, current_user_id, current_user_email)
+    employees = db.query(Employee).filter(Employee.is_active.is_(True)).order_by(
+        Employee.first_name.asc(), Employee.last_name.asc()
+    ).all()
+    resolved_manager_ids = stabilize_manager_map(
+        employees,
+        {employee.id: resolve_manager_id(employee, employees) for employee in employees},
+    )
+    report_counts: dict[str, int] = {}
+    for manager_id in resolved_manager_ids.values():
+        if manager_id:
+            report_counts[manager_id] = report_counts.get(manager_id, 0) + 1
+
+    now = datetime.utcnow()
+    rows = []
+    for employee in employees:
+        last_active = employee.last_active_at
+        role_label = (employee.role or "Employee").replace("_", " ").replace("-", " ").title()
+        rows.append({
+            "id": employee.id,
+            "name": employee_name(employee),
+            "designation": employee.designation or role_label,
+            "department": employee.department or "Not assigned",
+            "role": employee.role,
+            "reporting_manager_id": resolved_manager_ids[employee.id],
+            "reports_count": report_counts.get(employee.id, 0),
+            "is_online": bool(last_active and (now - last_active).total_seconds() <= 15 * 60),
+            "is_current_user": employee.id == actor.id,
+        })
+
+    return {
+        "employees": rows,
+        "current_user_id": actor.id,
+        "employee_count": len(rows),
+        "department_count": len({row["department"] for row in rows if row["department"] != "Not assigned"}),
+    }
 
 
 @router.get("/{employee_id}")
@@ -625,7 +911,7 @@ async def add_employee(
     current_user_id: str | None = Header(None, alias="x-user-id"),
     current_user_email: str | None = Header(None, alias="x-user-email"),
 ):
-    """Add a new employee with setup code for first-time login."""
+    """Add an employee and queue a secure activation email."""
     actor = require_admin_employee(db, current_user_id, current_user_email)
     try:
         result = create_employee(db, data)
@@ -676,7 +962,8 @@ async def update_employee(
         db.commit()
         raise HTTPException(status_code=403, detail="Not authorized to update this employee")
 
-    updates = data.dict(exclude_unset=True)
+    updates = data.model_dump(exclude_unset=True)
+    change_reason = (updates.pop("change_reason", None) or "").strip()
     if is_self and not is_admin:
         blocked_fields = sorted(set(updates) - SELF_PROFILE_FIELDS)
         if blocked_fields:
@@ -693,6 +980,55 @@ async def update_employee(
                 status_code=403,
                 detail=f"Employees cannot modify restricted profile fields: {', '.join(blocked_fields)}.",
             )
+    elif is_admin:
+        blocked_fields = sorted(set(updates) - ADMIN_EMPLOYEE_FIELDS)
+        if blocked_fields:
+            raise HTTPException(
+                status_code=403,
+                detail=f"These employee fields require a dedicated security workflow: {', '.join(blocked_fields)}.",
+            )
+
+    changed_update_fields = {
+        field
+        for field, value in updates.items()
+        if hasattr(emp, field) and getattr(emp, field) != value
+    }
+    sensitive_changes = changed_update_fields.intersection(SENSITIVE_EMPLOYMENT_FIELDS)
+    if is_admin and sensitive_changes and not change_reason:
+        raise HTTPException(
+            status_code=422,
+            detail="A reason is required when changing employment details.",
+        )
+
+    if "reporting_manager" in updates:
+        requested_manager = (updates.get("reporting_manager") or "").strip()
+        if not requested_manager or requested_manager.lower() == "not assigned":
+            updates["reporting_manager"] = ""
+            updates["manager_id"] = None
+        else:
+            normalized_manager = requested_manager.lower()
+            manager = db.query(Employee).filter(
+                or_(
+                    func.lower(Employee.work_email) == normalized_manager,
+                    func.lower(
+                        func.trim(
+                            func.coalesce(Employee.first_name, "")
+                            + literal(" ")
+                            + func.coalesce(Employee.last_name, "")
+                        )
+                    ) == normalized_manager,
+                )
+            ).first()
+            if not manager:
+                raise HTTPException(status_code=422, detail="The selected reporting manager was not found.")
+            if manager.id == emp.id:
+                raise HTTPException(status_code=422, detail="An employee cannot report to themselves.")
+            if normalize_role(manager.role) not in {"manager", "super_admin", "admin", "hr_admin", "global_access"}:
+                raise HTTPException(status_code=422, detail="The selected employee is not eligible to be a reporting manager.")
+            if creates_reporting_cycle(db, emp.id, manager.id):
+                raise HTTPException(status_code=422, detail="This reporting-manager change would create a circular reporting line.")
+            updates["reporting_manager"] = employee_name(manager)
+            updates["manager_id"] = manager.id
 
     emergency_contact_fields = (
         "emergency_contact_name",
@@ -763,8 +1099,29 @@ async def update_employee(
             old_values=old_values,
             new_values=updates,
             changed_fields_payload=field_changes,
-            metadata={"changed_by": emp.updated_by},
+            metadata={
+                "changed_by": emp.updated_by,
+                **({"change_reason": change_reason} if change_reason else {}),
+            },
         )
+
+    if is_admin and not is_self and sensitive_changes:
+        readable_fields = ", ".join(
+            field.replace("_", " ") for field in sorted(sensitive_changes)
+        )
+        db.add(Notification(
+            user_id=emp.id,
+            title="Employment details updated",
+            message=(
+                f"{employee_name(actor)} updated your {readable_fields}. "
+                f"Reason: {change_reason}"
+            ),
+            type="system",
+            notification_type="employee_record_updated",
+            related_entity_type="employee",
+            related_entity_id=emp.id,
+            link_url="/profile",
+        ))
 
     db.commit()
     db.refresh(emp)

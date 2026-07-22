@@ -62,5 +62,26 @@ class Settings:
     LOGIN_CHALLENGE_EXPIRY_MINUTES: int = int(os.getenv("LOGIN_CHALLENGE_EXPIRY_MINUTES", "5"))
     UNLOCK_REQUEST_RATE_LIMIT_PER_HOUR: int = int(os.getenv("UNLOCK_REQUEST_RATE_LIMIT_PER_HOUR", "3"))
 
+    # Server-side transactional email (never expose these as VITE_* variables)
+    TRANSACTIONAL_EMAIL_ENABLED: bool = os.getenv("TRANSACTIONAL_EMAIL_ENABLED", "false").lower() == "true"
+    EMAIL_PROVIDER: str = os.getenv("EMAIL_PROVIDER", "graph")
+    TRANSACTIONAL_FROM_EMAIL: str = os.getenv("TRANSACTIONAL_FROM_EMAIL", "")
+    FRONTEND_BASE_URL: str = os.getenv("FRONTEND_BASE_URL", "http://localhost:5173")
+    EMAIL_PAYLOAD_ENCRYPTION_KEY: str = os.getenv("EMAIL_PAYLOAD_ENCRYPTION_KEY", "")
+    ACTIVATION_TOKEN_EXPIRY_MINUTES: int = int(os.getenv("ACTIVATION_TOKEN_EXPIRY_MINUTES", "1440"))
+    EMAIL_MAX_ATTEMPTS: int = int(os.getenv("EMAIL_MAX_ATTEMPTS", "8"))
+    EMAIL_BASE_RETRY_SECONDS: int = int(os.getenv("EMAIL_BASE_RETRY_SECONDS", "30"))
+    EMAIL_MAX_RETRY_SECONDS: int = int(os.getenv("EMAIL_MAX_RETRY_SECONDS", "3600"))
+    EMAIL_LOCK_TIMEOUT_SECONDS: int = int(os.getenv("EMAIL_LOCK_TIMEOUT_SECONDS", "300"))
+    EMAIL_WORKER_POLL_SECONDS: int = int(os.getenv("EMAIL_WORKER_POLL_SECONDS", "5"))
+    GRAPH_HTTP_TIMEOUT_SECONDS: float = float(os.getenv("GRAPH_HTTP_TIMEOUT_SECONDS", "30"))
+    GRAPH_AUTH_MODE: str = os.getenv("GRAPH_AUTH_MODE", "client_secret")
+    GRAPH_TENANT_ID: str = os.getenv("GRAPH_TENANT_ID", "")
+    GRAPH_CLIENT_ID: str = os.getenv("GRAPH_CLIENT_ID", "")
+    GRAPH_CLIENT_SECRET: str = os.getenv("GRAPH_CLIENT_SECRET", "")
+    GRAPH_CERTIFICATE_PATH: str = os.getenv("GRAPH_CERTIFICATE_PATH", "")
+    GRAPH_CERTIFICATE_PASSWORD: str = os.getenv("GRAPH_CERTIFICATE_PASSWORD", "")
+    GRAPH_MANAGED_IDENTITY_CLIENT_ID: str = os.getenv("GRAPH_MANAGED_IDENTITY_CLIENT_ID", "")
+
 
 settings = Settings()

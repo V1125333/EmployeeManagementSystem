@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models.allocation import Allocation
@@ -334,10 +334,13 @@ def get_allocations_by_employee(db: Session, employee_id: str) -> list[Allocatio
     ).all()
 
 
-def get_active_allocations(db: Session, employee_id: str) -> list[Allocation]:
+def get_active_allocations(db: Session, employee_id: str, reference_date: date | None = None) -> list[Allocation]:
+    day = reference_date or date.today()
     return db.query(Allocation).filter(
         Allocation.employee_id == employee_id,
         Allocation.status == "active",
+        Allocation.start_date <= day,
+        or_(Allocation.end_date.is_(None), Allocation.end_date >= day),
     ).order_by(Allocation.start_date.desc()).all()
 
 
@@ -377,15 +380,116 @@ def serialize_allocation(db: Session, allocation: Allocation) -> dict[str, Any]:
     manager = db.query(Employee).filter(Employee.id == allocation.manager_id).first()
     employee = db.query(Employee).filter(Employee.id == allocation.employee_id).first()
     project_name = allocation.project_name
+    project_code = None
+    project_client_name = None
+    project_status = None
+    project_start_date = None
+    project_end_date = None
     if allocation.project_id:
         from app.models.operations import Project
         project = db.query(Project).filter(Project.id == allocation.project_id).first()
         if project:
-            project_name = f"{project.name} ({project.code})"
+            project_name = project.name
+            project_code = project.code
+            project_client_name = project.client_name
+            project_status = project.status
+            project_start_date = project.start_date
+            project_end_date = project.end_date
     return {
         **_values(allocation),
         "project_name": project_name,
+        "project_code": project_code,
+        "project_client_name": project_client_name,
+        "project_status": project_status,
+        "project_start_date": project_start_date,
+        "project_end_date": project_end_date,
+        "project_location": employee.work_location if employee else None,
         "employee_name": _employee_name(employee),
         "employee_email": employee.work_email if employee else None,
         "manager_name": f"{manager.first_name} {manager.last_name}".strip() if manager else None,
     }
+
+
+def ensure_allocation_ending_notifications(db: Session, reference_date: date | None = None) -> int:
+    today = reference_date or date.today()
+    notify_until = today + timedelta(days=7)
+    ending_allocations = db.query(Allocation).filter(
+        Allocation.status == "active",
+        Allocation.end_date.isnot(None),
+        Allocation.end_date >= today,
+        Allocation.end_date <= notify_until,
+    ).all()
+    created = 0
+    for allocation in ending_allocations:
+        if not allocation.manager_id:
+            continue
+        exists = db.query(Notification.id).filter(
+            Notification.user_id == allocation.manager_id,
+            Notification.notification_type == "allocation_ending",
+            Notification.related_entity_type == "allocation",
+            Notification.related_entity_id == allocation.id,
+        ).first()
+        if exists:
+            continue
+        employee = db.query(Employee).filter(Employee.id == allocation.employee_id).first()
+        project = db.query(Project).filter(Project.id == allocation.project_id).first() if allocation.project_id else None
+        employee_name = _employee_name(employee) or "An employee"
+        project_label = project.name if project else allocation.project_name or "an allocation"
+        db.add(Notification(
+            user_id=allocation.manager_id,
+            title="Allocation ending soon",
+            message=f"{employee_name}'s allocation on {project_label} ends on {allocation.end_date}.",
+            type="allocation",
+            notification_type="allocation_ending",
+            related_entity_type="allocation",
+            related_entity_id=allocation.id,
+            link_url=f"/profile?employee_id={allocation.employee_id}&tab=allocations",
+        ))
+        created += 1
+
+    recently_ended_since = today - timedelta(days=30)
+    ended_allocations = db.query(Allocation).filter(
+        Allocation.status.in_(["active", "completed"]),
+        Allocation.end_date.isnot(None),
+        Allocation.end_date < today,
+        Allocation.end_date >= recently_ended_since,
+    ).all()
+    for allocation in ended_allocations:
+        if not allocation.manager_id or not allocation.end_date:
+            continue
+        exists = db.query(Notification.id).filter(
+            Notification.user_id == allocation.manager_id,
+            Notification.notification_type == "allocation_available",
+            Notification.related_entity_type == "allocation",
+            Notification.related_entity_id == allocation.id,
+        ).first()
+        if exists:
+            continue
+        employee = db.query(Employee).filter(Employee.id == allocation.employee_id).first()
+        project = db.query(Project).filter(Project.id == allocation.project_id).first() if allocation.project_id else None
+        employee_name = _employee_name(employee) or "An employee"
+        project_label = project.name if project else allocation.project_name or "an allocation"
+        availability_start = allocation.end_date + timedelta(days=1)
+        active_after_end = get_active_allocations(db, allocation.employee_id, availability_start)
+        active_total = sum(int(row.allocation_percentage or 0) for row in active_after_end)
+        available_capacity = max(0, 100 - active_total)
+        if available_capacity <= 0:
+            continue
+        availability_label = "is now on bench" if active_total == 0 else f"has {available_capacity}% available capacity"
+        db.add(Notification(
+            user_id=allocation.manager_id,
+            title="Allocation ended",
+            message=(
+                f"{employee_name}'s allocation on {project_label} ended on {allocation.end_date}. "
+                f"From {availability_start}, {employee_name} {availability_label}."
+            ),
+            type="allocation",
+            notification_type="allocation_available",
+            related_entity_type="allocation",
+            related_entity_id=allocation.id,
+            link_url=f"/profile?employee_id={allocation.employee_id}&tab=allocations",
+        ))
+        created += 1
+    if created:
+        db.commit()
+    return created

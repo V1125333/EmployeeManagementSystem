@@ -3,6 +3,7 @@ from datetime import date
 from types import SimpleNamespace
 
 from app.services.work_calendar_service import (
+    employee_region,
     employee_working_weekdays,
     is_employee_working_day,
     payable_leave_day_count,
@@ -24,6 +25,17 @@ class EmptyDb:
 
 
 class WorkCalendarServiceTests(unittest.TestCase):
+    def test_structured_work_country_takes_precedence_over_arrangement(self):
+        employee = SimpleNamespace(
+            work_city="Hartford",
+            work_state="CT",
+            work_country="United States",
+            work_location="Remote",
+            location="Onshore",
+        )
+
+        self.assertEqual(employee_region(employee), "US")
+
     def test_standard_employee_leave_excludes_weekends(self):
         employee = SimpleNamespace(work_location="US", work_schedule=None)
         leave_type = SimpleNamespace(code="CL")

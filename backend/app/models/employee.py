@@ -106,6 +106,9 @@ class Employee(Base):
     reporting_manager: Mapped[str] = mapped_column(String(100), default="")  # will migrate to manager_id
     joining_date: Mapped[date] = mapped_column(Date, nullable=False)
     work_location: Mapped[str] = mapped_column(String(50), default="Onshore")
+    work_city: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    work_state: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    work_country: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
 
 class EmployeeAuditLog(Base):

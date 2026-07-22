@@ -42,14 +42,31 @@ def iter_dates(start_date: date, end_date: date) -> Iterable[date]:
 
 
 def region_from_location(work_location: str | None) -> str:
-    location = (work_location or "").lower()
-    if any(token in location for token in ["dubai", "uae", "united arab emirates", "ae"]):
+    location = " ".join((work_location or "").lower().replace(",", " ").split())
+    if location in {"ae", "uae"} or any(token in location for token in ["dubai", "united arab emirates"]):
         return "AE"
-    if any(token in location for token in ["india", "bangalore", "hyderabad", "mumbai", "delhi", "in"]):
+    if location == "in" or any(token in location for token in ["india", "bangalore", "hyderabad", "mumbai", "delhi"]):
         return "IN"
-    if any(token in location for token in ["united states", "america", "usa", "us"]):
+    if location in {"us", "usa"} or any(token in location for token in ["united states", "america"]):
         return "US"
     return "all"
+
+
+def employee_region(employee: Employee) -> str:
+    structured_location = " ".join(
+        part.strip()
+        for part in [
+            getattr(employee, "work_city", None),
+            getattr(employee, "work_state", None),
+            getattr(employee, "work_country", None),
+        ]
+        if part and part.strip()
+    )
+    return region_from_location(
+        structured_location
+        or getattr(employee, "work_location", None)
+        or getattr(employee, "location", None)
+    )
 
 
 def region_visible(regions: str | None, region: str) -> bool:
@@ -108,7 +125,7 @@ def company_holiday_dates(
     end_date: date,
     holiday_types: set[str] | None = None,
 ) -> set[date]:
-    region = region_from_location(employee.work_location)
+    region = employee_region(employee)
     query = db.query(CompanyHoliday).filter(
         CompanyHoliday.is_active == True,
         CompanyHoliday.holiday_date >= start_date,

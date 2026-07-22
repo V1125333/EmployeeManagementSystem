@@ -4,7 +4,7 @@
 
 @layer base {
   body {
-    @apply bg-warm-bg text-[#252B3A] font-sans antialiased;
+    @apply bg-warm-bg text-[var(--color-text-primary)] font-sans antialiased;
   }
 
   ::-webkit-scrollbar {

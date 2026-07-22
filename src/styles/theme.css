@@ -1,22 +1,36 @@
 :root {
+  --color-brand-navy: #252b3a;
+  --color-brand-orange: #f5a23a;
+  --color-brand-canvas: #fefefc;
+  --color-brand-surface: #fefefc;
   --color-accent: #f5a23a;
-  --color-accent-light: #fff4e8;
-  --color-accent-mid: #f9d7a6;
-  --color-accent-dark: #d97706;
-  --color-bg-primary: #f7f6f2;
+  --color-accent-light: color-mix(in srgb, var(--color-brand-orange) 12%, var(--color-brand-surface));
+  --color-accent-mid: color-mix(in srgb, var(--color-brand-orange) 28%, var(--color-brand-surface));
+  --color-accent-dark: color-mix(in srgb, var(--color-brand-orange) 78%, var(--color-brand-navy));
+  --color-nav-active-text: #9a3412;
+  --color-nav-active-bar: #c2410c;
+  --color-bg-primary: #fefefc;
   --color-bg-card: #fefefc;
-  --color-bg-hover: #fff7ed;
-  --color-border: #e5e7eb;
+  --color-bg-hover: color-mix(in srgb, var(--color-brand-orange) 8%, var(--color-brand-surface));
+  --color-border: color-mix(in srgb, var(--color-brand-navy) 12%, var(--color-brand-surface));
   --color-text-primary: #252b3a;
-  --color-text-muted: #6b7280;
+  --color-text-muted: color-mix(in srgb, var(--color-brand-navy) 62%, var(--color-brand-surface));
+  --color-status-success: #11823b;
+  --color-status-success-bg: color-mix(in srgb, #11823b 12%, var(--color-brand-surface));
+  --color-status-warning: #9a3412;
+  --color-status-warning-bg: color-mix(in srgb, var(--color-brand-orange) 20%, var(--color-brand-surface));
+  --color-status-error: #c2410c;
+  --color-status-error-bg: color-mix(in srgb, #c2410c 12%, var(--color-brand-surface));
+  --color-status-info: var(--color-brand-navy);
+  --color-status-info-bg: color-mix(in srgb, var(--color-brand-navy) 8%, var(--color-brand-surface));
 }
 
 [data-accent="olive"],
 [data-accent="orange"] {
-  --color-accent: #f5a23a;
-  --color-accent-light: #fff4e8;
-  --color-accent-mid: #f9d7a6;
-  --color-accent-dark: #d97706;
+  --color-accent: var(--color-brand-orange);
+  --color-accent-light: color-mix(in srgb, var(--color-brand-orange) 12%, var(--color-brand-surface));
+  --color-accent-mid: color-mix(in srgb, var(--color-brand-orange) 28%, var(--color-brand-surface));
+  --color-accent-dark: color-mix(in srgb, var(--color-brand-orange) 78%, var(--color-brand-navy));
 }
 
 /* Legacy olive utility compatibility: render old olive classes with Reknew orange. */
@@ -111,55 +125,68 @@
   --tw-ring-color: color-mix(in srgb, var(--color-accent) 20%, transparent) !important;
 }
 
-[data-accent="blue"] {
-  --color-accent: #3b82f6;
-  --color-accent-light: #eff6ff;
-  --color-accent-mid: #bfdbfe;
-  --color-accent-dark: #1d4ed8;
+/* Four-color palette compatibility for older Tailwind utilities. Tints are
+   mixed from the same four base colors instead of introducing new hues. */
+.text-white {
+  color: var(--color-brand-surface) !important;
 }
 
-[data-accent="indigo"] {
-  --color-accent: #6366f1;
-  --color-accent-light: #eef2ff;
-  --color-accent-mid: #c7d2fe;
-  --color-accent-dark: #4338ca;
+.bg-white {
+  background-color: var(--color-brand-surface) !important;
 }
 
-[data-accent="purple"] {
-  --color-accent: #8b5cf6;
-  --color-accent-light: #f5f3ff;
-  --color-accent-mid: #ddd6fe;
-  --color-accent-dark: #6d28d9;
+.text-gray-300,
+.text-gray-400 {
+  color: color-mix(in srgb, var(--color-brand-navy) 34%, var(--color-brand-surface)) !important;
 }
 
-[data-accent="emerald"] {
-  --color-accent: #10b981;
-  --color-accent-light: #ecfdf5;
-  --color-accent-mid: #a7f3d0;
-  --color-accent-dark: #047857;
+.text-gray-500,
+.text-gray-600 {
+  color: var(--color-text-muted) !important;
 }
 
-[data-accent="rose"] {
-  --color-accent: #f43f5e;
-  --color-accent-light: #fff1f2;
-  --color-accent-mid: #fecdd3;
-  --color-accent-dark: #be123c;
+.bg-gray-50,
+.bg-gray-100 {
+  background-color: color-mix(in srgb, var(--color-brand-navy) 5%, var(--color-brand-surface)) !important;
 }
 
+.border-gray-100,
+.border-gray-200,
+.border-gray-300 {
+  border-color: var(--color-border) !important;
+}
+
+.divide-gray-100 > :not([hidden]) ~ :not([hidden]),
+.divide-gray-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--color-border) !important;
+}
+
+.placeholder\:text-gray-400::placeholder,
+.placeholder\:text-gray-500::placeholder {
+  color: color-mix(in srgb, var(--color-brand-navy) 34%, var(--color-brand-surface)) !important;
+}
+
+/* Historical accent modes are preserved as settings values, but the product now
+   renders from one Reknew Orbit palette. */
+[data-accent="blue"],
+[data-accent="indigo"],
+[data-accent="purple"],
+[data-accent="emerald"],
+[data-accent="rose"],
 [data-accent="slate"] {
-  --color-accent: #64748b;
-  --color-accent-light: #f8fafc;
-  --color-accent-mid: #cbd5e1;
-  --color-accent-dark: #334155;
+  --color-accent: var(--color-brand-orange);
+  --color-accent-light: color-mix(in srgb, var(--color-brand-orange) 12%, var(--color-brand-surface));
+  --color-accent-mid: color-mix(in srgb, var(--color-brand-orange) 28%, var(--color-brand-surface));
+  --color-accent-dark: color-mix(in srgb, var(--color-brand-orange) 78%, var(--color-brand-navy));
 }
 
 [data-theme="dark"] {
-  --color-bg-primary: #1a1c1a;
-  --color-bg-card: #222522;
-  --color-bg-hover: #2a2e2a;
-  --color-border: #3a3e3a;
-  --color-text-primary: #e8ebe6;
-  --color-text-muted: #9ca89a;
+  --color-bg-primary: var(--color-brand-canvas);
+  --color-bg-card: var(--color-brand-surface);
+  --color-bg-hover: color-mix(in srgb, var(--color-brand-orange) 8%, var(--color-brand-surface));
+  --color-border: color-mix(in srgb, var(--color-brand-navy) 12%, var(--color-brand-surface));
+  --color-text-primary: var(--color-brand-navy);
+  --color-text-muted: color-mix(in srgb, var(--color-brand-navy) 62%, var(--color-brand-surface));
 }
 
 [data-theme="dark"] body {

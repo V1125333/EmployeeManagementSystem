@@ -1,8 +1,10 @@
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
+  ArrowRight,
   Banknote,
   BriefcaseBusiness,
   CalendarDays,
@@ -17,6 +19,7 @@ import {
   Loader2,
   MessageSquare,
   RefreshCw,
+  Search,
   Send,
   Trash2,
   UserRound,
@@ -29,7 +32,7 @@ import { useAuth } from '@/hooks/useAuth';
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 const MAX_RECEIPT_BYTES = 10 * 1024 * 1024;
 
-type RequestType = 'wfh' | 'short_permission' | 'overtime' | 'expense';
+type RequestType = 'wfh' | 'short_permission' | 'overtime' | 'expense' | 'application_issue';
 type RequestStatus = 'draft' | 'pending' | 'approved' | 'rejected' | 'cancelled' | 'paid';
 
 interface EmployeeRequest {
@@ -75,6 +78,10 @@ interface EmployeeRequest {
     description?: string | null;
     paid_at?: string | null;
     paid_by_id?: string | null;
+  } | null;
+  application_issue?: {
+    category?: string | null;
+    description?: string | null;
   } | null;
   can_edit: boolean;
   can_submit: boolean;
@@ -166,6 +173,16 @@ const requestTypes: Array<{ type: RequestType; label: string; description: strin
   { type: 'short_permission', label: 'Short Permission', description: 'Short time away during the day.', icon: <Clock3 size={18} /> },
   { type: 'overtime', label: 'Overtime', description: 'Extra work hours that need approval.', icon: <BriefcaseBusiness size={18} /> },
   { type: 'expense', label: 'Expense Reimbursement', description: 'Submit receipts for business expenses.', icon: <Banknote size={18} /> },
+  { type: 'application_issue', label: 'Application Issue', description: 'Report UI, document, upload, or timesheet issues.', icon: <AlertCircle size={18} /> },
+];
+
+const applicationIssueCategories = [
+  { value: 'font_issue', label: 'Font issue' },
+  { value: 'improper_format', label: 'Improper format' },
+  { value: 'document_upload_download', label: 'Unable to upload/download documents' },
+  { value: 'timesheet_issue', label: 'Timesheet issue' },
+  { value: 'application_navigation', label: 'Application navigation issue' },
+  { value: 'other', label: 'Other' },
 ];
 
 function roleKey(role?: string) {
@@ -197,9 +214,10 @@ function formatDateTime(value?: string | null) {
 
 function summarize(row: EmployeeRequest) {
   if (row.request_type === 'wfh') return `${formatDate(row.start_date)} - ${formatDate(row.end_date)}`;
-  if (row.request_type === 'short_permission') return `${formatDate(row.request_date)} • ${row.duration_minutes || 0} min`;
-  if (row.request_type === 'overtime') return `${formatDate(row.request_date)} • ${row.hours || 0}h`;
-  return `${formatDate(row.request_date)} • ${row.currency || 'USD'} ${row.amount || 0}`;
+  if (row.request_type === 'short_permission') return `${formatDate(row.request_date)} - ${row.duration_minutes || 0} min`;
+  if (row.request_type === 'overtime') return `${formatDate(row.request_date)} - ${row.hours || 0}h`;
+  if (row.request_type === 'application_issue') return labelize(row.category || row.application_issue?.category);
+  return `${formatDate(row.request_date)} - ${row.currency || 'USD'} ${row.amount || 0}`;
 }
 
 function emptyForm(type: RequestType = 'wfh'): FormState {
@@ -265,11 +283,11 @@ function SkeletonRows() {
 
 function PageShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="animate-fade-up">
+    <div className="-mx-[var(--layout-main-padding-x)] -my-[var(--layout-main-padding-y)] min-h-[calc(100vh-3.5rem)] animate-fade-up bg-[#f7f3ec] px-[var(--layout-main-padding-x)] py-[var(--layout-main-padding-y)]">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="mb-1 text-2xl font-bold tracking-tight text-[#2F3437]">Requests</h1>
-          <p className="text-sm text-gray-500">Raise work-from-home, short permission, overtime, and reimbursement requests.</p>
+          <h1 className="mb-1 text-[28px] font-bold tracking-tight text-[#1f2430]">Requests</h1>
+          <p className="text-sm text-[#8a8371]">Raise work-from-home, short permission, overtime, reimbursement, and application issue requests.</p>
         </div>
       </div>
       {children}
@@ -279,13 +297,16 @@ function PageShell({ children }: { children: React.ReactNode }) {
 
 function RequestTypeCards({ onCreate }: { onCreate: (type: RequestType) => void }) {
   return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
       {requestTypes.map((item) => (
-        <button key={item.type} onClick={() => onCreate(item.type)} className="text-left">
-          <Card className="h-full p-5 transition-all hover:-translate-y-0.5 hover:shadow-card-md">
-            <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-olive/10 text-olive">{item.icon}</div>
-            <div className="text-sm font-bold text-[#2F3437]">{item.label}</div>
-            <div className="mt-1 text-xs leading-5 text-gray-500">{item.description}</div>
+        <button key={item.type} type="button" onClick={() => onCreate(item.type)} className="group text-left">
+          <Card className="h-full min-h-[188px] border-[#ece5d8] p-5 transition-all group-hover:-translate-y-0.5 group-hover:border-[#d97a34]/40 group-hover:shadow-card-md">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-[#fbeee1] text-[#d97a34]">{item.icon}</div>
+            <div className="text-base font-bold text-[#1f2430]">{item.label}</div>
+            <div className="mt-1 min-h-10 text-sm leading-5 text-[#8a8371]">{item.description}</div>
+            <div className="mt-4 inline-flex items-center gap-1 text-sm font-bold text-[#d06a21]">
+              New request <ArrowRight size={14} className="transition-transform group-hover:translate-x-0.5" />
+            </div>
           </Card>
         </button>
       ))}
@@ -293,90 +314,126 @@ function RequestTypeCards({ onCreate }: { onCreate: (type: RequestType) => void 
   );
 }
 
-function RequestsTable({
-  title,
-  rows,
-  empty,
-  canCreate,
-  canReassign,
-  onCreate,
-  onView,
-  onAction,
-  onReassign,
-}: {
-  title: string;
+function RequestIcon({ type }: { type: RequestType }) {
+  const item = requestTypes.find((requestType) => requestType.type === type);
+  return <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#fbeee1] text-[#d97a34]">{item?.icon}</div>;
+}
+
+function RequestStatusBadge({ status }: { status: RequestStatus }) {
+  return (
+    <Badge variant={statusVariant(status)}>
+      <span className="mr-1">●</span>{labelize(status)}
+    </Badge>
+  );
+}
+
+function MyRequestsCard({ rows, onCreate, onView }: {
   rows: EmployeeRequest[];
-  empty: string;
-  canCreate?: boolean;
-  canReassign?: boolean;
-  onCreate?: () => void;
+  onCreate: () => void;
   onView: (row: EmployeeRequest) => void;
-  onAction: (row: EmployeeRequest, action: 'submit' | 'cancel' | 'approve' | 'reject') => void;
-  onReassign?: (row: EmployeeRequest) => void;
 }) {
   return (
-    <Card className="overflow-hidden">
-      <CardHeader title={title} icon={<Send size={17} />} />
+    <Card className="overflow-hidden border-[#ece5d8]">
+      <div className="flex items-center justify-between border-b border-[#ece5d8] px-6 py-5">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#fbeee1] text-[#d97a34]"><Send size={18} /></div>
+          <h2 className="text-lg font-bold text-[#1f2430]">My Requests</h2>
+          <span className="rounded-full bg-[#f2ece0] px-2.5 py-1 text-xs font-bold text-[#8a8371]">{rows.length}</span>
+        </div>
+        {rows.length > 0 && <button type="button" onClick={() => rows[0] && onView(rows[0])} className="text-sm font-bold text-[#d06a21]">View latest <ArrowRight className="inline" size={14} /></button>}
+      </div>
       {rows.length === 0 ? (
-        <div className="px-5 py-16 text-center text-sm text-gray-500">
-          {canCreate ? <FileX className="mx-auto mb-3 h-10 w-10 text-gray-300" /> : <CheckCircle2 className="mx-auto mb-3 h-10 w-10 text-gray-300" />}
-          <p>{empty}</p>
-          {canCreate && onCreate && <Button size="sm" className="mt-4" onClick={onCreate}>Create your first request</Button>}
+        <div className="m-6 rounded-2xl border border-dashed border-[#dfd2bc] px-5 py-14 text-center text-sm text-[#8a8371]">
+          <FileX className="mx-auto mb-3 h-10 w-10 text-[#cbbfae]" />
+          <p>You have not created any requests yet.</p>
+          <Button size="sm" className="mt-4" onClick={onCreate}>Create your first request</Button>
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1120px] text-sm">
-            <thead className="bg-warm-bg text-[11px] uppercase tracking-wide text-gray-400">
+          <table className="w-full min-w-[880px] text-sm">
+            <thead className="text-[11px] uppercase tracking-wide text-[#a99e8a]">
               <tr>
-                <th className="px-5 py-3 text-left">Ticket</th>
-                <th className="px-5 py-3 text-left">Request</th>
-                <th className="px-5 py-3 text-left">Employee</th>
-                <th className="px-5 py-3 text-left">Details</th>
-                <th className="px-5 py-3 text-left">Current Owner</th>
-                <th className="px-5 py-3 text-left">Pending</th>
+                <th className="px-6 py-3 text-left">Request</th>
+                <th className="px-5 py-3 text-left">Type</th>
+                <th className="px-5 py-3 text-left">Dates / details</th>
                 <th className="px-5 py-3 text-left">Status</th>
-                <th className="px-5 py-3 text-right">Actions</th>
+                <th className="px-6 py-3 text-right">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E5E7EB]">
+            <tbody className="divide-y divide-[#ece5d8]">
               {rows.map((row) => (
-                <tr key={row.id}>
-                  <td className="px-5 py-4">
-                    <button
-                      type="button"
-                      title="Copy ticket number"
-                      onClick={() => copyText(row.ticket_number)}
-                      className="inline-flex items-center gap-1 rounded-md bg-gray-50 px-2 py-1 font-mono text-xs font-bold text-olive hover:bg-hover-bg"
-                    >
-                      {row.ticket_number || 'Pending ID'}
-                      <Copy size={12} />
-                    </button>
-                  </td>
-                  <td className="px-5 py-4">
-                    <div className="font-bold text-[#2F3437]">{row.request_type_label}</div>
-                    <div className="text-xs text-gray-500">{row.title}</div>
-                  </td>
-                  <td className="px-5 py-4 font-semibold">{row.employee_name}</td>
-                  <td className="px-5 py-4 text-gray-600">{summarize(row)}</td>
-                  <td className="px-5 py-4 text-gray-600">{row.current_owner_name || (row.status === 'pending' ? row.approver_name : '-')}</td>
-                  <td className={`px-5 py-4 font-semibold ${pendingTone(row.days_pending)}`}>
-                    {row.status === 'pending' ? `${row.days_pending ?? 0} day${(row.days_pending ?? 0) === 1 ? '' : 's'}` : '-'}
-                  </td>
-                  <td className="px-5 py-4"><Badge variant={statusVariant(row.status)}>{labelize(row.status)}</Badge></td>
-                  <td className="px-5 py-4">
-                    <div className="flex justify-end gap-2">
-                      <Button size="sm" variant="ghost" icon={<Eye size={13} />} onClick={() => onView(row)}>View</Button>
-                      {row.can_submit && <Button size="sm" variant="soft" icon={<Send size={13} />} onClick={() => onAction(row, 'submit')}>Submit</Button>}
-                      {row.can_cancel && <Button size="sm" variant="ghost" icon={<Trash2 size={13} />} onClick={() => onAction(row, 'cancel')}>Cancel</Button>}
-                      {row.can_decide && <Button size="sm" variant="soft" icon={<CheckCircle2 size={13} />} onClick={() => onAction(row, 'approve')}>Approve</Button>}
-                      {row.can_decide && <Button size="sm" variant="ghost" icon={<X size={13} />} onClick={() => onAction(row, 'reject')}>Reject</Button>}
-                      {canReassign && row.can_reassign && onReassign && <Button size="sm" variant="ghost" icon={<GitBranch size={13} />} onClick={() => onReassign(row)}>Reassign</Button>}
+                <tr key={row.id} className="transition-colors hover:bg-[#fffaf3]">
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-3">
+                      <RequestIcon type={row.request_type} />
+                      <div>
+                        <div className="font-bold text-[#1f2430]">{row.title || row.request_type_label}</div>
+                        <button type="button" onClick={() => copyText(row.ticket_number)} className="mt-0.5 inline-flex items-center gap-1 text-xs text-[#a99e8a] hover:text-[#d06a21]">
+                          {row.ticket_number || 'Pending ID'} · raised {formatDate(row.created_at.slice(0, 10))}<Copy size={11} />
+                        </button>
+                      </div>
                     </div>
+                  </td>
+                  <td className="px-5 py-4 text-[#5f5a4f]">{row.request_type_label}</td>
+                  <td className="px-5 py-4 text-[#5f5a4f]">{summarize(row)}</td>
+                  <td className="px-5 py-4"><RequestStatusBadge status={row.status} /></td>
+                  <td className="px-6 py-4 text-right">
+                    <button type="button" onClick={() => onView(row)} className="font-bold text-[#d06a21] hover:underline">{row.status === 'rejected' ? 'Details' : 'View'}</button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function ApprovalQueueCard({ rows, canReassign, onView, onAction }: {
+  rows: EmployeeRequest[];
+  canReassign: boolean;
+  onView: (row: EmployeeRequest) => void;
+  onAction: (row: EmployeeRequest, action: 'submit' | 'cancel' | 'approve' | 'reject') => void;
+}) {
+  return (
+    <Card className="overflow-hidden border-[#ece5d8]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#ece5d8] px-6 py-5">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#fcecec] text-[#d64545]"><CheckCircle2 size={18} /></div>
+          <h2 className="text-lg font-bold text-[#1f2430]">Approval Queue</h2>
+          <span className="rounded-full bg-[#fcecec] px-2.5 py-1 text-xs font-bold text-[#c94c38]">{rows.length} waiting</span>
+        </div>
+        <a href="/employee/approvals" className="text-sm font-bold text-[#d06a21]">Go to Approvals <ArrowRight className="inline" size={14} /></a>
+      </div>
+      {rows.length === 0 ? (
+        <div className="m-6 rounded-2xl border border-dashed border-[#dfd2bc] px-5 py-12 text-center text-sm text-[#8a8371]">
+          <CheckCircle2 className="mx-auto mb-3 h-10 w-10 text-[#8fb18d]" />
+          No requests are waiting for your approval.
+        </div>
+      ) : (
+        <div className="space-y-3 p-6">
+          {rows.map((row) => {
+            const initials = row.employee_name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+            return (
+              <div key={row.id} className="flex flex-wrap items-center gap-4 rounded-2xl border border-[#ece5d8] bg-[#fffaf3] px-5 py-4">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#2b3243] text-sm font-bold text-white">{initials || '—'}</div>
+                <button type="button" onClick={() => onView(row)} className="min-w-[230px] flex-1 text-left">
+                  <div className="font-bold text-[#1f2430]">{row.employee_name}</div>
+                  <div className="mt-0.5 text-sm text-[#8a8371]">{row.request_type_label} · {row.title || row.reason || 'Approval requested'}</div>
+                </button>
+                <div className="min-w-[150px] text-right">
+                  <div className="font-bold text-[#1f2430]">{summarize(row)}</div>
+                  <div className={`mt-0.5 text-xs ${pendingTone(row.days_pending)}`}>{row.days_pending ? `waiting ${row.days_pending} day${row.days_pending === 1 ? '' : 's'}` : 'requested recently'}</div>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="ghost" onClick={() => onAction(row, 'reject')}>Decline</Button>
+                  <Button size="sm" onClick={() => onAction(row, 'approve')}>Approve</Button>
+                  {canReassign && row.can_reassign && <Button size="sm" variant="ghost" icon={<GitBranch size={13} />} onClick={() => onView(row)}>More</Button>}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </Card>
@@ -429,9 +486,9 @@ function RequestModal({
   return createPortal(
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/35 p-6 backdrop-blur-sm">
       <Card className="max-h-[90vh] w-full max-w-2xl overflow-hidden shadow-[0_24px_80px_rgba(31,41,55,0.24)]">
-        <div className="flex items-start justify-between border-b border-[#E5E7EB] px-6 py-5">
+        <div className="flex items-start justify-between border-b border-[var(--color-border)] px-6 py-5">
           <div>
-            <h2 className="text-lg font-bold text-[#2F3437]">New {requestTypes.find((item) => item.type === form.request_type)?.label || 'Request'} Request</h2>
+            <h2 className="text-lg font-bold text-[var(--color-brand-navy)]">New {requestTypes.find((item) => item.type === form.request_type)?.label || 'Request'} Request</h2>
             <p className="mt-1 text-sm text-gray-500">Complete the required fields and submit for approval.</p>
           </div>
           <button onClick={onClose} className="rounded-lg p-2 text-gray-400 hover:bg-hover-bg"><X size={18} /></button>
@@ -445,49 +502,58 @@ function RequestModal({
           )}
           <div className="grid gap-4 md:grid-cols-2">
             {!lockedType && (
-              <label className="grid gap-1 text-sm font-semibold text-[#2F3437]">
+              <label className="grid gap-1 text-sm font-semibold text-[var(--color-brand-navy)]">
                 Request Type
-                <select value={form.request_type} onChange={(event) => { setFormError(''); setForm(emptyForm(event.target.value as RequestType)); }} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 outline-none focus:border-olive">
+                <select value={form.request_type} onChange={(event) => { setFormError(''); setForm(emptyForm(event.target.value as RequestType)); }} className="h-11 rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 outline-none focus:border-olive">
                   {requestTypes.map((item) => <option key={item.type} value={item.type}>{item.label}</option>)}
                 </select>
               </label>
             )}
             {form.request_type === 'expense' && (
-              <label className="grid gap-1 text-sm font-semibold text-[#2F3437]">
+              <label className="grid gap-1 text-sm font-semibold text-[var(--color-brand-navy)]">
                 Category
-                <input value={form.category} onChange={(event) => setField('category', event.target.value)} placeholder="Travel, meal, software..." className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 outline-none focus:border-olive" />
+                <input value={form.category} onChange={(event) => setField('category', event.target.value)} placeholder="Travel, meal, software..." className="h-11 rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 outline-none focus:border-olive" />
+              </label>
+            )}
+            {form.request_type === 'application_issue' && (
+              <label className="grid gap-1 text-sm font-semibold text-[var(--color-brand-navy)] md:col-span-2">
+                Issue Category
+                <select value={form.category} onChange={(event) => setField('category', event.target.value)} className="h-11 rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 outline-none focus:border-olive">
+                  <option value="">Select issue category</option>
+                  {applicationIssueCategories.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </select>
               </label>
             )}
             {form.request_type === 'wfh' ? (
               <>
-                <label className="grid gap-1 text-sm font-semibold text-[#2F3437]">From Date<input type="date" min={activePolicy?.min_date || undefined} max={activePolicy?.max_date || undefined} value={form.start_date} onChange={(event) => setField('start_date', event.target.value)} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 outline-none focus:border-olive" /></label>
-                <label className="grid gap-1 text-sm font-semibold text-[#2F3437]">To Date<input type="date" min={form.start_date || activePolicy?.min_date || undefined} max={activePolicy?.max_date || undefined} value={form.end_date} onChange={(event) => setField('end_date', event.target.value)} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 outline-none focus:border-olive" /></label>
+                <label className="grid gap-1 text-sm font-semibold text-[var(--color-brand-navy)]">From Date<input type="date" min={activePolicy?.min_date || undefined} max={activePolicy?.max_date || undefined} value={form.start_date} onChange={(event) => setField('start_date', event.target.value)} className="h-11 rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 outline-none focus:border-olive" /></label>
+                <label className="grid gap-1 text-sm font-semibold text-[var(--color-brand-navy)]">To Date<input type="date" min={form.start_date || activePolicy?.min_date || undefined} max={activePolicy?.max_date || undefined} value={form.end_date} onChange={(event) => setField('end_date', event.target.value)} className="h-11 rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 outline-none focus:border-olive" /></label>
               </>
-            ) : (
-              <label className="grid gap-1 text-sm font-semibold text-[#2F3437]">
+            ) : form.request_type !== 'application_issue' ? (
+              <label className="grid gap-1 text-sm font-semibold text-[var(--color-brand-navy)]">
                 Date
-                <input type="date" min={activePolicy?.min_date || undefined} max={activePolicy?.max_date || undefined} value={form.request_date} onChange={(event) => setField('request_date', event.target.value)} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 outline-none focus:border-olive" />
+                <input type="date" min={activePolicy?.min_date || undefined} max={activePolicy?.max_date || undefined} value={form.request_date} onChange={(event) => setField('request_date', event.target.value)} className="h-11 rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 outline-none focus:border-olive" />
               </label>
-            )}
+            ) : null}
             {form.request_type === 'short_permission' && (
               <>
-                <label className="grid gap-1 text-sm font-semibold text-[#2F3437]">Start Time<input type="time" value={form.start_time} onChange={(event) => setField('start_time', event.target.value)} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 outline-none focus:border-olive" /></label>
-                <label className="grid gap-1 text-sm font-semibold text-[#2F3437]">End Time<input type="time" value={form.end_time} onChange={(event) => setField('end_time', event.target.value)} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 outline-none focus:border-olive" /></label>
+                <label className="grid gap-1 text-sm font-semibold text-[var(--color-brand-navy)]">Start Time<input type="time" value={form.start_time} onChange={(event) => setField('start_time', event.target.value)} className="h-11 rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 outline-none focus:border-olive" /></label>
+                <label className="grid gap-1 text-sm font-semibold text-[var(--color-brand-navy)]">End Time<input type="time" value={form.end_time} onChange={(event) => setField('end_time', event.target.value)} className="h-11 rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 outline-none focus:border-olive" /></label>
               </>
             )}
             {form.request_type === 'overtime' && (
               <>
-                <label className="grid gap-1 text-sm font-semibold text-[#2F3437]">Start Time<input type="time" value={form.start_time} onChange={(event) => setField('start_time', event.target.value)} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 outline-none focus:border-olive" /></label>
-                <label className="grid gap-1 text-sm font-semibold text-[#2F3437]">End Time<input type="time" value={form.end_time} onChange={(event) => setField('end_time', event.target.value)} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 outline-none focus:border-olive" /></label>
+                <label className="grid gap-1 text-sm font-semibold text-[var(--color-brand-navy)]">Start Time<input type="time" value={form.start_time} onChange={(event) => setField('start_time', event.target.value)} className="h-11 rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 outline-none focus:border-olive" /></label>
+                <label className="grid gap-1 text-sm font-semibold text-[var(--color-brand-navy)]">End Time<input type="time" value={form.end_time} onChange={(event) => setField('end_time', event.target.value)} className="h-11 rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 outline-none focus:border-olive" /></label>
               </>
             )}
             {form.request_type === 'expense' && (
               <>
-                <label className="grid gap-1 text-sm font-semibold text-[#2F3437]">Amount<input type="number" min="0.01" step="0.01" value={form.amount} onChange={(event) => setField('amount', event.target.value)} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 outline-none focus:border-olive" /></label>
-                <label className="grid gap-1 text-sm font-semibold text-[#2F3437]">Currency<input value={form.currency} onChange={(event) => setField('currency', event.target.value.toUpperCase())} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 outline-none focus:border-olive" /></label>
-                <label className="grid gap-1 text-sm font-semibold text-[#2F3437] md:col-span-2">
+                <label className="grid gap-1 text-sm font-semibold text-[var(--color-brand-navy)]">Amount<input type="number" min="0.01" step="0.01" value={form.amount} onChange={(event) => setField('amount', event.target.value)} className="h-11 rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 outline-none focus:border-olive" /></label>
+                <label className="grid gap-1 text-sm font-semibold text-[var(--color-brand-navy)]">Currency<input value={form.currency} onChange={(event) => setField('currency', event.target.value.toUpperCase())} className="h-11 rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 outline-none focus:border-olive" /></label>
+                <label className="grid gap-1 text-sm font-semibold text-[var(--color-brand-navy)] md:col-span-2">
                   Receipt
-                  <div className="rounded-lg border border-dashed border-[#D9DED3] bg-warm-bg p-3 text-sm text-gray-500">
+                  <div className="rounded-lg border border-dashed border-[var(--color-border)] bg-warm-bg p-3 text-sm text-gray-500">
                     <input
                       type="file"
                       accept={acceptedFileTypes}
@@ -509,7 +575,7 @@ function RequestModal({
                         <div className="flex items-center gap-3">
                           {previewUrl ? <img src={previewUrl} className="h-12 w-12 rounded-lg object-cover" /> : <FileText size={24} className="text-olive" />}
                           <div>
-                            <div className="font-semibold text-[#2F3437]">{form.attachment.name}</div>
+                            <div className="font-semibold text-[var(--color-brand-navy)]">{form.attachment.name}</div>
                             <div className="text-xs text-gray-400">{formatFileSize(form.attachment.size)}</div>
                           </div>
                         </div>
@@ -520,7 +586,7 @@ function RequestModal({
                 </label>
               </>
             )}
-            {activePolicy && (
+            {activePolicy && form.request_type !== 'application_issue' && (
               <div className="rounded-lg border border-olive/15 bg-olive/5 px-3 py-2 text-xs leading-5 text-gray-600 md:col-span-2">
                 Valid dates
                 {activePolicy.min_date ? ` from ${formatDate(activePolicy.min_date)}` : ''}
@@ -528,14 +594,19 @@ function RequestModal({
                 . Approval starts with your Reporting Manager{activePolicy.requires_hr_approval ? ', then moves to HR review.' : '.'}
               </div>
             )}
-            <label className="grid gap-1 text-sm font-semibold text-[#2F3437] md:col-span-2">
-              Reason
-              <textarea value={form.reason} maxLength={500} onChange={(event) => setField('reason', event.target.value)} placeholder="Add enough context for your manager..." className="min-h-[96px] rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 py-3 outline-none focus:border-olive" />
+            {form.request_type === 'application_issue' && (
+              <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs leading-5 text-[var(--color-brand-navy)] md:col-span-2">
+                Application issues are sent to HR/application support for review. Include the page name, what you expected, and what actually happened.
+              </div>
+            )}
+            <label className="grid gap-1 text-sm font-semibold text-[var(--color-brand-navy)] md:col-span-2">
+              {form.request_type === 'application_issue' ? 'Issue Details' : 'Reason'}
+              <textarea value={form.reason} maxLength={500} onChange={(event) => setField('reason', event.target.value)} placeholder={form.request_type === 'application_issue' ? 'Example: On Timesheets, the date column overlaps on small screens...' : 'Add enough context for your manager...'} className="min-h-[96px] rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 py-3 outline-none focus:border-olive" />
               <span className="text-right text-xs text-gray-400">{form.reason.length}/500</span>
             </label>
           </div>
         </div>
-        <div className="flex justify-end gap-3 border-t border-[#E5E7EB] px-6 py-4">
+        <div className="flex justify-end gap-3 border-t border-[var(--color-border)] px-6 py-4">
           <Button variant="ghost" disabled={saving} onClick={() => submit('draft')}>{saving ? 'Saving...' : 'Save Draft'}</Button>
           <Button disabled={saving} icon={saving ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} onClick={() => submit('submit')}>Submit Request</Button>
         </div>
@@ -554,12 +625,12 @@ function WorkflowProgressTracker({ request }: { request: EmployeeRequest }) {
   ];
   return (
     <Card className="mt-4 p-4">
-      <div className="mb-3 flex items-center gap-2 text-sm font-bold text-[#2F3437]"><GitBranch size={15} className="text-olive" /> Workflow</div>
+      <div className="mb-3 flex items-center gap-2 text-sm font-bold text-[var(--color-brand-navy)]"><GitBranch size={15} className="text-olive" /> Workflow</div>
       <div className="grid gap-3">
         {steps.map((step, index) => (
           <div key={step.key} className="flex items-center gap-3">
             <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${step.complete ? 'bg-olive text-white' : 'bg-gray-100 text-gray-400'}`}>{index + 1}</span>
-            <span className={`text-sm ${step.complete ? 'font-semibold text-[#2F3437]' : 'text-gray-500'}`}>{step.label}</span>
+            <span className={`text-sm ${step.complete ? 'font-semibold text-[var(--color-brand-navy)]' : 'text-gray-500'}`}>{step.label}</span>
           </div>
         ))}
       </div>
@@ -591,9 +662,9 @@ function ActionReasonModal({
   return createPortal(
     <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/35 p-6 backdrop-blur-sm">
       <Card className="w-full max-w-lg overflow-hidden shadow-[0_24px_80px_rgba(31,41,55,0.24)]">
-        <div className="flex items-start justify-between border-b border-[#E5E7EB] px-6 py-5">
+        <div className="flex items-start justify-between border-b border-[var(--color-border)] px-6 py-5">
           <div>
-            <h2 className="text-lg font-bold text-[#2F3437]">{title}</h2>
+            <h2 className="text-lg font-bold text-[var(--color-brand-navy)]">{title}</h2>
             <p className="mt-1 text-sm text-gray-500">{intent.row.ticket_number || intent.row.request_type_label}</p>
           </div>
           <button onClick={onClose} disabled={submitting} className="rounded-lg p-2 text-gray-400 hover:bg-hover-bg disabled:cursor-not-allowed disabled:opacity-50">
@@ -601,8 +672,8 @@ function ActionReasonModal({
           </button>
         </div>
         <div className="p-6">
-          <div className="mb-4 rounded-xl border border-[#E5E7EB] bg-warm-bg p-4">
-            <div className="text-sm font-bold text-[#2F3437]">{intent.row.request_type_label}</div>
+          <div className="mb-4 rounded-xl border border-[var(--color-border)] bg-warm-bg p-4">
+            <div className="text-sm font-bold text-[var(--color-brand-navy)]">{intent.row.request_type_label}</div>
             <div className="mt-1 text-sm text-gray-500">{summarize(intent.row)}</div>
           </div>
           {error && (
@@ -611,14 +682,14 @@ function ActionReasonModal({
               <span>{error}</span>
             </div>
           )}
-          <label className="grid gap-2 text-sm font-semibold text-[#2F3437]">
+          <label className="grid gap-2 text-sm font-semibold text-[var(--color-brand-navy)]">
             {isReject ? 'Rejection reason' : 'Cancellation reason'}
             <textarea
               value={reason}
               maxLength={500}
               onChange={(event) => setReason(event.target.value)}
               placeholder={isReject ? 'Explain why this request is being rejected.' : 'Optional: add why this request is being cancelled.'}
-              className="min-h-[120px] rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 py-3 text-sm outline-none focus:border-olive"
+              className="min-h-[120px] rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 py-3 text-sm outline-none focus:border-olive"
               autoFocus
             />
           </label>
@@ -627,7 +698,7 @@ function ActionReasonModal({
             <span>{reason.length}/500</span>
           </div>
         </div>
-        <div className="flex justify-end gap-3 border-t border-[#E5E7EB] px-6 py-4">
+        <div className="flex justify-end gap-3 border-t border-[var(--color-border)] px-6 py-4">
           <Button variant="ghost" disabled={submitting} onClick={onClose}>Keep Request</Button>
           <Button
             disabled={submitting || !canSubmit}
@@ -767,15 +838,15 @@ function DetailDrawer({ request, userRole, employees, onClose, onRefresh, onActi
     <>
       <div className="fixed inset-0 z-[1000] flex justify-end bg-black/25 backdrop-blur-sm">
       <Card className="h-full w-full max-w-xl overflow-hidden rounded-none border-y-0 border-r-0 shadow-[0_24px_80px_rgba(31,41,55,0.28)]">
-        <div className="flex items-start justify-between border-b border-[#E5E7EB] px-6 py-5">
+        <div className="flex items-start justify-between border-b border-[var(--color-border)] px-6 py-5">
           <div>
             <div className="mb-2"><Badge variant={statusVariant(request.status)}>{labelize(request.status)}</Badge></div>
-            <h2 className="text-lg font-bold text-[#2F3437]">{request.request_type_label}</h2>
+            <h2 className="text-lg font-bold text-[var(--color-brand-navy)]">{request.request_type_label}</h2>
             <p className="text-sm text-gray-500">{summarize(request)}</p>
             <button
               type="button"
               onClick={() => copyText(request.ticket_number)}
-              className="mt-3 inline-flex items-center gap-2 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 py-1.5 font-mono text-xs font-bold text-olive hover:bg-hover-bg"
+              className="mt-3 inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 py-1.5 font-mono text-xs font-bold text-olive hover:bg-hover-bg"
             >
               {request.ticket_number || 'Pending ID'} <Copy size={12} />
             </button>
@@ -796,19 +867,19 @@ function DetailDrawer({ request, userRole, employees, onClose, onRefresh, onActi
           {request.can_reassign && isPrivilegedAdmin(userRole) && request.status === 'pending' && (
             <Card className="mt-4 p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 text-sm font-bold text-[#2F3437]"><UserRound size={15} className="text-olive" /> Ownership</div>
+                <div className="flex items-center gap-2 text-sm font-bold text-[var(--color-brand-navy)]"><UserRound size={15} className="text-olive" /> Ownership</div>
                 <Button size="sm" variant="ghost" icon={<GitBranch size={13} />} onClick={() => setReassignOpen((value) => !value)}>{reassignOpen ? 'Close' : 'Reassign'}</Button>
               </div>
-              <div className="text-sm text-gray-600">Current owner: <span className="font-semibold text-[#2F3437]">{request.current_owner_name || '-'}</span></div>
+              <div className="text-sm text-gray-600">Current owner: <span className="font-semibold text-[var(--color-brand-navy)]">{request.current_owner_name || '-'}</span></div>
               {reassignOpen && (
                 <div className="mt-4 grid gap-3">
-                  <select value={newOwnerId} onChange={(event) => setNewOwnerId(event.target.value)} className="h-10 rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 text-sm outline-none focus:border-olive">
+                  <select value={newOwnerId} onChange={(event) => setNewOwnerId(event.target.value)} className="h-10 rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 text-sm outline-none focus:border-olive">
                     <option value="">Select new owner</option>
                     {employees.map((employee) => (
                       <option key={employee.id} value={employee.id}>{employee.name} {employee.role ? `(${labelize(employee.role)})` : ''}</option>
                     ))}
                   </select>
-                  <textarea value={reassignReason} onChange={(event) => setReassignReason(event.target.value)} placeholder="Reason for reassignment..." className="min-h-[72px] rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 py-2 text-sm outline-none focus:border-olive" />
+                  <textarea value={reassignReason} onChange={(event) => setReassignReason(event.target.value)} placeholder="Reason for reassignment..." className="min-h-[72px] rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 py-2 text-sm outline-none focus:border-olive" />
                   <Button size="sm" disabled={reassigning} icon={reassigning ? <Loader2 size={13} className="animate-spin" /> : <GitBranch size={13} />} onClick={submitReassign}>Reassign Request</Button>
                 </div>
               )}
@@ -816,7 +887,7 @@ function DetailDrawer({ request, userRole, employees, onClose, onRefresh, onActi
           )}
           <Card className="mt-4 p-4">
             <div className="mb-1 text-xs font-bold uppercase tracking-wide text-gray-400">Reason</div>
-            <p className="text-sm leading-6 text-[#2F3437]">{request.reason || '-'}</p>
+            <p className="text-sm leading-6 text-[var(--color-brand-navy)]">{request.reason || '-'}</p>
             {request.rejection_reason && <p className="mt-3 rounded-lg bg-status-error/10 px-3 py-2 text-sm text-status-error">{request.rejection_reason}</p>}
           </Card>
           <Card className="mt-4 overflow-hidden">
@@ -825,9 +896,9 @@ function DetailDrawer({ request, userRole, employees, onClose, onRefresh, onActi
               <div className="px-5 py-5 text-sm text-gray-500">No attachments.</div>
             ) : (
               (request.attachments || []).map((item) => (
-                <div key={item.id} className="flex items-center justify-between gap-3 border-b border-[#E5E7EB] px-5 py-3 last:border-b-0">
+                <div key={item.id} className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-5 py-3 last:border-b-0">
                   <div>
-                    <div className="text-sm font-bold text-[#2F3437]">{item.original_file_name}</div>
+                    <div className="text-sm font-bold text-[var(--color-brand-navy)]">{item.original_file_name}</div>
                     <div className="text-xs text-gray-500">{formatFileSize(item.file_size_bytes)} • {formatDateTime(item.created_at)}</div>
                   </div>
                   <div className="flex gap-2">
@@ -838,8 +909,8 @@ function DetailDrawer({ request, userRole, employees, onClose, onRefresh, onActi
               ))
             )}
             {request.request_type === 'expense' && ['draft', 'pending'].includes(request.status) && (
-              <div className="border-t border-[#E5E7EB] p-4">
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm font-semibold text-olive hover:bg-hover-bg">
+              <div className="border-t border-[var(--color-border)] p-4">
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-semibold text-olive hover:bg-hover-bg">
                   {uploading ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
                   Upload Receipt
                   <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" className="hidden" disabled={uploading} onChange={(event) => uploadReceipt(event.target.files?.[0] || null)} />
@@ -850,7 +921,7 @@ function DetailDrawer({ request, userRole, employees, onClose, onRefresh, onActi
           <Card className="mt-4 overflow-hidden">
             <CardHeader title="Comments" icon={<MessageSquare size={15} />} />
             {(request.comments || []).map((item) => (
-              <div key={item.id} className="border-b border-[#E5E7EB] px-5 py-3 last:border-b-0">
+              <div key={item.id} className="border-b border-[var(--color-border)] px-5 py-3 last:border-b-0">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-bold">{item.created_by_name}</span>
                   <span className="text-xs text-gray-400">{formatDateTime(item.created_at)}</span>
@@ -859,8 +930,8 @@ function DetailDrawer({ request, userRole, employees, onClose, onRefresh, onActi
                 {item.is_internal && <Badge variant="neutral">Internal</Badge>}
               </div>
             ))}
-            <div className="grid gap-2 border-t border-[#E5E7EB] p-4">
-              <textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add a comment..." className="min-h-[78px] rounded-lg border border-[#E5E7EB] bg-warm-bg px-3 py-2 text-sm outline-none focus:border-olive" />
+            <div className="grid gap-2 border-t border-[var(--color-border)] p-4">
+              <textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add a comment..." className="min-h-[78px] rounded-lg border border-[var(--color-border)] bg-warm-bg px-3 py-2 text-sm outline-none focus:border-olive" />
               <label className="flex items-center gap-2 text-xs font-semibold text-gray-500"><input type="checkbox" checked={internal} onChange={(event) => setInternal(event.target.checked)} className="accent-olive" /> Internal note</label>
               <Button size="sm" variant="soft" onClick={postComment}>Add Comment</Button>
             </div>
@@ -871,8 +942,8 @@ function DetailDrawer({ request, userRole, employees, onClose, onRefresh, onActi
               <div className="px-5 py-5 text-sm text-gray-500">No timeline events yet.</div>
             ) : (
               timeline.map((item) => (
-                <div key={item.id} className="border-b border-[#E5E7EB] px-5 py-3 text-sm last:border-b-0">
-                  <div className="font-semibold text-[#2F3437]">{item.title}</div>
+                <div key={item.id} className="border-b border-[var(--color-border)] px-5 py-3 text-sm last:border-b-0">
+                  <div className="font-semibold text-[var(--color-brand-navy)]">{item.title}</div>
                   <div className="mt-1 text-xs leading-5 text-gray-500">{item.detail}</div>
                   <div className="mt-1 text-[11px] text-gray-400">{formatDateTime(item.at)}</div>
                 </div>
@@ -882,8 +953,8 @@ function DetailDrawer({ request, userRole, employees, onClose, onRefresh, onActi
           <Card className="mt-4 overflow-hidden">
             <CardHeader title="History" icon={<CalendarDays size={15} />} />
             {(request.history || []).map((item) => (
-              <div key={item.id} className="border-b border-[#E5E7EB] px-5 py-3 text-sm last:border-b-0">
-                <div className="font-semibold text-[#2F3437]">{labelize(item.action)} to {labelize(item.new_status)}</div>
+              <div key={item.id} className="border-b border-[var(--color-border)] px-5 py-3 text-sm last:border-b-0">
+                <div className="font-semibold text-[var(--color-brand-navy)]">{labelize(item.action)} to {labelize(item.new_status)}</div>
                 <div className="text-xs text-gray-500">{item.performed_by_name} • {formatDateTime(item.performed_at)}</div>
               </div>
             ))}
@@ -905,9 +976,9 @@ function DetailDrawer({ request, userRole, employees, onClose, onRefresh, onActi
 
 function Info({ label, value }: { label: string; value?: string | null }) {
   return (
-    <div className="rounded-xl border border-[#E5E7EB] bg-warm-bg p-3">
+    <div className="rounded-xl border border-[var(--color-border)] bg-warm-bg p-3">
       <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">{label}</div>
-      <div className="mt-1 text-sm font-bold text-[#2F3437]">{value || '-'}</div>
+      <div className="mt-1 text-sm font-bold text-[var(--color-brand-navy)]">{value || '-'}</div>
     </div>
   );
 }
@@ -915,6 +986,7 @@ function Info({ label, value }: { label: string; value?: string | null }) {
 export function RequestsPage() {
   const { user } = useAuth();
   const { showToast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [myRequests, setMyRequests] = useState<EmployeeRequest[]>([]);
   const [queue, setQueue] = useState<EmployeeRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -940,6 +1012,16 @@ export function RequestsPage() {
     'x-user-id': user?.id || '',
     'x-user-email': user?.email || '',
   }), [user]);
+
+  useEffect(() => {
+    const newType = searchParams.get('new');
+    if (newType === 'application_issue') {
+      setModalType('application_issue');
+      const next = new URLSearchParams(searchParams);
+      next.delete('new');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -1044,6 +1126,12 @@ export function RequestsPage() {
         category: form.category,
         amount: form.amount ? Number(form.amount) : undefined,
         currency: form.currency || 'USD',
+        description: form.reason,
+      };
+    }
+    if (form.request_type === 'application_issue') {
+      payload.application_issue = {
+        category: form.category,
         description: form.reason,
       };
     }
@@ -1183,37 +1271,60 @@ export function RequestsPage() {
     await load();
   };
 
+  const pendingCount = myRequests.filter((row) => row.status === 'pending').length;
+  const approvedCount = myRequests.filter((row) => row.status === 'approved' || row.status === 'paid').length;
+
   return (
     <PageShell>
       {error && <div className="mb-4 rounded-lg border border-status-error/20 bg-status-error/10 px-4 py-3 text-sm text-status-error">{error}</div>}
+      <div className="-mt-[72px] mb-7 flex min-h-[56px] justify-end gap-3 max-lg:mt-0 max-lg:justify-start">
+        <div className="min-w-[105px] rounded-2xl border border-[#ece5d8] bg-white px-4 py-2.5 text-center shadow-sm">
+          <div className="text-2xl font-bold text-[#c38214]">{pendingCount}</div>
+          <div className="text-[11px] font-bold uppercase tracking-wide text-[#a99e8a]">Pending</div>
+        </div>
+        <div className="min-w-[105px] rounded-2xl border border-[#ece5d8] bg-white px-4 py-2.5 text-center shadow-sm">
+          <div className="text-2xl font-bold text-[#3f9b52]">{approvedCount}</div>
+          <div className="text-[11px] font-bold uppercase tracking-wide text-[#a99e8a]">Approved</div>
+        </div>
+        {canReview && (
+          <div className="min-w-[105px] rounded-2xl border border-[#ece5d8] bg-white px-4 py-2.5 text-center shadow-sm">
+            <div className="text-2xl font-bold text-[#c94c38]">{queue.length}</div>
+            <div className="text-[11px] font-bold uppercase tracking-wide text-[#a99e8a]">Awaiting Me</div>
+          </div>
+        )}
+      </div>
       <RequestTypeCards onCreate={setModalType} />
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2">
+      <div className="mt-6 flex flex-wrap items-center gap-3 rounded-2xl border border-[#ece5d8] bg-white p-4 shadow-sm">
+        <label className="relative min-w-[260px] flex-1">
+          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#a99e8a]" />
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search requests..."
-            className="h-10 min-w-[220px] rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-olive"
+            className="h-12 w-full rounded-xl border border-[#ece5d8] bg-[#faf8f3] pl-11 pr-4 text-sm outline-none focus:border-[#d97a34]"
           />
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-10 rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-olive">
-            {['all', 'draft', 'pending', 'approved', 'rejected', 'cancelled', 'paid'].map((item) => <option key={item} value={item}>Status: {labelize(item)}</option>)}
-          </select>
-          <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className="h-10 rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-olive">
-            <option value="all">Type: All</option>
-            {requestTypes.map((item) => <option key={item.type} value={item.type}>{item.label}</option>)}
-          </select>
-          <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-10 rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-olive" />
-          <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-10 rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-olive" />
+        </label>
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-12 min-w-[140px] rounded-xl border border-[#ece5d8] bg-[#faf8f3] px-4 text-sm outline-none focus:border-[#d97a34]">
+          {['all', 'draft', 'pending', 'approved', 'rejected', 'cancelled', 'paid'].map((item) => <option key={item} value={item}>Status: {labelize(item)}</option>)}
+        </select>
+        <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className="h-12 min-w-[170px] rounded-xl border border-[#ece5d8] bg-[#faf8f3] px-4 text-sm outline-none focus:border-[#d97a34]">
+          <option value="all">Type: All</option>
+          {requestTypes.map((item) => <option key={item.type} value={item.type}>{item.label}</option>)}
+        </select>
+        <div className="flex items-center gap-2">
+          <input aria-label="From date" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-12 rounded-xl border border-[#ece5d8] bg-[#faf8f3] px-3 text-sm outline-none focus:border-[#d97a34]" />
+          <ArrowRight size={14} className="text-[#a99e8a]" />
+          <input aria-label="To date" type="date" value={dateTo} min={dateFrom || undefined} onChange={(event) => setDateTo(event.target.value)} className="h-12 rounded-xl border border-[#ece5d8] bg-[#faf8f3] px-3 text-sm outline-none focus:border-[#d97a34]" />
         </div>
-        <Button variant="ghost" icon={<RefreshCw size={14} />} disabled={loading} onClick={load}>Refresh</Button>
+        <Button variant="ghost" icon={<RefreshCw size={14} className={loading ? 'animate-spin' : ''} />} disabled={loading} onClick={load}>Refresh</Button>
       </div>
-      <div className="mt-5 grid gap-5">
+      <div className="mt-6 grid gap-6">
         {loading ? (
           <SkeletonRows />
         ) : (
           <>
-            <RequestsTable title="My Requests" rows={myRequests} empty="You have not created any requests yet." canCreate onCreate={() => setModalType('wfh')} onView={openDetail} onAction={runAction} />
-            {canReview && <RequestsTable title="Approval Queue" rows={queue} empty="No requests are waiting for your approval." canReassign={canReassign} onReassign={openDetail} onView={openDetail} onAction={runAction} />}
+            <MyRequestsCard rows={myRequests} onCreate={() => setModalType('wfh')} onView={openDetail} />
+            {canReview && <ApprovalQueueCard rows={queue} canReassign={canReassign} onView={openDetail} onAction={runAction} />}
           </>
         )}
       </div>

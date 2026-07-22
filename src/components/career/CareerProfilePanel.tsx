@@ -54,7 +54,7 @@ function Field({
   textarea?: boolean;
   type?: string;
 }) {
-  const inputClass = 'w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm font-medium text-[#2F3437] outline-none focus:border-olive';
+  const inputClass = 'w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-brand-navy)] outline-none focus:border-olive';
   return (
     <label className="block">
       <span className="mb-1.5 block text-[12px] font-bold uppercase tracking-wide text-gray-400">{label}</span>
@@ -76,8 +76,8 @@ function formatDisplayDate(value: string) {
 
 function EmptyBlock({ title, description }: { title: string; description: string }) {
   return (
-    <div className="rounded-xl border border-dashed border-[#DDE3DD] bg-warm-bg px-4 py-6 text-center">
-      <div className="text-sm font-bold text-[#2F3437]">{title}</div>
+    <div className="rounded-xl border border-dashed border-[var(--color-border)] bg-warm-bg px-4 py-6 text-center">
+      <div className="text-sm font-bold text-[var(--color-brand-navy)]">{title}</div>
       <div className="mt-1 text-sm text-gray-500">{description}</div>
     </div>
   );
@@ -166,7 +166,7 @@ export function CareerProfilePanel({
       <Card className="p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <div className="flex items-center gap-2 text-lg font-bold text-[#2F3437]">
+            <div className="flex items-center gap-2 text-lg font-bold text-[var(--color-brand-navy)]">
               <Sparkles size={18} className="text-olive" />
               Career Profile
             </div>
@@ -186,7 +186,7 @@ export function CareerProfilePanel({
 
       <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
         <Card className="p-5">
-          <div className="mb-4 text-sm font-bold text-[#2F3437]">Summary & Preferences</div>
+          <div className="mb-4 text-sm font-bold text-[var(--color-brand-navy)]">Summary & Preferences</div>
           {editable ? (
             <div className="space-y-4">
               <Field label="Career Summary" value={profile.summary} onChange={(value) => update({ summary: value })} textarea placeholder="Briefly describe your strengths, domains, and recent work." />
@@ -196,7 +196,7 @@ export function CareerProfilePanel({
             </div>
           ) : (
             <div className="space-y-4 text-sm">
-              <div><div className="text-xs font-bold uppercase tracking-wide text-gray-400">Summary</div><p className="mt-1 leading-6 text-[#2F3437]">{profile.summary || 'No summary added yet.'}</p></div>
+              <div><div className="text-xs font-bold uppercase tracking-wide text-gray-400">Summary</div><p className="mt-1 leading-6 text-[var(--color-brand-navy)]">{profile.summary || 'No summary added yet.'}</p></div>
               <div><div className="text-xs font-bold uppercase tracking-wide text-gray-400">Interested Roles</div><p className="mt-1 text-gray-600">{profile.targetRoles || 'Not specified'}</p></div>
               <div><div className="text-xs font-bold uppercase tracking-wide text-gray-400">Preferred Skills / Domains</div><p className="mt-1 text-gray-600">{profile.preferredSkills || 'Not specified'}</p></div>
               <div><div className="text-xs font-bold uppercase tracking-wide text-gray-400">Work Preference</div><p className="mt-1 text-gray-600">{profile.workPreference || 'Not specified'}</p></div>
@@ -205,7 +205,7 @@ export function CareerProfilePanel({
         </Card>
 
         <Card className="p-5">
-          <div className="mb-4 flex items-center gap-2 text-sm font-bold text-[#2F3437]"><FileText size={16} className="text-olive" /> Resume</div>
+          <div className="mb-4 flex items-center gap-2 text-sm font-bold text-[var(--color-brand-navy)]"><FileText size={16} className="text-olive" /> Resume</div>
           {editable ? (
             <div className="space-y-4">
               <input
@@ -216,10 +216,10 @@ export function CareerProfilePanel({
                 onChange={(event) => handleResumeFile(event.target.files?.[0])}
               />
               {profile.resumeName ? (
-                <div className="rounded-xl border border-[#E5E7EB] bg-warm-bg p-4">
+                <div className="rounded-xl border border-[var(--color-border)] bg-warm-bg p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-bold text-[#2F3437]">{profile.resumeName}</div>
+                      <div className="truncate text-sm font-bold text-[var(--color-brand-navy)]">{profile.resumeName}</div>
                       <div className="mt-1 text-xs text-gray-500">
                         {[formatFileSize(profile.resumeSize), profile.resumeUpdatedAt ? `Updated ${new Date(profile.resumeUpdatedAt).toLocaleDateString()}` : ''].filter(Boolean).join(' · ')}
                       </div>
@@ -231,7 +231,7 @@ export function CareerProfilePanel({
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button size="sm" variant="ghost" icon={<UploadCloud size={14} />} onClick={() => fileInputRef.current?.click()}>Replace Resume</Button>
                     {profile.resumeDataUrl && (
-                      <a href={profile.resumeDataUrl} download={profile.resumeName} className="inline-flex items-center gap-1.5 rounded-btn border border-[#E5E7EB] bg-transparent px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-hover-bg">
+                      <a href={profile.resumeDataUrl} download={profile.resumeName} className="inline-flex items-center gap-1.5 rounded-btn border border-[var(--color-border)] bg-transparent px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-hover-bg">
                         <Download size={14} />
                         Download
                       </a>
@@ -242,24 +242,24 @@ export function CareerProfilePanel({
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex min-h-[140px] w-full flex-col items-center justify-center rounded-xl border border-dashed border-[#DDE3DD] bg-warm-bg px-4 py-6 text-center transition hover:border-olive/40 hover:bg-olive/5"
+                  className="flex min-h-[140px] w-full flex-col items-center justify-center rounded-xl border border-dashed border-[var(--color-border)] bg-warm-bg px-4 py-6 text-center transition hover:border-olive/40 hover:bg-olive/5"
                 >
                   <UploadCloud size={24} className="text-olive" />
-                  <div className="mt-3 text-sm font-bold text-[#2F3437]">Upload resume</div>
+                  <div className="mt-3 text-sm font-bold text-[var(--color-brand-navy)]">Upload resume</div>
                   <div className="mt-1 text-xs text-gray-500">PDF, DOC, or DOCX. Suggested name: {resumePlaceholder(employee.name)}</div>
                 </button>
               )}
             </div>
           ) : profile.resumeName ? (
-            <div className="flex items-center justify-between gap-3 rounded-xl border border-[#E5E7EB] bg-warm-bg px-4 py-3">
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-warm-bg px-4 py-3">
               <div className="min-w-0">
-                <div className="truncate text-sm font-bold text-[#2F3437]">{profile.resumeName}</div>
+                <div className="truncate text-sm font-bold text-[var(--color-brand-navy)]">{profile.resumeName}</div>
                 <div className="text-xs text-gray-500">
                   {[formatFileSize(profile.resumeSize), profile.resumeUpdatedAt ? new Date(profile.resumeUpdatedAt).toLocaleDateString() : 'Date not recorded'].filter(Boolean).join(' · ')}
                 </div>
               </div>
               {profile.resumeDataUrl ? (
-                <a href={profile.resumeDataUrl} download={profile.resumeName} className="inline-flex items-center gap-1.5 rounded-btn border border-[#E5E7EB] bg-transparent px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-hover-bg">
+                <a href={profile.resumeDataUrl} download={profile.resumeName} className="inline-flex items-center gap-1.5 rounded-btn border border-[var(--color-border)] bg-transparent px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-hover-bg">
                   <Download size={14} />
                   Download
                 </a>
@@ -275,20 +275,20 @@ export function CareerProfilePanel({
 
       <Card className="p-5">
         <div className="mb-4 flex items-center justify-between gap-3">
-          <div className="text-sm font-bold text-[#2F3437]">Skills</div>
+          <div className="text-sm font-bold text-[var(--color-brand-navy)]">Skills</div>
           {editable && <Button size="sm" variant="ghost" icon={<Plus size={14} />} onClick={addSkill}>Add Skill</Button>}
         </div>
         {profile.skills.length === 0 ? <EmptyBlock title="No skills added" description="Add primary and secondary skills to improve discoverability." /> : (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {profile.skills.map((skill) => (
-              <div key={skill.id} className="rounded-xl border border-[#E5E7EB] bg-white p-4">
+              <div key={skill.id} className="rounded-xl border border-[var(--color-border)] bg-white p-4">
                 {editable ? (
                   <div className="space-y-3">
                     <Field label="Skill" value={skill.name} onChange={(value) => updateSkill(skill.id, { name: value })} />
                     <div className="grid grid-cols-3 gap-2">
                       <label className="block">
                         <span className="mb-1.5 block text-[12px] font-bold uppercase tracking-wide text-gray-400">Level</span>
-                        <select value={skill.level} onChange={(event) => updateSkill(skill.id, { level: event.target.value })} className="w-full rounded-lg border border-[#E5E7EB] bg-white px-2 py-2 text-sm outline-none focus:border-olive">
+                        <select value={skill.level} onChange={(event) => updateSkill(skill.id, { level: event.target.value })} className="w-full rounded-lg border border-[var(--color-border)] bg-white px-2 py-2 text-sm outline-none focus:border-olive">
                           {skillLevels.map((level) => <option key={level}>{level}</option>)}
                         </select>
                       </label>
@@ -299,7 +299,7 @@ export function CareerProfilePanel({
                   </div>
                 ) : (
                   <>
-                    <div className="font-bold text-[#2F3437]">{skill.name || 'Unnamed skill'}</div>
+                    <div className="font-bold text-[var(--color-brand-navy)]">{skill.name || 'Unnamed skill'}</div>
                     <div className="mt-2 flex flex-wrap gap-2">
                       <Badge variant="olive">{skill.level}</Badge>
                       {skill.years && <Badge variant="neutral">{skill.years} yrs</Badge>}
@@ -315,13 +315,13 @@ export function CareerProfilePanel({
 
       <Card className="p-5">
         <div className="mb-4 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm font-bold text-[#2F3437]"><Briefcase size={16} className="text-olive" /> Project Experience</div>
+          <div className="flex items-center gap-2 text-sm font-bold text-[var(--color-brand-navy)]"><Briefcase size={16} className="text-olive" /> Project Experience</div>
           {editable && <Button size="sm" variant="ghost" icon={<Plus size={14} />} onClick={addProject}>Add Project</Button>}
         </div>
         {profile.projects.length === 0 ? <EmptyBlock title="No project experience added" description="Add internal, client, training, or POC experience." /> : (
           <div className="space-y-3">
             {profile.projects.map((project) => (
-              <div key={project.id} className="rounded-xl border border-[#E5E7EB] bg-white p-4">
+              <div key={project.id} className="rounded-xl border border-[var(--color-border)] bg-white p-4">
                 {editable ? (
                   <div className="grid gap-3 md:grid-cols-2">
                     <Field label="Project / POC" value={project.name} onChange={(value) => updateProject(project.id, { name: value })} />
@@ -335,7 +335,7 @@ export function CareerProfilePanel({
                   <>
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <div className="font-bold text-[#2F3437]">{project.name || 'Unnamed project'}</div>
+                        <div className="font-bold text-[var(--color-brand-navy)]">{project.name || 'Unnamed project'}</div>
                         <div className="mt-1 text-sm text-gray-500">{project.role || 'Role not specified'}{project.duration ? ` · ${project.duration}` : ''}</div>
                       </div>
                       {project.stack && <Badge variant="neutral">{project.stack}</Badge>}
@@ -351,13 +351,13 @@ export function CareerProfilePanel({
 
       <Card className="p-5">
         <div className="mb-4 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm font-bold text-[#2F3437]"><Award size={16} className="text-olive" /> Certifications</div>
+          <div className="flex items-center gap-2 text-sm font-bold text-[var(--color-brand-navy)]"><Award size={16} className="text-olive" /> Certifications</div>
           {editable && <Button size="sm" variant="ghost" icon={<Plus size={14} />} onClick={addCertification}>Add Certification</Button>}
         </div>
         {profile.certifications.length === 0 ? <EmptyBlock title="No certifications added" description="Add courses, certificates, and credentials." /> : (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {profile.certifications.map((certification) => (
-              <div key={certification.id} className="rounded-xl border border-[#E5E7EB] bg-white p-4">
+              <div key={certification.id} className="rounded-xl border border-[var(--color-border)] bg-white p-4">
                 {editable ? (
                   <div className="space-y-3">
                     <Field label="Certification" value={certification.name} onChange={(value) => updateCertification(certification.id, { name: value })} />
@@ -367,7 +367,7 @@ export function CareerProfilePanel({
                   </div>
                 ) : (
                   <>
-                    <div className="font-bold text-[#2F3437]">{certification.name || 'Unnamed certification'}</div>
+                    <div className="font-bold text-[var(--color-brand-navy)]">{certification.name || 'Unnamed certification'}</div>
                     <div className="mt-1 text-sm text-gray-500">{certification.issuer || 'Issuer not recorded'}</div>
                     {certification.issuedOn && <div className="mt-2 text-xs font-semibold text-gray-400">{formatDisplayDate(certification.issuedOn)}</div>}
                   </>
@@ -379,10 +379,10 @@ export function CareerProfilePanel({
       </Card>
 
       {hasUnsavedChanges && (
-        <div className="fixed bottom-4 left-1/2 z-40 w-[min(760px,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-[#DDE3DD] bg-white px-4 py-3 shadow-[0_18px_48px_rgba(17,24,39,0.18)]">
+        <div className="fixed bottom-4 left-1/2 z-40 w-[min(760px,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 shadow-[0_18px_48px_rgba(17,24,39,0.18)]">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div className="text-sm font-bold text-[#2F3437]">Unsaved career profile changes</div>
+              <div className="text-sm font-bold text-[var(--color-brand-navy)]">Unsaved career profile changes</div>
               <div className="text-xs text-gray-500">Save before leaving this page so your skills, resume, and experience are kept.</div>
             </div>
             <div className="flex shrink-0 gap-2">

@@ -392,7 +392,7 @@ export function CertificateGeneratorPage() {
     <div className="animate-fade-up">
       <div className="mb-7 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[#2F3437] tracking-tight mb-1">
+          <h1 className="text-2xl font-bold text-[var(--color-brand-navy)] tracking-tight mb-1">
             Certificate Generator
           </h1>
           <p className="text-sm text-gray-500">
@@ -418,15 +418,15 @@ export function CertificateGeneratorPage() {
                 </div>
               )}
 
-              <label className="flex items-start gap-3 rounded-lg border border-[#E5E7EB] bg-hover-bg px-4 py-3">
+              <label className="flex items-start gap-3 rounded-lg border border-[var(--color-border)] bg-hover-bg px-4 py-3">
                 <input
                   type="checkbox"
                   checked={includeCertificateNumber}
                   onChange={(event) => setIncludeCertificateNumber(event.target.checked)}
-                  className="mt-1 h-4 w-4 rounded border-[#D1D5DB] accent-olive"
+                  className="mt-1 h-4 w-4 rounded border-[var(--color-border)] accent-olive"
                 />
                 <span>
-                  <span className="block text-sm font-semibold text-[#2F3437]">
+                  <span className="block text-sm font-semibold text-[var(--color-brand-navy)]">
                     Generate certificate with certificate number
                   </span>
                   <span className="block text-xs text-gray-500">
@@ -441,7 +441,7 @@ export function CertificateGeneratorPage() {
                   <input
                     value={firstName}
                     onChange={(event) => setFirstName(event.target.value)}
-                    className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
+                    className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
                     placeholder="Venu"
                   />
                 </label>
@@ -450,7 +450,7 @@ export function CertificateGeneratorPage() {
                   <input
                     value={surname}
                     onChange={(event) => setSurname(event.target.value)}
-                    className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
+                    className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
                     placeholder="Madhav"
                   />
                 </label>
@@ -463,7 +463,7 @@ export function CertificateGeneratorPage() {
                     value={certificateType}
                     onChange={(event) => setCertificateType(event.target.value)}
                     disabled={loadingMeta}
-                    className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
+                    className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
                   >
                     {(meta?.certificate_types || []).map((type) => (
                       <option key={type} value={type}>{type}</option>
@@ -479,7 +479,7 @@ export function CertificateGeneratorPage() {
                     value={startDate}
                     onChange={(event) => setStartDate(event.target.value)}
                     type="date"
-                    className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
+                    className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
                   />
                 </label>
                 <label className="space-y-1.5">
@@ -488,7 +488,7 @@ export function CertificateGeneratorPage() {
                     value={endDate}
                     onChange={(event) => setEndDate(event.target.value)}
                     type="date"
-                    className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
+                    className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
                   />
                 </label>
               </div>
@@ -499,7 +499,7 @@ export function CertificateGeneratorPage() {
                   <input
                     value={cohortCode}
                     onChange={(event) => setCohortCode(event.target.value.toUpperCase())}
-                    className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
+                    className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
                     placeholder="C1"
                   />
                 </label>
@@ -511,7 +511,7 @@ export function CertificateGeneratorPage() {
                     type="number"
                     min={2020}
                     max={2099}
-                    className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
+                    className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
                   />
                 </label>
                 <label className="space-y-1.5">
@@ -520,15 +520,15 @@ export function CertificateGeneratorPage() {
                     value={issuedDate}
                     onChange={(event) => setIssuedDate(event.target.value)}
                     type="date"
-                    className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
+                    className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm outline-none focus:border-olive"
                   />
                 </label>
               </div>
 
-              <div className="flex flex-col gap-3 rounded-lg border border-[#E5E7EB] bg-hover-bg px-4 py-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-col gap-3 rounded-lg border border-[var(--color-border)] bg-hover-bg px-4 py-3 md:flex-row md:items-center md:justify-between">
                 <div className="min-w-0">
                   <div className="text-xs font-semibold text-gray-500">Next Certificate ID</div>
-                  <div className="mt-1 text-lg font-bold text-[#2F3437] tracking-tight">
+                  <div className="mt-1 text-lg font-bold text-[var(--color-brand-navy)] tracking-tight">
                     {includeCertificateNumber ? nextSerial?.certificate_id || 'Preview unavailable' : 'Not included'}
                   </div>
                 </div>
@@ -554,9 +554,9 @@ export function CertificateGeneratorPage() {
               }
             />
             <div className="p-5 space-y-4">
-              <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-[#D1D5DB] bg-white px-4 py-8 text-center hover:border-olive/60 hover:bg-hover-bg">
+              <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-[var(--color-border)] bg-white px-4 py-8 text-center hover:border-olive/60 hover:bg-hover-bg">
                 <Upload size={22} className="mb-2 text-olive" />
-                <span className="text-sm font-semibold text-[#2F3437]">Upload CSV</span>
+                <span className="text-sm font-semibold text-[var(--color-brand-navy)]">Upload CSV</span>
                 <span className="mt-1 text-xs text-gray-500">
                   Columns: First Name, Last Name, Programme, Start Date, End Date, Cohort Code, Year, Date of issue
                 </span>
@@ -569,9 +569,9 @@ export function CertificateGeneratorPage() {
               </label>
 
               {bulkFileName && (
-                <div className="rounded-lg border border-[#E5E7EB] px-4 py-3 text-sm text-gray-600">
-                  Loaded <span className="font-semibold text-[#2F3437]">{bulkFileName}</span> with{' '}
-                  <span className="font-semibold text-[#2F3437]">{bulkRows.length}</span> recipient
+                <div className="rounded-lg border border-[var(--color-border)] px-4 py-3 text-sm text-gray-600">
+                  Loaded <span className="font-semibold text-[var(--color-brand-navy)]">{bulkFileName}</span> with{' '}
+                  <span className="font-semibold text-[var(--color-brand-navy)]">{bulkRows.length}</span> recipient
                   {bulkRows.length === 1 ? '' : 's'}.
                 </div>
               )}
@@ -586,7 +586,7 @@ export function CertificateGeneratorPage() {
               )}
 
               {bulkRows.length > 0 && (
-                <div className="overflow-hidden rounded-lg border border-[#E5E7EB]">
+                <div className="overflow-hidden rounded-lg border border-[var(--color-border)]">
                   <div className="max-h-64 overflow-auto">
                     <table className="w-full text-left text-xs">
                       <thead className="sticky top-0 bg-hover-bg text-gray-500">
@@ -599,8 +599,8 @@ export function CertificateGeneratorPage() {
                       </thead>
                       <tbody>
                         {bulkRows.slice(0, 20).map((row, index) => (
-                          <tr key={`${row.first_name}-${row.surname}-${index}`} className="border-t border-[#E5E7EB]">
-                            <td className="px-3 py-2 text-[#2F3437]">{row.first_name} {row.surname}</td>
+                          <tr key={`${row.first_name}-${row.surname}-${index}`} className="border-t border-[var(--color-border)]">
+                            <td className="px-3 py-2 text-[var(--color-brand-navy)]">{row.first_name} {row.surname}</td>
                             <td className="px-3 py-2 text-gray-500">{row.certificate_type}</td>
                             <td className="px-3 py-2 text-gray-500">{row.start_date} - {row.end_date}</td>
                             <td className="px-3 py-2 text-gray-500">{row.issued_date}</td>
@@ -650,9 +650,9 @@ export function CertificateGeneratorPage() {
                   {relevantCounters.map((counter) => (
                     <div
                       key={`${counter.certificate_type}-${counter.cohort_code}-${counter.year}`}
-                      className="rounded-lg border border-[#E5E7EB] px-3 py-2"
+                      className="rounded-lg border border-[var(--color-border)] px-3 py-2"
                     >
-                      <div className="text-xs font-semibold text-[#2F3437]">
+                      <div className="text-xs font-semibold text-[var(--color-brand-navy)]">
                         {counter.certificate_type.replace('ReKnew ', '')}
                       </div>
                       <div className="mt-1 text-xs text-gray-500">
@@ -662,7 +662,7 @@ export function CertificateGeneratorPage() {
                   ))}
                 </div>
               ) : (
-                <div className="rounded-lg border border-dashed border-[#E5E7EB] px-3 py-8 text-center text-sm text-gray-500">
+                <div className="rounded-lg border border-dashed border-[var(--color-border)] px-3 py-8 text-center text-sm text-gray-500">
                   {includeCertificateNumber ? 'No certificates issued for this cohort yet.' : 'Certificate numbering is turned off.'}
                 </div>
               )}
@@ -696,10 +696,10 @@ export function CertificateGeneratorPage() {
                   <th className="px-5 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E5E7EB]">
+              <tbody className="divide-y divide-[var(--color-border)]">
                 {certificates.map((record) => (
                   <tr key={record.certificate_code}>
-                    <td className="px-5 py-3 font-bold text-[#2F3437]">{record.certificate_code}</td>
+                    <td className="px-5 py-3 font-bold text-[var(--color-brand-navy)]">{record.certificate_code}</td>
                     <td className="px-5 py-3">{record.learner_name}</td>
                     <td className="px-5 py-3">{record.course_name}</td>
                     <td className="px-5 py-3">{record.issue_date}</td>

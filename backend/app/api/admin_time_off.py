@@ -483,7 +483,13 @@ async def decide_timesheet(
         raise HTTPException(status_code=400, detail="Only submitted timesheets can be reviewed.")
     if employee_id == actor.id:
         raise HTTPException(status_code=403, detail="You cannot review your own timesheet.")
-    old = {"status": "submitted", "entries": len(entries)}
+    timesheet_audit_id = entries[0].id
+    old = {
+        "status": "submitted",
+        "entries": len(entries),
+        "employee_id": employee_id,
+        "week_start": week_start.isoformat(),
+    }
     next_status = "approved" if payload.decision == "approve" else "rejected"
     now = datetime.utcnow()
     for entry in entries:
@@ -494,7 +500,20 @@ async def decide_timesheet(
         if entry.overtime_hours and float(entry.overtime_hours) > 0:
             entry.overtime_status = "approved" if payload.decision == "approve" else "rejected"
         entry.updated_at = now
-    log_audit(db, actor, f"timesheet_{next_status}", "timesheet", f"{employee_id}:{week_start}", old, {"status": next_status}, payload.reason)
+    log_audit(
+        db,
+        actor,
+        f"timesheet_{next_status}",
+        "timesheet",
+        timesheet_audit_id,
+        old,
+        {
+            "status": next_status,
+            "employee_id": employee_id,
+            "week_start": week_start.isoformat(),
+        },
+        payload.reason,
+    )
     notify(db, employee_id, f"Timesheet {next_status}", f"Your timesheet for {week_start} to {week_end(week_start)} was {next_status} by {employee_name(actor)}.", "timesheet", entries[0].id)
     db.commit()
     return await admin_time_off_dashboard(db, x_user_id, x_user_email)

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import {
   Mail, Lock, Eye, EyeOff, ShieldCheck, Loader2,
@@ -43,6 +43,7 @@ export function LoginPage() {
   const [loginChallengeToken, setLoginChallengeToken] = useState('');
   const [unlockReason, setUnlockReason] = useState('');
   const [requiresTemporaryPassword, setRequiresTemporaryPassword] = useState(false);
+  const [recoveryRequested, setRecoveryRequested] = useState(false);
 
   // QR code data from API
   const [qrBase64, setQrBase64] = useState('');
@@ -50,6 +51,28 @@ export function LoginPage() {
 
   // Track if first-time user
   const [isFirstLogin, setIsFirstLogin] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const linkedEmail = params.get('email');
+    const activationToken = params.get('activation_token');
+    const linkedResetToken = params.get('reset_token');
+    if (linkedEmail && activationToken) {
+      setEmail(linkedEmail.toLowerCase());
+      setSetupCode(activationToken);
+      setIsFirstLogin(true);
+      setStep('setup_code');
+    } else if (linkedEmail && linkedResetToken) {
+      setEmail(linkedEmail.toLowerCase());
+      setResetToken(linkedResetToken);
+      const hasMfa = params.get('has_mfa') === '1';
+      setResetHasMfa(hasMfa);
+      setStep(hasMfa ? 'forgot_mfa' : 'forgot_new_password');
+    }
+    if (activationToken || linkedResetToken) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
 
   if (isAuthenticated) {
     return <Navigate to="/" replace />;
@@ -318,16 +341,12 @@ export function LoginPage() {
         body: JSON.stringify({ email: email.trim().toLowerCase() }),
       });
       const data = await res.json();
-      if (!res.ok || !data.success || !data.reset_token) {
+      if (!res.ok || !data.success) {
         setError(data.detail || data.message || 'Could not start authenticator reset.');
         return;
       }
-      setResetToken(data.reset_token || '');
-      setResetHasMfa(Boolean(data.has_mfa));
-      setTotpCode('');
-      setPassword('');
-      setConfirmPassword('');
-      setStep(data.has_mfa ? 'forgot_mfa' : 'forgot_new_password');
+      setRecoveryRequested(true);
+      setStep('forgot_success');
     } catch {
       setError('Cannot connect to server.');
     } finally {
@@ -380,16 +399,8 @@ export function LoginPage() {
         setError(data.detail || data.message || 'Could not start password reset.');
         return;
       }
-      if (!data.reset_token) {
-        setError('If this account is eligible, reset instructions have been prepared. Contact your administrator if you do not receive them.');
-        return;
-      }
-      setResetToken(data.reset_token || '');
-      setResetHasMfa(Boolean(data.has_mfa));
-      setTotpCode('');
-      setPassword('');
-      setConfirmPassword('');
-      setStep(data.has_mfa ? 'forgot_mfa' : 'forgot_new_password');
+      setRecoveryRequested(true);
+      setStep('forgot_success');
     } catch {
       setError('Cannot connect to server.');
     } finally {
@@ -459,8 +470,8 @@ export function LoginPage() {
   // ─── UI ───
   const inputClass = cn(
     'w-full py-3 rounded-xl text-[14px] font-medium',
-    'bg-warm-bg border border-[#E5E7EB]',
-    'text-[#2F3437] placeholder:text-gray-400',
+    'bg-warm-bg border border-[var(--color-border)]',
+    'text-[var(--color-brand-navy)] placeholder:text-gray-400',
     'outline-none transition-all duration-150 font-sans',
     'focus:border-olive/40 focus:ring-2 focus:ring-olive/10',
   );
@@ -475,13 +486,13 @@ export function LoginPage() {
             <div className="absolute inset-[-5px] rounded-full border border-olive/12" />
             <div className="absolute -top-1 right-0.5 w-2.5 h-2.5 rounded-full bg-sage" />
           </div>
-          <span className="text-2xl font-bold text-[#2F3437] tracking-tight">
+          <span className="text-2xl font-bold text-[var(--color-brand-navy)] tracking-tight">
             Reknew <span className="text-olive">Orbit</span>
           </span>
         </div>
 
         {/* Card */}
-        <div className="bg-warm-card border border-[#E5E7EB] rounded-2xl p-8 shadow-card-md">
+        <div className="bg-warm-card border border-[var(--color-border)] rounded-2xl p-8 shadow-card-md">
 
           {/* Back button (not on email step or setup complete) */}
           {step !== 'email' && step !== 'setup_complete' && step !== 'forgot_success' && step !== 'login_password' && (
@@ -501,7 +512,7 @@ export function LoginPage() {
                   key={i}
                   className={cn(
                     'h-1 flex-1 rounded-full transition-all',
-                    i < currentStepNum ? 'bg-olive' : 'bg-[#E5E7EB]'
+                    i < currentStepNum ? 'bg-olive' : 'bg-[var(--color-border)]'
                   )}
                 />
               ))}
@@ -512,12 +523,12 @@ export function LoginPage() {
           {step === 'email' && (
             <>
               <div className="text-center mb-8">
-                <h2 className="text-2xl font-bold text-[#2F3437] tracking-tight mb-1.5">Welcome back</h2>
+                <h2 className="text-2xl font-bold text-[var(--color-brand-navy)] tracking-tight mb-1.5">Welcome back</h2>
                 <p className="text-sm text-gray-500">Sign in to Reknew Orbit using your ReKnew email.</p>
               </div>
               {error && <div className="mb-5 px-4 py-3 rounded-xl bg-status-error/5 border border-status-error/15 text-[13px] text-status-error font-medium">{error}</div>}
               <form onSubmit={handleCheckEmail}>
-                <label className="block text-[13px] font-semibold text-[#2F3437] mb-2">Email</label>
+                <label className="block text-[13px] font-semibold text-[var(--color-brand-navy)] mb-2">Email</label>
                 <div className="relative mb-6">
                   <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"><Mail size={16} /></div>
                   <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@reknew.ai" required className={cn(inputClass, 'pl-10')} />
@@ -535,12 +546,12 @@ export function LoginPage() {
             <>
               <div className="text-center mb-8">
                 <div className="w-12 h-12 rounded-full bg-olive/10 flex items-center justify-center mx-auto mb-4"><KeyRound size={22} className="text-olive" /></div>
-                <h2 className="text-xl font-bold text-[#2F3437] tracking-tight mb-1.5">First-time setup</h2>
+                <h2 className="text-xl font-bold text-[var(--color-brand-navy)] tracking-tight mb-1.5">First-time setup</h2>
                 <p className="text-sm text-gray-500">Enter the setup code provided by your administrator.</p>
               </div>
               {error && <div className="mb-5 px-4 py-3 rounded-xl bg-status-error/5 border border-status-error/15 text-[13px] text-status-error font-medium">{error}</div>}
               <form onSubmit={handleVerifySetupCode}>
-                <label className="block text-[13px] font-semibold text-[#2F3437] mb-2">Setup Code</label>
+                <label className="block text-[13px] font-semibold text-[var(--color-brand-navy)] mb-2">Setup Code</label>
                 <input
                   value={setupCode}
                   onChange={(e) => setSetupCode(e.target.value.toUpperCase())}
@@ -562,12 +573,12 @@ export function LoginPage() {
             <>
               <div className="text-center mb-8">
                 <div className="w-12 h-12 rounded-full bg-olive/10 flex items-center justify-center mx-auto mb-4"><Lock size={22} className="text-olive" /></div>
-                <h2 className="text-xl font-bold text-[#2F3437] tracking-tight mb-1.5">Create password</h2>
+                <h2 className="text-xl font-bold text-[var(--color-brand-navy)] tracking-tight mb-1.5">Create password</h2>
                 <p className="text-sm text-gray-500">Choose a strong password for your account.</p>
               </div>
               {error && <div className="mb-5 px-4 py-3 rounded-xl bg-status-error/5 border border-status-error/15 text-[13px] text-status-error font-medium">{error}</div>}
               <form onSubmit={handleCreatePassword}>
-                <label className="block text-[13px] font-semibold text-[#2F3437] mb-2">Password</label>
+                <label className="block text-[13px] font-semibold text-[var(--color-brand-navy)] mb-2">Password</label>
                 <div className="relative mb-4">
                   <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"><Lock size={16} /></div>
                   <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Minimum 6 characters" required className={cn(inputClass, 'pl-10 pr-11')} />
@@ -575,7 +586,7 @@ export function LoginPage() {
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
-                <label className="block text-[13px] font-semibold text-[#2F3437] mb-2">Confirm Password</label>
+                <label className="block text-[13px] font-semibold text-[var(--color-brand-navy)] mb-2">Confirm Password</label>
                 <div className="relative mb-6">
                   <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"><Lock size={16} /></div>
                   <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Re-enter password" required className={cn(inputClass, 'pl-10')} />
@@ -593,14 +604,14 @@ export function LoginPage() {
             <>
               <div className="text-center mb-6">
                 <div className="w-12 h-12 rounded-full bg-olive/10 flex items-center justify-center mx-auto mb-4"><QrCode size={22} className="text-olive" /></div>
-                <h2 className="text-xl font-bold text-[#2F3437] tracking-tight mb-1.5">Set up authenticator</h2>
+                <h2 className="text-xl font-bold text-[var(--color-brand-navy)] tracking-tight mb-1.5">Set up authenticator</h2>
                 <p className="text-sm text-gray-500">Scan this QR code with Microsoft Authenticator or any TOTP app.</p>
               </div>
 
               {/* QR Code */}
               {qrBase64 && (
                 <div className="flex justify-center mb-5">
-                  <div className="p-4 bg-white rounded-2xl border border-[#E5E7EB] shadow-card">
+                  <div className="p-4 bg-white rounded-2xl border border-[var(--color-border)] shadow-card">
                     <img src={`data:image/png;base64,${qrBase64}`} alt="TOTP QR Code" className="w-48 h-48" />
                   </div>
                 </div>
@@ -610,7 +621,7 @@ export function LoginPage() {
               {totpSecret && (
                 <div className="mb-6">
                   <p className="text-[11px] text-gray-400 text-center mb-2">Can't scan? Enter this code manually:</p>
-                  <div className="bg-warm-bg border border-[#E5E7EB] rounded-xl px-4 py-3 text-center">
+                  <div className="bg-warm-bg border border-[var(--color-border)] rounded-xl px-4 py-3 text-center">
                     <code className="text-[13px] font-mono font-bold text-olive tracking-wider select-all">{totpSecret}</code>
                   </div>
                 </div>
@@ -630,12 +641,12 @@ export function LoginPage() {
             <>
               <div className="text-center mb-8">
                 <div className="w-12 h-12 rounded-full bg-olive/10 flex items-center justify-center mx-auto mb-4"><Smartphone size={22} className="text-olive" /></div>
-                <h2 className="text-xl font-bold text-[#2F3437] tracking-tight mb-1.5">Verify authenticator</h2>
+                <h2 className="text-xl font-bold text-[var(--color-brand-navy)] tracking-tight mb-1.5">Verify authenticator</h2>
                 <p className="text-sm text-gray-500">Enter the 6-digit code from your authenticator app.</p>
               </div>
               {error && <div className="mb-5 px-4 py-3 rounded-xl bg-status-error/5 border border-status-error/15 text-[13px] text-status-error font-medium">{error}</div>}
               <form onSubmit={handleConfirmTotp}>
-                <label className="block text-[13px] font-semibold text-[#2F3437] mb-2">Authenticator Code</label>
+                <label className="block text-[13px] font-semibold text-[var(--color-brand-navy)] mb-2">Authenticator Code</label>
                 <input
                   value={totpCode}
                   onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
@@ -659,7 +670,7 @@ export function LoginPage() {
               <div className="w-16 h-16 rounded-full bg-status-success/10 flex items-center justify-center mx-auto mb-5">
                 <CheckCircle size={32} className="text-status-success" />
               </div>
-              <h2 className="text-xl font-bold text-[#2F3437] tracking-tight mb-2">You're all set!</h2>
+              <h2 className="text-xl font-bold text-[var(--color-brand-navy)] tracking-tight mb-2">You're all set!</h2>
               <p className="text-sm text-gray-500 mb-8 leading-relaxed">
                 Your account is ready. You can now sign in with your email, password, and authenticator code.
               </p>
@@ -676,14 +687,14 @@ export function LoginPage() {
           {step === 'login_password' && (
             <>
               <div className="text-center mb-6">
-                <h2 className="text-2xl font-bold text-[#2F3437] tracking-tight mb-1.5">{requiresTemporaryPassword ? 'Temporary password' : 'Welcome back'}</h2>
+                <h2 className="text-2xl font-bold text-[var(--color-brand-navy)] tracking-tight mb-1.5">{requiresTemporaryPassword ? 'Temporary password' : 'Welcome back'}</h2>
                 <p className="text-sm text-gray-500">
                   {requiresTemporaryPassword ? 'Enter the temporary password shared by your administrator.' : email}
                 </p>
               </div>
               {error && <div className="mb-5 px-4 py-3 rounded-xl bg-status-error/5 border border-status-error/15 text-[13px] text-status-error font-medium">{error}</div>}
               <form onSubmit={handleLoginPassword}>
-                <label className="block text-[13px] font-semibold text-[#2F3437] mb-2">{requiresTemporaryPassword ? 'Temporary password' : 'Password'}</label>
+                <label className="block text-[13px] font-semibold text-[var(--color-brand-navy)] mb-2">{requiresTemporaryPassword ? 'Temporary password' : 'Password'}</label>
                 <div className="relative mb-6">
                   <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"><Lock size={16} /></div>
                   <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={requiresTemporaryPassword ? 'Enter temporary password' : 'Enter your password'} required className={cn(inputClass, 'pl-10 pr-11')} autoFocus />
@@ -720,14 +731,14 @@ export function LoginPage() {
                 <div className="w-12 h-12 rounded-full bg-status-error/10 flex items-center justify-center mx-auto mb-4">
                   <LockKeyhole size={22} className="text-status-error" />
                 </div>
-                <h2 className="text-xl font-bold text-[#2F3437] tracking-tight mb-1.5">Account locked</h2>
+                <h2 className="text-xl font-bold text-[var(--color-brand-navy)] tracking-tight mb-1.5">Account locked</h2>
                 <p className="text-sm text-gray-500 leading-relaxed">
                   Your account has been locked after too many failed password attempts.
                 </p>
               </div>
               {error && <div className="mb-5 px-4 py-3 rounded-xl bg-status-error/5 border border-status-error/15 text-[13px] text-status-error font-medium">{error}</div>}
               <form onSubmit={handleUnlockRequest}>
-                <label className="block text-[13px] font-semibold text-[#2F3437] mb-2">Reason for unlock</label>
+                <label className="block text-[13px] font-semibold text-[var(--color-brand-navy)] mb-2">Reason for unlock</label>
                 <textarea
                   value={unlockReason}
                   onChange={(e) => setUnlockReason(e.target.value.slice(0, 500))}
@@ -743,7 +754,7 @@ export function LoginPage() {
                 type="button"
                 onClick={startAuthenticatorResetForLockedAccount}
                 disabled={loading}
-                className="mt-3 w-full rounded-xl border border-[#E5E7EB] bg-white py-3 text-[14px] font-semibold text-olive transition-colors hover:bg-hover-bg"
+                className="mt-3 w-full rounded-xl border border-[var(--color-border)] bg-white py-3 text-[14px] font-semibold text-olive transition-colors hover:bg-hover-bg"
               >
                 Reset with Authenticator
               </button>
@@ -754,12 +765,12 @@ export function LoginPage() {
             <>
               <div className="text-center mb-8">
                 <div className="w-12 h-12 rounded-full bg-olive/10 flex items-center justify-center mx-auto mb-4"><KeyRound size={22} className="text-olive" /></div>
-                <h2 className="text-xl font-bold text-[#2F3437] tracking-tight mb-1.5">Reset password</h2>
+                <h2 className="text-xl font-bold text-[var(--color-brand-navy)] tracking-tight mb-1.5">Reset password</h2>
                 <p className="text-sm text-gray-500">Enter your ReKnew email to start account recovery.</p>
               </div>
               {error && <div className="mb-5 px-4 py-3 rounded-xl bg-status-error/5 border border-status-error/15 text-[13px] text-status-error font-medium">{error}</div>}
               <form onSubmit={handleForgotInitiate}>
-                <label className="block text-[13px] font-semibold text-[#2F3437] mb-2">Email</label>
+                <label className="block text-[13px] font-semibold text-[var(--color-brand-navy)] mb-2">Email</label>
                 <div className="relative mb-6">
                   <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"><Mail size={16} /></div>
                   <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@reknew.ai" required className={cn(inputClass, 'pl-10')} />
@@ -776,7 +787,7 @@ export function LoginPage() {
             <>
               <div className="text-center mb-8">
                 <div className="w-12 h-12 rounded-full bg-olive/10 flex items-center justify-center mx-auto mb-4"><Smartphone size={22} className="text-olive" /></div>
-                <h2 className="text-xl font-bold text-[#2F3437] tracking-tight mb-1.5">Verify authenticator</h2>
+                <h2 className="text-xl font-bold text-[var(--color-brand-navy)] tracking-tight mb-1.5">Verify authenticator</h2>
                 <p className="text-sm text-gray-500">Enter the 6-digit code from your authenticator app.</p>
               </div>
               {error && <div className="mb-5 px-4 py-3 rounded-xl bg-status-error/5 border border-status-error/15 text-[13px] text-status-error font-medium">{error}</div>}
@@ -802,12 +813,12 @@ export function LoginPage() {
             <>
               <div className="text-center mb-8">
                 <div className="w-12 h-12 rounded-full bg-olive/10 flex items-center justify-center mx-auto mb-4"><Lock size={22} className="text-olive" /></div>
-                <h2 className="text-xl font-bold text-[#2F3437] tracking-tight mb-1.5">Create new password</h2>
+                <h2 className="text-xl font-bold text-[var(--color-brand-navy)] tracking-tight mb-1.5">Create new password</h2>
                 <p className="text-sm text-gray-500">Use uppercase, lowercase, number, and special character.</p>
               </div>
               {error && <div className="mb-5 px-4 py-3 rounded-xl bg-status-error/5 border border-status-error/15 text-[13px] text-status-error font-medium">{error}</div>}
               <form onSubmit={handleForgotReset}>
-                <label className="block text-[13px] font-semibold text-[#2F3437] mb-2">New Password</label>
+                <label className="block text-[13px] font-semibold text-[var(--color-brand-navy)] mb-2">New Password</label>
                 <div className="relative mb-4">
                   <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"><Lock size={16} /></div>
                   <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Minimum 8 characters" required className={cn(inputClass, 'pl-10 pr-11')} />
@@ -815,7 +826,7 @@ export function LoginPage() {
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
-                <label className="block text-[13px] font-semibold text-[#2F3437] mb-2">Confirm Password</label>
+                <label className="block text-[13px] font-semibold text-[var(--color-brand-navy)] mb-2">Confirm Password</label>
                 <div className="relative mb-6">
                   <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"><Lock size={16} /></div>
                   <input type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Re-enter password" required className={cn(inputClass, 'pl-10')} />
@@ -833,9 +844,11 @@ export function LoginPage() {
               <div className="w-16 h-16 rounded-full bg-status-success/10 flex items-center justify-center mx-auto mb-5">
                 <CheckCircle size={32} className="text-status-success" />
               </div>
-              <h2 className="text-xl font-bold text-[#2F3437] tracking-tight mb-2">Password updated</h2>
+              <h2 className="text-xl font-bold text-[var(--color-brand-navy)] tracking-tight mb-2">{recoveryRequested ? 'Check your email' : 'Password updated'}</h2>
               <p className="text-sm text-gray-500 mb-8 leading-relaxed">
-                You can now sign in with your new password and authenticator code.
+                {recoveryRequested
+                  ? 'If an eligible account exists, a secure password-reset link has been sent.'
+                  : 'You can now sign in with your new password and authenticator code.'}
               </p>
               <button
                 onClick={() => { setPassword(''); setConfirmPassword(''); setTotpCode(''); setStep('login_password'); }}
@@ -850,7 +863,7 @@ export function LoginPage() {
             <>
               <div className="text-center mb-8">
                 <div className="w-12 h-12 rounded-full bg-olive/10 flex items-center justify-center mx-auto mb-4"><Smartphone size={22} className="text-olive" /></div>
-                <h2 className="text-xl font-bold text-[#2F3437] tracking-tight mb-1.5">Authenticator code</h2>
+                <h2 className="text-xl font-bold text-[var(--color-brand-navy)] tracking-tight mb-1.5">Authenticator code</h2>
                 <p className="text-sm text-gray-500">Enter the 6-digit code from Microsoft Authenticator.</p>
               </div>
               {error && <div className="mb-5 px-4 py-3 rounded-xl bg-status-error/5 border border-status-error/15 text-[13px] text-status-error font-medium">{error}</div>}
@@ -874,7 +887,7 @@ export function LoginPage() {
 
           {/* Footer */}
           {step === 'email' && (
-            <div className="flex items-center gap-2.5 mt-6 pt-5 border-t border-[#E5E7EB]">
+            <div className="flex items-center gap-2.5 mt-6 pt-5 border-t border-[var(--color-border)]">
               <ShieldCheck size={16} className="text-olive shrink-0" />
               <span className="text-[12px] text-gray-400 font-medium">Only authorized ReKnew employees can access this system.</span>
             </div>

@@ -34,7 +34,7 @@ export function AppLayout() {
           onClick={() => navigate('/ask-orbit-ai')}
           title="Ask Orbit AI"
           aria-label="Open Ask Orbit AI"
-          className="fixed bottom-7 right-7 z-50 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#252B3A] text-accent shadow-[0_22px_55px_rgba(37,43,58,0.34)] transition-all duration-150 hover:-translate-y-0.5 hover:bg-[#1B2130] focus:outline-none focus:ring-4 focus:ring-accent-light active:scale-95"
+          className="fixed bottom-7 right-7 z-50 flex h-16 w-16 items-center justify-center rounded-2xl border border-accent-mid bg-[var(--color-text-primary)] text-accent shadow-[0_22px_55px_color-mix(in_srgb,var(--color-brand-navy)_28%,transparent)] transition-all duration-150 hover:-translate-y-0.5 hover:bg-accent hover:text-[var(--color-text-primary)] focus:outline-none focus:ring-4 focus:ring-accent-light active:scale-95"
         >
           <Bot size={29} />
         </button>

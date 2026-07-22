@@ -3,8 +3,6 @@ Auth API endpoints — first-time setup + login + forgot password.
 """
 
 import logging
-from collections import defaultdict
-from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 from app.core.config import settings
@@ -43,12 +41,11 @@ from app.services.auth_service import (
     find_employee_by_email,
 )
 from app.services.audit_service import log_audit
+from app.services.rate_limit_service import consume_rate_limit
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
-RESET_INITIATE_RATE_LIMIT: dict[str, list[datetime]] = defaultdict(list)
-UNLOCK_REQUEST_RATE_LIMIT: dict[str, list[datetime]] = defaultdict(list)
 
 
 def _employee_by_email(db: Session, email: str):
@@ -73,22 +70,16 @@ def _request_key(request: Request, email: str) -> str:
     return f"{host}:{email.lower().strip()}"
 
 
-def _check_reset_rate_limit(request: Request, email: str):
+def _check_reset_rate_limit(db: Session, request: Request, email: str):
     key = _request_key(request, email)
-    cutoff = datetime.utcnow() - timedelta(hours=1)
-    RESET_INITIATE_RATE_LIMIT[key] = [ts for ts in RESET_INITIATE_RATE_LIMIT[key] if ts > cutoff]
-    if len(RESET_INITIATE_RATE_LIMIT[key]) >= settings.RESET_RATE_LIMIT_PER_HOUR:
+    if not consume_rate_limit(db, scope="password_reset", key=key, limit=settings.RESET_RATE_LIMIT_PER_HOUR):
         raise HTTPException(status_code=429, detail="Too many reset attempts. Please try again later.")
-    RESET_INITIATE_RATE_LIMIT[key].append(datetime.utcnow())
 
 
-def _check_unlock_rate_limit(request: Request, email: str):
+def _check_unlock_rate_limit(db: Session, request: Request, email: str):
     key = _request_key(request, email)
-    cutoff = datetime.utcnow() - timedelta(hours=1)
-    UNLOCK_REQUEST_RATE_LIMIT[key] = [ts for ts in UNLOCK_REQUEST_RATE_LIMIT[key] if ts > cutoff]
-    if len(UNLOCK_REQUEST_RATE_LIMIT[key]) >= settings.UNLOCK_REQUEST_RATE_LIMIT_PER_HOUR:
+    if not consume_rate_limit(db, scope="unlock_request", key=key, limit=settings.UNLOCK_REQUEST_RATE_LIMIT_PER_HOUR):
         raise HTTPException(status_code=429, detail="Too many unlock requests. Please try again later.")
-    UNLOCK_REQUEST_RATE_LIMIT[key].append(datetime.utcnow())
 
 
 def _actor_from_headers(
@@ -218,8 +209,8 @@ async def api_forgot_password_initiate(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    """Start staged password recovery. Returns a dev token until email delivery is wired."""
-    _check_reset_rate_limit(request, data.email)
+    """Queue reset instructions while returning a non-enumerating response."""
+    _check_reset_rate_limit(db, request, data.email)
     return initiate_reset(db, data.email)
 
 
@@ -268,7 +259,7 @@ async def api_request_unlock(
     db: Session = Depends(get_db),
 ):
     """Request account unlock from the login screen. Always returns a generic response."""
-    _check_unlock_rate_limit(request, data.email)
+    _check_unlock_rate_limit(db, request, data.email)
     return create_unlock_request_anonymous(db, data.email, data.reason)
 
 

@@ -12,7 +12,7 @@ export function Card({ children, className, ...props }: CardProps) {
   return (
     <div
       className={cn(
-        'bg-warm-card border border-[#E7E9EE] rounded-card shadow-card',
+        'bg-warm-card border border-[var(--color-border)] rounded-card shadow-card',
         className
       )}
       {...props}
@@ -36,10 +36,14 @@ export function CardHeader({
   badgeColor?: BadgeVariant;
 }) {
   return (
-    <div className="flex items-center justify-between px-5 py-4 border-b border-[#E7E9EE]">
+    <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
       <div className="flex items-center gap-2">
-        {icon && <span className="text-accent">{icon}</span>}
-        <span className="text-sm font-semibold text-[#252B3A] tracking-tight">
+        {icon && (
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-light text-[var(--color-nav-active-bar)]">
+            {icon}
+          </span>
+        )}
+        <span className="text-sm font-semibold text-[var(--color-text-primary)] tracking-tight">
           {title}
         </span>
       </div>
@@ -71,7 +75,7 @@ export function Avatar({ initials, size = 'md', variant = 'soft', src }: AvatarP
         'rounded-full flex items-center justify-center font-semibold shrink-0 overflow-hidden',
         avatarSizes[size],
         variant === 'filled'
-          ? 'bg-[#252B3A] text-white'
+          ? 'bg-[var(--color-text-primary)] text-warm-card'
           : 'bg-accent-light text-accent'
       )}
     >
@@ -90,13 +94,13 @@ export function Avatar({ initials, size = 'md', variant = 'soft', src }: AvatarP
 type BadgeVariant = 'olive' | 'success' | 'warning' | 'error' | 'info' | 'sage' | 'neutral';
 
 const badgeStyles: Record<BadgeVariant, string> = {
-  olive: 'bg-accent-light text-accent',
-  success: 'bg-status-success/10 text-status-success',
-  warning: 'bg-status-warning/10 text-status-warning',
-  error: 'bg-status-error/10 text-status-error',
-  info: 'bg-status-info/10 text-status-info',
-  sage: 'bg-sage/10 text-sage',
-  neutral: 'bg-[#F2F4F7] text-gray-500',
+  olive: 'bg-accent-light text-[var(--color-nav-active-text)]',
+  success: 'bg-[var(--color-status-success-bg)] text-[var(--color-status-success)]',
+  warning: 'bg-[var(--color-status-warning-bg)] text-[var(--color-status-warning)]',
+  error: 'bg-[var(--color-status-error-bg)] text-[var(--color-status-error)]',
+  info: 'bg-[var(--color-status-info-bg)] text-[var(--color-status-info)]',
+  sage: 'bg-[var(--color-status-info-bg)] text-[var(--color-status-info)]',
+  neutral: 'bg-sage/10 text-[var(--color-text-muted)]',
 };
 
 export function Badge({
@@ -109,7 +113,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        'inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold',
+        'inline-flex items-center px-3 py-1 rounded-full text-[11px] font-semibold',
         badgeStyles[variant]
       )}
     >
@@ -141,11 +145,11 @@ export function Button({
         'inline-flex items-center gap-1.5 font-semibold rounded-btn transition-all duration-150 cursor-pointer',
         size === 'sm' ? 'px-3 py-1.5 text-xs' : 'px-4 py-2 text-[13px]',
         variant === 'primary' &&
-          'bg-[#252B3A] text-white shadow-sm hover:bg-[#1B2130] active:scale-[0.98]',
+          'bg-[var(--color-text-primary)] text-warm-card shadow-sm hover:opacity-90 active:scale-[0.98]',
         variant === 'ghost' &&
-          'bg-transparent text-[#252B3A] border border-[#E7E9EE] hover:bg-hover-bg active:scale-[0.98]',
+          'bg-transparent text-[var(--color-text-primary)] border border-[var(--color-border)] hover:bg-hover-bg hover:text-[var(--color-nav-active-text)] active:scale-[0.98]',
         variant === 'soft' &&
-          'bg-accent-light text-accent hover:bg-accent-mid active:scale-[0.98]',
+          'bg-accent-light text-[var(--color-nav-active-text)] hover:bg-accent-mid active:scale-[0.98]',
         className
       )}
       {...props}

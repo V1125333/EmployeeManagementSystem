@@ -35,7 +35,7 @@ export function OnLeaveToday() {
               <div key={entry.name} className="flex items-center gap-3 py-2 px-3 rounded-xl bg-warm-bg">
                 <Avatar initials={entry.avatar} size="sm" />
                 <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-semibold text-[#2F3437] truncate">{entry.name}</div>
+                  <div className="text-[13px] font-semibold text-[var(--color-brand-navy)] truncate">{entry.name}</div>
                   <div className="text-[11px] text-gray-400">{entry.duration}</div>
                 </div>
                 <Badge variant="warning">{entry.type}</Badge>
@@ -70,32 +70,49 @@ export function TeamLeaveCalendar() {
   }, []);
 
   const today = new Date().getDate();
+  const monthStart = month ? new Date(`${month} 1`) : null;
+  const leadingBlankDays = monthStart && Number.isFinite(monthStart.getTime()) ? monthStart.getDay() : 0;
+  const calendarCells = [
+    ...Array.from({ length: leadingBlankDays }, (_, index) => ({ key: `blank-${index}`, day: null as number | null, count: 0 })),
+    ...days.map((day) => ({ key: `day-${day.day}`, day: day.day, count: day.count })),
+  ];
 
   return (
     <Card className="flex-1">
       <CardHeader title="Team Leave Calendar" badge={month} />
       <div className="px-5 pb-4">
-        <div className="grid grid-cols-7 gap-1 mb-1.5">
+        <div className="grid grid-cols-7 overflow-hidden rounded-t-lg border border-b-0 border-[var(--color-border)] bg-warm-bg">
           {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
-            <div key={i} className="text-center text-[10px] font-bold text-gray-400 py-1">{d}</div>
+            <div
+              key={i}
+              className={cn(
+                'border-b border-[var(--color-border)] py-2 text-center text-[10px] font-semibold text-gray-400',
+                i < 6 && 'border-r border-[var(--color-border)]'
+              )}
+            >
+              {d}
+            </div>
           ))}
         </div>
-        <div className="grid grid-cols-7 gap-1">
-          {days.map((d) => (
+        <div className="grid grid-cols-7 overflow-hidden rounded-b-lg border border-t-0 border-[var(--color-border)]">
+          {calendarCells.map((d, index) => (
             <div
-              key={d.day}
+              key={d.key}
               className={cn(
-                'aspect-square rounded-md flex items-center justify-center text-[11px] font-medium relative transition-colors',
+                'relative flex aspect-square items-center justify-center border-b border-r border-[var(--color-border)] text-[11px] font-medium transition-colors',
+                (index + 1) % 7 === 0 && 'border-r-0',
+                index >= calendarCells.length - 7 && 'border-b-0',
+                !d.day && 'bg-warm-bg text-transparent',
                 d.day === today
-                  ? 'bg-olive text-white'
+                  ? 'bg-accent-light text-[var(--color-nav-active-text)] ring-1 ring-inset ring-accent-mid'
                   : d.count > 0
-                  ? 'bg-status-warning/10 text-[#2F3437]'
-                  : 'text-gray-400 hover:bg-hover-bg'
+                    ? 'bg-status-warning/10 text-[var(--color-brand-navy)]'
+                    : 'text-gray-500 hover:bg-hover-bg'
               )}
             >
               {d.day}
               {d.count > 0 && d.day !== today && (
-                <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-status-warning" />
+                <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-status-warning" />
               )}
             </div>
           ))}

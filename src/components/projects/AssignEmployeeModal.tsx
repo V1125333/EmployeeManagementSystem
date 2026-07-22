@@ -52,6 +52,9 @@ interface AssignEmployeeModalProps {
   allocation?: AllocationRecord | null;
   projects?: ProjectRecord[];
   mode?: 'assign' | 'edit' | 'change' | 'extend';
+  initialEmployeeId?: string;
+  initialAllocationPercentage?: number;
+  lockEmployee?: boolean;
   onClose: () => void;
   onAssigned: () => void;
 }
@@ -101,6 +104,9 @@ export function AssignEmployeeModal({
   allocation,
   projects = [],
   mode = allocation ? 'edit' : 'assign',
+  initialEmployeeId = '',
+  initialAllocationPercentage = 100,
+  lockEmployee = false,
   onClose,
   onAssigned,
 }: AssignEmployeeModalProps) {
@@ -121,6 +127,7 @@ export function AssignEmployeeModal({
   const [capacityMessage, setCapacityMessage] = useState('');
   const [capacityWarning, setCapacityWarning] = useState(false);
   const canChangeProject = Boolean(allocation && mode === 'change');
+  const canSelectProject = canChangeProject || (!allocation && !project);
   const activeProjects = useMemo(
     () => projects.filter((item) => item.status === 'active' || item.id === (allocation?.project_id || project?.id)),
     [allocation?.project_id, project?.id, projects],
@@ -154,11 +161,11 @@ export function AssignEmployeeModal({
 
   useEffect(() => {
     if (open) {
-      setEmployeeId(allocation?.employee_id || '');
+      setEmployeeId(allocation?.employee_id || initialEmployeeId);
       setProjectId(allocation?.project_id || project?.id || '');
       setManagerId(allocation?.manager_id || '');
       setAllocationRole(allocation?.allocation_role || 'Developer');
-      setAllocationPercentage(allocation?.allocation_percentage || 100);
+      setAllocationPercentage(allocation?.allocation_percentage || Math.min(100, Math.max(1, initialAllocationPercentage)));
       setBillingType(allocation?.billing_type || 'billable');
       setStatus(allocation?.status || 'active');
       setStartDate(allocation?.start_date || new Date().toISOString().slice(0, 10));
@@ -168,7 +175,7 @@ export function AssignEmployeeModal({
       setCapacityMessage('');
       setCapacityWarning(false);
     }
-  }, [allocation, open, project?.id, user?.id]);
+  }, [allocation, initialAllocationPercentage, initialEmployeeId, open, project?.id, user?.id]);
 
   useEffect(() => {
     if (!open || !employeeId || !startDate || !allocationPercentage) {
@@ -225,7 +232,7 @@ export function AssignEmployeeModal({
         ? 'Edit Allocation'
         : 'Assign Employee';
 
-  if (!open || !project) return null;
+  if (!open) return null;
 
   const submit = async () => {
     if (!employeeId || !managerId || !projectId || !startDate || !allocationRole.trim()) {
@@ -287,21 +294,23 @@ export function AssignEmployeeModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[#111827]/45 px-4 py-8 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[var(--color-brand-navy)]/45 px-4 py-8 backdrop-blur-sm">
       <Card className="w-full max-w-3xl overflow-hidden shadow-[0_24px_80px_rgba(15,23,42,0.28)]">
-        <div className="flex items-start justify-between border-b border-[#E5E7EB] px-6 py-5">
+        <div className="flex items-start justify-between border-b border-[var(--color-border)] px-6 py-5">
           <div>
             <div className="flex items-center gap-2">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent-light text-accent">
                 <UserPlus size={18} />
               </div>
               <div>
-                <h2 className="text-lg font-bold text-[#2F3437]">{modalTitle}</h2>
-                <p className="text-sm text-gray-500">{selectedProject?.name || project.name} · {selectedProject?.code || project.code}</p>
+                <h2 className="text-lg font-bold text-[var(--color-brand-navy)]">{modalTitle}</h2>
+                <p className="text-sm text-gray-500">
+                  {selectedProject ? `${selectedProject.name} · ${selectedProject.code}` : 'Select an active project for this employee'}
+                </p>
               </div>
             </div>
           </div>
-          <button onClick={onClose} className="rounded-lg p-2 text-gray-400 hover:bg-hover-bg hover:text-[#2F3437]">
+          <button onClick={onClose} className="rounded-lg p-2 text-gray-400 hover:bg-hover-bg hover:text-[var(--color-brand-navy)]">
             <X size={18} />
           </button>
         </div>
@@ -314,22 +323,22 @@ export function AssignEmployeeModal({
           )}
 
           <div className="grid gap-4 md:grid-cols-2">
-            {canChangeProject && (
+            {canSelectProject && (
               <label className="space-y-1.5 md:col-span-2">
                 <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Target Project</span>
-                <select value={projectId} onChange={(event) => setProjectId(event.target.value)} className="h-11 w-full rounded-lg border border-[#E5E7EB] bg-warm-card px-3 text-sm font-medium text-[#2F3437] outline-none focus:border-accent">
+                <select value={projectId} onChange={(event) => setProjectId(event.target.value)} className="h-11 w-full rounded-lg border border-[var(--color-border)] bg-warm-card px-3 text-sm font-medium text-[var(--color-brand-navy)] outline-none focus:border-accent">
                   <option value="">Select active project</option>
                   {activeProjects.map((item) => (
                     <option key={item.id} value={item.id}>{item.name} · {item.code}</option>
                   ))}
                 </select>
-                <div className="text-xs text-gray-500">Only active projects can receive moved assignments.</div>
+                <div className="text-xs text-gray-500">Only active projects can receive assignments.</div>
               </label>
             )}
 
             <label className="space-y-1.5">
               <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Employee</span>
-              <select value={employeeId} onChange={(event) => setEmployeeId(event.target.value)} disabled={Boolean(allocation)} className="h-11 w-full rounded-lg border border-[#E5E7EB] bg-warm-card px-3 text-sm font-medium text-[#2F3437] outline-none focus:border-accent disabled:cursor-not-allowed disabled:opacity-70">
+              <select value={employeeId} onChange={(event) => setEmployeeId(event.target.value)} disabled={Boolean(allocation) || lockEmployee} className="h-11 w-full rounded-lg border border-[var(--color-border)] bg-warm-card px-3 text-sm font-medium text-[var(--color-brand-navy)] outline-none focus:border-accent disabled:cursor-not-allowed disabled:opacity-70">
                 <option value="">Select employee</option>
                 {employees.map((employee) => (
                   <option key={employee.id} value={employee.id}>{employeeName(employee)} · {employee.department}</option>
@@ -339,7 +348,7 @@ export function AssignEmployeeModal({
 
             <label className="space-y-1.5">
               <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Manager</span>
-              <select value={managerId} onChange={(event) => setManagerId(event.target.value)} className="h-11 w-full rounded-lg border border-[#E5E7EB] bg-warm-card px-3 text-sm font-medium text-[#2F3437] outline-none focus:border-accent">
+              <select value={managerId} onChange={(event) => setManagerId(event.target.value)} className="h-11 w-full rounded-lg border border-[var(--color-border)] bg-warm-card px-3 text-sm font-medium text-[var(--color-brand-navy)] outline-none focus:border-accent">
                 <option value="">Select manager</option>
                 {managers.map((employee) => (
                   <option key={employee.id} value={employee.id}>{employeeName(employee)}</option>
@@ -349,17 +358,17 @@ export function AssignEmployeeModal({
 
             <label className="space-y-1.5">
               <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Allocation Role</span>
-              <input value={allocationRole} onChange={(event) => setAllocationRole(event.target.value)} className="h-11 w-full rounded-lg border border-[#E5E7EB] bg-warm-card px-3 text-sm font-medium text-[#2F3437] outline-none focus:border-accent" />
+              <input value={allocationRole} onChange={(event) => setAllocationRole(event.target.value)} className="h-11 w-full rounded-lg border border-[var(--color-border)] bg-warm-card px-3 text-sm font-medium text-[var(--color-brand-navy)] outline-none focus:border-accent" />
             </label>
 
             <label className="space-y-1.5">
               <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Allocation %</span>
-              <input type="number" min={1} max={100} value={allocationPercentage} onChange={(event) => setAllocationPercentage(Number(event.target.value))} className="h-11 w-full rounded-lg border border-[#E5E7EB] bg-warm-card px-3 text-sm font-medium text-[#2F3437] outline-none focus:border-accent" />
+              <input type="number" min={1} max={100} value={allocationPercentage} onChange={(event) => setAllocationPercentage(Number(event.target.value))} className="h-11 w-full rounded-lg border border-[var(--color-border)] bg-warm-card px-3 text-sm font-medium text-[var(--color-brand-navy)] outline-none focus:border-accent" />
             </label>
 
             <label className="space-y-1.5">
               <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Billing Type</span>
-              <select value={billingType} onChange={(event) => setBillingType(event.target.value)} className="h-11 w-full rounded-lg border border-[#E5E7EB] bg-warm-card px-3 text-sm font-medium text-[#2F3437] outline-none focus:border-accent">
+              <select value={billingType} onChange={(event) => setBillingType(event.target.value)} className="h-11 w-full rounded-lg border border-[var(--color-border)] bg-warm-card px-3 text-sm font-medium text-[var(--color-brand-navy)] outline-none focus:border-accent">
                 <option value="billable">Billable</option>
                 <option value="non_billable">Non-billable</option>
                 <option value="internal">Internal</option>
@@ -368,7 +377,7 @@ export function AssignEmployeeModal({
 
             <label className="space-y-1.5">
               <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Status</span>
-              <select value={status} onChange={(event) => setStatus(event.target.value)} className="h-11 w-full rounded-lg border border-[#E5E7EB] bg-warm-card px-3 text-sm font-medium text-[#2F3437] outline-none focus:border-accent">
+              <select value={status} onChange={(event) => setStatus(event.target.value)} className="h-11 w-full rounded-lg border border-[var(--color-border)] bg-warm-card px-3 text-sm font-medium text-[var(--color-brand-navy)] outline-none focus:border-accent">
                 <option value="active">Active</option>
                 <option value="upcoming">Upcoming</option>
                 <option value="completed">Completed</option>
@@ -378,25 +387,25 @@ export function AssignEmployeeModal({
 
             <label className="space-y-1.5">
               <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Start Date</span>
-              <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="h-11 w-full rounded-lg border border-[#E5E7EB] bg-warm-card px-3 text-sm font-medium text-[#2F3437] outline-none focus:border-accent" />
+              <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="h-11 w-full rounded-lg border border-[var(--color-border)] bg-warm-card px-3 text-sm font-medium text-[var(--color-brand-navy)] outline-none focus:border-accent" />
             </label>
 
             <label className="space-y-1.5">
               <span className="text-xs font-bold uppercase tracking-wide text-gray-500">End Date</span>
-              <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="h-11 w-full rounded-lg border border-[#E5E7EB] bg-warm-card px-3 text-sm font-medium text-[#2F3437] outline-none focus:border-accent" />
+              <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="h-11 w-full rounded-lg border border-[var(--color-border)] bg-warm-card px-3 text-sm font-medium text-[var(--color-brand-navy)] outline-none focus:border-accent" />
             </label>
           </div>
 
           <label className="mt-4 block space-y-1.5">
             <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Notes</span>
-            <textarea value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={240} className="min-h-[82px] w-full rounded-lg border border-[#E5E7EB] bg-warm-card px-3 py-3 text-sm font-medium text-[#2F3437] outline-none focus:border-accent" placeholder="Optional assignment context" />
+            <textarea value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={240} className="min-h-[82px] w-full rounded-lg border border-[var(--color-border)] bg-warm-card px-3 py-3 text-sm font-medium text-[var(--color-brand-navy)] outline-none focus:border-accent" placeholder="Optional assignment context" />
           </label>
 
           {selectedEmployee && (
-            <div className={cn('mt-4 flex items-center gap-3 rounded-xl border border-[#E5E7EB] bg-warm-bg px-4 py-3')}>
+            <div className={cn('mt-4 flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-warm-bg px-4 py-3')}>
               <Avatar initials={initials(employeeName(selectedEmployee))} src={selectedEmployee.profile_image_url} />
               <div className="min-w-0">
-                <div className="truncate text-sm font-bold text-[#2F3437]">{employeeName(selectedEmployee)}</div>
+                <div className="truncate text-sm font-bold text-[var(--color-brand-navy)]">{employeeName(selectedEmployee)}</div>
                 <div className="truncate text-xs text-gray-500">{selectedEmployee.designation || selectedEmployee.role} · {selectedEmployee.work_email}</div>
               </div>
               <div className="ml-auto">
@@ -418,7 +427,7 @@ export function AssignEmployeeModal({
 
           {allocationPercentageChanged && (
             <div className="mt-4 rounded-xl border border-status-warning/25 bg-status-warning/10 px-4 py-3">
-              <div className="text-sm font-bold text-[#2F3437]">Allocation percentage will change</div>
+              <div className="text-sm font-bold text-[var(--color-brand-navy)]">Allocation percentage will change</div>
               <div className="mt-1 text-sm text-gray-600">
                 {allocation?.allocation_percentage}% → <span className="font-bold text-status-warning">{allocationPercentage}%</span>
               </div>
@@ -426,7 +435,7 @@ export function AssignEmployeeModal({
           )}
         </div>
 
-        <div className="flex justify-end gap-3 border-t border-[#E5E7EB] px-6 py-4">
+        <div className="flex justify-end gap-3 border-t border-[var(--color-border)] px-6 py-4">
           <Button variant="ghost" onClick={onClose} disabled={loading}>Cancel</Button>
           <Button onClick={submit} disabled={loading}>{loading ? 'Saving...' : allocation ? 'Save Assignment' : 'Assign Employee'}</Button>
         </div>

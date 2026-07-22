@@ -93,7 +93,7 @@ function AllocationBar({ value }: { value: number }) {
   return (
     <div>
       <div className="mb-1 flex items-center justify-between text-xs">
-        <span className="font-semibold text-[#2F3437]">{value}%</span>
+        <span className="font-semibold text-[var(--color-brand-navy)]">{value}%</span>
       </div>
       <div className="h-2 w-28 overflow-hidden rounded-full bg-hover-bg">
         <div
@@ -198,10 +198,10 @@ export function WorkforceForecastPage() {
   if (!canViewForecast(user?.role)) {
     return (
       <div>
-        <h1 className="mb-1 text-2xl font-bold text-[#2F3437]">Workforce Forecasting</h1>
+        <h1 className="mb-1 text-2xl font-bold text-[var(--color-brand-navy)]">Workforce Forecasting</h1>
         <p className="mb-6 text-sm text-gray-500">Forecast employee availability and bench risk.</p>
         <Card className="p-10 text-center">
-          <div className="text-[15px] font-semibold text-[#2F3437]">Access restricted</div>
+          <div className="text-[15px] font-semibold text-[var(--color-brand-navy)]">Access restricted</div>
           <div className="mt-1 text-sm text-gray-500">Only Super Admin, HR/Admin, and managers can view workforce forecasting.</div>
         </Card>
       </div>
@@ -212,7 +212,7 @@ export function WorkforceForecastPage() {
     <div>
       <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="mb-1 text-2xl font-bold tracking-tight text-[#2F3437]">Workforce Forecasting</h1>
+          <h1 className="mb-1 text-2xl font-bold tracking-tight text-[var(--color-brand-navy)]">Workforce Forecasting</h1>
           <p className="text-sm text-gray-500">Forecast employee availability and bench risk.</p>
         </div>
         <Button variant="ghost" icon={<Download size={15} />} disabled={exporting || loading} onClick={exportCsv}>
@@ -230,7 +230,7 @@ export function WorkforceForecastPage() {
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           <label className="text-[12px] font-bold text-gray-400">
             Forecast Window
-            <select value={windowDays} onChange={(event) => setWindowDays(event.target.value)} className="mt-1 w-full rounded-xl border border-[#E5E7EB] bg-warm-bg px-3 py-2.5 text-[14px] font-medium text-[#2F3437] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10">
+            <select value={windowDays} onChange={(event) => setWindowDays(event.target.value)} className="mt-1 w-full rounded-xl border border-[var(--color-border)] bg-warm-bg px-3 py-2.5 text-[14px] font-medium text-[var(--color-brand-navy)] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10">
               <option value="30">30 Days</option>
               <option value="60">60 Days</option>
               <option value="90">90 Days</option>
@@ -238,21 +238,21 @@ export function WorkforceForecastPage() {
           </label>
           <label className="text-[12px] font-bold text-gray-400">
             Department
-            <select value={department} onChange={(event) => setDepartment(event.target.value)} className="mt-1 w-full rounded-xl border border-[#E5E7EB] bg-warm-bg px-3 py-2.5 text-[14px] font-medium text-[#2F3437] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10">
+            <select value={department} onChange={(event) => setDepartment(event.target.value)} className="mt-1 w-full rounded-xl border border-[var(--color-border)] bg-warm-bg px-3 py-2.5 text-[14px] font-medium text-[var(--color-brand-navy)] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10">
               <option value="all">All departments</option>
               {departments.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
           </label>
           <label className="text-[12px] font-bold text-gray-400">
             Manager
-            <select value={manager} onChange={(event) => setManager(event.target.value)} className="mt-1 w-full rounded-xl border border-[#E5E7EB] bg-warm-bg px-3 py-2.5 text-[14px] font-medium text-[#2F3437] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10">
+            <select value={manager} onChange={(event) => setManager(event.target.value)} className="mt-1 w-full rounded-xl border border-[var(--color-border)] bg-warm-bg px-3 py-2.5 text-[14px] font-medium text-[var(--color-brand-navy)] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10">
               <option value="all">All managers</option>
               {managers.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
           </label>
           <label className="text-[12px] font-bold text-gray-400">
             Designation
-            <select value={designation} onChange={(event) => setDesignation(event.target.value)} className="mt-1 w-full rounded-xl border border-[#E5E7EB] bg-warm-bg px-3 py-2.5 text-[14px] font-medium text-[#2F3437] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10">
+            <select value={designation} onChange={(event) => setDesignation(event.target.value)} className="mt-1 w-full rounded-xl border border-[var(--color-border)] bg-warm-bg px-3 py-2.5 text-[14px] font-medium text-[var(--color-brand-navy)] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10">
               <option value="all">All designations</option>
               {designations.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
@@ -273,16 +273,16 @@ export function WorkforceForecastPage() {
             <div className={cn('mb-3 flex h-9 w-9 items-center justify-center rounded-xl', tone === 'error' ? 'bg-status-error/10 text-status-error' : tone === 'warning' ? 'bg-status-warning/10 text-status-warning' : 'bg-hover-bg text-olive')}>
               <TrendingUp size={17} />
             </div>
-            <div className="text-2xl font-bold text-[#2F3437]">{value}</div>
+            <div className="text-2xl font-bold text-[var(--color-brand-navy)]">{value}</div>
             <div className="text-sm text-gray-500">{label}</div>
           </Card>
         ))}
       </div>
 
       <Card className="overflow-hidden">
-        <div className="flex items-center justify-between border-b border-[#E5E7EB] px-5 py-4">
+        <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
           <div>
-            <div className="text-[13px] font-bold text-[#2F3437]">Forecast Table</div>
+            <div className="text-[13px] font-bold text-[var(--color-brand-navy)]">Forecast Table</div>
             <div className="text-xs text-gray-500">{filteredEmployees.length} of {forecast?.summary.total_employees || 0} employees</div>
           </div>
           <div className="flex items-center gap-2 text-xs text-gray-500">
@@ -292,7 +292,7 @@ export function WorkforceForecastPage() {
         </div>
 
         {loading ? (
-          <div className="divide-y divide-[#E5E7EB]">
+          <div className="divide-y divide-[var(--color-border)]">
             {Array.from({ length: 6 }).map((_, index) => (
               <div key={index} className="grid grid-cols-8 gap-4 px-6 py-5">
                 {Array.from({ length: 8 }).map((__, cell) => <SkeletonBlock key={cell} />)}
@@ -304,7 +304,7 @@ export function WorkforceForecastPage() {
             <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-hover-bg text-olive">
               <SearchX size={20} />
             </div>
-            <div className="text-[15px] font-semibold text-[#2F3437]">No employees match the selected forecast criteria.</div>
+            <div className="text-[15px] font-semibold text-[var(--color-brand-navy)]">No employees match the selected forecast criteria.</div>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -326,7 +326,7 @@ export function WorkforceForecastPage() {
               </thead>
               <tbody>
                 {filteredEmployees.map((row) => (
-                  <tr key={row.employee_id} className="border-t border-[#E5E7EB] text-[14px] text-[#2F3437]">
+                  <tr key={row.employee_id} className="border-t border-[var(--color-border)] text-[14px] text-[var(--color-brand-navy)]">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
                         <Avatar initials={initials(row.employee_name)} variant="filled" />
@@ -353,17 +353,17 @@ export function WorkforceForecastPage() {
 
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
         <Card className="overflow-hidden">
-          <div className="border-b border-[#E5E7EB] px-5 py-4">
-            <div className="text-[13px] font-bold text-[#2F3437]">Employees Likely To Hit Bench</div>
+          <div className="border-b border-[var(--color-border)] px-5 py-4">
+            <div className="text-[13px] font-bold text-[var(--color-brand-navy)]">Employees Likely To Hit Bench</div>
           </div>
           {benchRiskRows.length === 0 ? (
             <div className="px-5 py-8 text-sm text-gray-500">No bench risk employees in this forecast window.</div>
           ) : (
-            <div className="divide-y divide-[#E5E7EB]">
+            <div className="divide-y divide-[var(--color-border)]">
               {benchRiskRows.map((row) => (
                 <div key={row.employee_id} className="grid grid-cols-[1fr_120px] gap-3 px-5 py-4 text-sm">
                   <div>
-                    <div className="font-semibold text-[#2F3437]">{row.employee_name}</div>
+                    <div className="font-semibold text-[var(--color-brand-navy)]">{row.employee_name}</div>
                     <div className="text-gray-500">{row.department || '-'} • {row.manager_name || 'No manager'}</div>
                   </div>
                   <div className="text-right font-semibold text-status-warning">{formatDate(row.date_becoming_available)}</div>
@@ -374,8 +374,8 @@ export function WorkforceForecastPage() {
         </Card>
 
         <Card className="overflow-hidden">
-          <div className="border-b border-[#E5E7EB] px-5 py-4">
-            <div className="text-[13px] font-bold text-[#2F3437]">Projects Losing Resources Soon</div>
+          <div className="border-b border-[var(--color-border)] px-5 py-4">
+            <div className="text-[13px] font-bold text-[var(--color-brand-navy)]">Projects Losing Resources Soon</div>
           </div>
           {projectImpactRows.length === 0 ? (
             <div className="px-5 py-8 text-sm text-gray-500">No project resource endings in this forecast window.</div>
@@ -392,10 +392,10 @@ export function WorkforceForecastPage() {
                     <th className="px-4 py-3">Days</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#E5E7EB]">
+                <tbody className="divide-y divide-[var(--color-border)]">
                   {projectImpactRows.slice(0, 12).map((row) => (
                     <tr key={`${row.employee_id}-${row.project}-${row.end_date}`}>
-                      <td className="px-4 py-3 font-semibold text-[#2F3437]">{row.project}</td>
+                      <td className="px-4 py-3 font-semibold text-[var(--color-brand-navy)]">{row.project}</td>
                       <td className="px-4 py-3 text-gray-600">{row.employee_name}</td>
                       <td className="px-4 py-3 text-gray-600">{row.role || '-'}</td>
                       <td className="px-4 py-3 font-semibold">{row.allocation_percentage}%</td>

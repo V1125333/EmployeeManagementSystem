@@ -10,6 +10,7 @@ import { ForceChangePasswordPage } from '@/pages/ForceChangePasswordPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { EmployeesPage } from '@/pages/EmployeesPage';
 import { ProfilePage } from '@/pages/ProfilePage';
+import { OrganizationPage } from '@/pages/OrganizationPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { CertificateGeneratorPage } from '@/pages/CertificateGeneratorPage';
 import { CertificateVerificationPage } from '@/pages/CertificateVerificationPage';
@@ -25,6 +26,7 @@ import { RequestsPage } from '@/pages/RequestsPage';
 import { ProjectDetailPage } from '@/pages/ProjectDetailPage';
 import { ProjectsPage } from '@/pages/ProjectsPage';
 import { AskOrbitAIPage } from '@/pages/AskOrbitAIPage';
+import { AuthCallbackPage } from '@/pages/AuthCallbackPage';
 import {
   OnboardingPage,
   ClientOnboardingPage,
@@ -37,7 +39,6 @@ import {
 } from '@/pages/PlaceholderPages';
 import {
   ApplyLeavePage,
-  AttendanceHistoryPage,
   CheckInOutPage,
   CompanyHandbookPage,
   EmployeeDashboardPage,
@@ -61,12 +62,14 @@ export default function App() {
             <Route path="/brand-preview" element={<BrandPreviewPage />} />
             <Route path="/force-change-password" element={<ForceChangePasswordPage />} />
             <Route path="/verify/:certificateCode" element={<CertificateVerificationPage />} />
+            <Route path="/auth/callback" element={<AuthCallbackPage />} />
 
             {/* Protected routes */}
             <Route element={<ProtectedRoute />}>
               <Route element={<AppLayout />}>
                 <Route path="/" element={<RoleHomeRedirect />} />
                 <Route path="/profile" element={<ProfilePage />} />
+                <Route path="/organization" element={<OrganizationPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/notifications" element={<EmployeeNotificationsPage />} />
                 <Route path="/ask-orbit-ai" element={<AskOrbitAIPage />} />
@@ -85,7 +88,7 @@ export default function App() {
                   <Route path="/employee/approvals" element={<LeaveApprovalsPage />} />
                   <Route path="/employee/timesheets" element={<TimesheetsPage />} />
                   <Route path="/employee/check-in" element={<CheckInOutPage />} />
-                  <Route path="/employee/attendance" element={<AttendanceHistoryPage />} />
+                  <Route path="/employee/attendance" element={<Navigate to="/employee/check-in" replace />} />
                   <Route path="/employee/requests" element={<RequestsPage />} />
                   <Route path="/employee/documents" element={<EmployeeDocumentsPage />} />
                   <Route path="/employee/company-handbook" element={<CompanyHandbookPage />} />

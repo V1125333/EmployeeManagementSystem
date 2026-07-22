@@ -76,3 +76,6 @@ from app.models.audit import AuditLog
 
 # Employee general requests
 from app.models.requests import EmployeeRequest, RequestAttachment, RequestComment, RequestStatusHistory
+
+# Transactional email delivery and security tokens/rate limits
+from app.models.transactional_email import EmailOutbox, AccountActivationToken, SecurityRateLimit

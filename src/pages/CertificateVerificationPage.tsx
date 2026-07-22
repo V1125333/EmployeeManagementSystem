@@ -57,7 +57,7 @@ export function CertificateVerificationPage() {
             <Award size={24} />
           </div>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-[#2F3437]">Certificate Verification</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-[var(--color-brand-navy)]">Certificate Verification</h1>
             <p className="text-sm text-gray-500">Verify certificates issued by ReKnew.</p>
           </div>
         </div>
@@ -70,18 +70,18 @@ export function CertificateVerificationPage() {
               <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-status-error/10 text-status-error">
                 <ShieldAlert size={26} />
               </div>
-              <div className="text-xl font-bold text-[#2F3437]">Certificate not found</div>
+              <div className="text-xl font-bold text-[var(--color-brand-navy)]">Certificate not found</div>
               <div className="mt-2 text-sm text-gray-500">We could not find a certificate with ID {certificateCode}.</div>
             </div>
           ) : (
             <div>
-              <div className="border-b border-[#E5E7EB] bg-white px-6 py-5">
+              <div className="border-b border-[var(--color-border)] bg-white px-6 py-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <CheckCircle2 className={isValid ? 'text-status-success' : 'text-status-error'} />
                     <div>
                       <div className="text-sm text-gray-500">Status</div>
-                      <div className="text-2xl font-bold text-[#2F3437]">{isValid ? 'Valid' : status === 'revoked' ? 'Revoked' : 'Expired'}</div>
+                      <div className="text-2xl font-bold text-[var(--color-brand-navy)]">{isValid ? 'Valid' : status === 'revoked' ? 'Revoked' : 'Expired'}</div>
                     </div>
                   </div>
                   <Badge variant={isValid ? 'success' : 'error'}>{isValid ? 'Valid' : status}</Badge>
@@ -106,9 +106,9 @@ export function CertificateVerificationPage() {
 
 function VerifyRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-[#E5E7EB] bg-warm-bg p-4">
+    <div className="rounded-xl border border-[var(--color-border)] bg-warm-bg p-4">
       <div className="text-xs font-bold uppercase tracking-wide text-gray-400">{label}</div>
-      <div className="mt-1 font-semibold text-[#2F3437]">{value}</div>
+      <div className="mt-1 font-semibold text-[var(--color-brand-navy)]">{value}</div>
     </div>
   );
 }

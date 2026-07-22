@@ -123,7 +123,7 @@ export function TalentProfilesPage() {
     return (
       <div className="p-6 lg:p-8">
         <Card className="p-8 text-center">
-          <div className="text-lg font-bold text-[#2F3437]">Talent Profiles are restricted</div>
+          <div className="text-lg font-bold text-[var(--color-brand-navy)]">Talent Profiles are restricted</div>
           <div className="mt-2 text-sm text-gray-500">Managers, leads, HR, and admins can use this directory to discover employee skills and experience.</div>
         </Card>
       </div>
@@ -134,7 +134,7 @@ export function TalentProfilesPage() {
     <div className="p-6 lg:p-8">
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-[#2F3437]">Talent Profiles</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-[var(--color-brand-navy)]">Talent Profiles</h1>
           <p className="mt-1 text-sm text-gray-500">Discover employee skills, project experience, resumes, and growth interests.</p>
         </div>
         <div className="relative w-full max-w-md">
@@ -143,7 +143,7 @@ export function TalentProfilesPage() {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search skills, roles, employees..."
-            className="w-full rounded-xl border border-[#E5E7EB] bg-white py-2.5 pl-10 pr-3 text-sm font-medium text-[#2F3437] outline-none focus:border-olive"
+            className="w-full rounded-xl border border-[var(--color-border)] bg-white py-2.5 pl-10 pr-3 text-sm font-medium text-[var(--color-brand-navy)] outline-none focus:border-olive"
           />
         </div>
       </div>
@@ -155,7 +155,7 @@ export function TalentProfilesPage() {
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-light text-accent"><UserRound size={18} /></span>
             <div>
-              <div className="text-2xl font-bold text-[#2F3437]">{employees.length}</div>
+              <div className="text-2xl font-bold text-[var(--color-brand-navy)]">{employees.length}</div>
               <div className="text-xs font-bold uppercase tracking-wide text-gray-400">Employees</div>
             </div>
           </div>
@@ -164,7 +164,7 @@ export function TalentProfilesPage() {
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-light text-accent"><Sparkles size={18} /></span>
             <div>
-              <div className="text-2xl font-bold text-[#2F3437]">{profiles.filter((item) => item.completeness > 0).length}</div>
+              <div className="text-2xl font-bold text-[var(--color-brand-navy)]">{profiles.filter((item) => item.completeness > 0).length}</div>
               <div className="text-xs font-bold uppercase tracking-wide text-gray-400">Profiles Started</div>
             </div>
           </div>
@@ -173,7 +173,7 @@ export function TalentProfilesPage() {
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-light text-accent"><FileText size={18} /></span>
             <div>
-              <div className="text-2xl font-bold text-[#2F3437]">{profiles.filter((item) => item.profile.resumeName.trim()).length}</div>
+              <div className="text-2xl font-bold text-[var(--color-brand-navy)]">{profiles.filter((item) => item.profile.resumeName.trim()).length}</div>
               <div className="text-xs font-bold uppercase tracking-wide text-gray-400">Resume References</div>
             </div>
           </div>
@@ -181,8 +181,8 @@ export function TalentProfilesPage() {
       </div>
 
       <Card className="overflow-hidden">
-        <div className="border-b border-[#E5E7EB] px-5 py-4">
-          <div className="flex items-center gap-2 text-sm font-bold text-[#2F3437]">
+        <div className="border-b border-[var(--color-border)] px-5 py-4">
+          <div className="flex items-center gap-2 text-sm font-bold text-[var(--color-brand-navy)]">
             <Award size={16} className="text-olive" />
             Career Directory
           </div>
@@ -192,7 +192,7 @@ export function TalentProfilesPage() {
         ) : visibleProfiles.length === 0 ? (
           <div className="px-5 py-10 text-center text-sm text-gray-500">No talent profiles match your search.</div>
         ) : (
-          <div className="divide-y divide-[#E5E7EB]">
+          <div className="divide-y divide-[var(--color-border)]">
             {visibleProfiles.map(({ employee, profile, completeness }) => {
               const name = employeeName(employee);
               const topSkills = profile.skills.map((skill) => skill.name).filter(Boolean).slice(0, 4);
@@ -201,7 +201,7 @@ export function TalentProfilesPage() {
                   <div className="flex min-w-0 items-center gap-3">
                     <Avatar initials={initials(name)} src={employee.profile_image_url || null} />
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-bold text-[#2F3437]">{name}</div>
+                      <div className="truncate text-sm font-bold text-[var(--color-brand-navy)]">{name}</div>
                       <div className="truncate text-sm text-gray-500">{employee.designation || 'Designation not recorded'}{employee.department ? ` · ${employee.department}` : ''}</div>
                       <div className="truncate text-xs text-gray-400">{employeeEmail(employee) || 'Email not recorded'}</div>
                     </div>

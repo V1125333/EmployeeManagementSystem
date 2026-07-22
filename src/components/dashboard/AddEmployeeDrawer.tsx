@@ -17,14 +17,14 @@ interface AddEmployeeDrawerProps {
 const WORKFORCE_TYPES = ['Full-Time Employee', 'Paid Intern', 'Unpaid Intern', 'Trainee', 'Guest'];
 const ROLES = ['HR', 'Admin', 'Manager', 'Employee', 'Intern', 'Trainee', 'Guest'];
 const DEPARTMENTS = ['Engineering', 'Product', 'Design', 'Marketing', 'Sales', 'Operations', 'People', 'Finance'];
-const LOCATIONS = ['Onshore', 'Offshore', 'Remote', 'Hybrid'];
+const WORK_ARRANGEMENTS = ['Remote', 'Hybrid', 'Office'];
 const MANAGERS = ['David Park', 'Sarah Chen', 'James Rivera', 'Priya Sharma', 'Marcus Chen'];
 
 // ─── Reusable Form Components ───
 
 function FormLabel({ children, required }: { children: string; required?: boolean }) {
   return (
-    <label className="block text-[13px] font-semibold text-[#2F3437] mb-1.5">
+    <label className="block text-[13px] font-semibold text-[var(--color-brand-navy)] mb-1.5">
       {children}
       {required && <span className="text-status-error ml-0.5">*</span>}
     </label>
@@ -62,11 +62,11 @@ function FormInput({
           className={cn(
             'w-full py-2.5 rounded-xl text-[14px] font-medium',
             'bg-warm-bg border',
-            'text-[#2F3437] placeholder:text-gray-400',
+            'text-[var(--color-brand-navy)] placeholder:text-gray-400',
             'outline-none transition-all duration-150 font-sans',
             'focus:border-accent/40 focus:ring-2 focus:ring-accent-light',
             icon ? 'pl-10 pr-4' : 'px-4',
-            error ? 'border-status-error/40' : 'border-[#E5E7EB]'
+            error ? 'border-status-error/40' : 'border-[var(--color-border)]'
           )}
         />
       </div>
@@ -109,10 +109,10 @@ function FormSelect({
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
           'w-full flex items-center justify-between py-2.5 px-4 rounded-xl text-[14px] font-medium',
-          'bg-warm-bg border border-[#E5E7EB]',
+          'bg-warm-bg border border-[var(--color-border)]',
           'outline-none transition-all duration-150',
           'hover:border-accent/30',
-          value ? 'text-[#2F3437]' : 'text-gray-400'
+          value ? 'text-[var(--color-brand-navy)]' : 'text-gray-400'
         )}
       >
         <span className="truncate">{value || placeholder}</span>
@@ -124,19 +124,19 @@ function FormSelect({
           <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
           <div
             className={cn(
-              'absolute left-0 right-0 z-20 flex max-h-[220px] flex-col overflow-hidden rounded-xl border border-[#E5E7EB] bg-warm-card shadow-card-md',
+              'absolute left-0 right-0 z-20 flex max-h-[220px] flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-warm-card shadow-card-md',
               placement === 'up' ? 'bottom-full mb-1' : 'top-full mt-1'
             )}
           >
             {searchable && (
-              <div className="px-3 pt-2.5 pb-1.5 border-b border-[#E5E7EB]">
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-warm-bg border border-[#E5E7EB]">
+              <div className="px-3 pt-2.5 pb-1.5 border-b border-[var(--color-border)]">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-warm-bg border border-[var(--color-border)]">
                   <Search size={13} className="text-gray-400" />
                   <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search..."
-                    className="bg-transparent border-none outline-none text-[13px] text-[#2F3437] w-full font-sans"
+                    className="bg-transparent border-none outline-none text-[13px] text-[var(--color-brand-navy)] w-full font-sans"
                     autoFocus
                   />
                 </div>
@@ -152,7 +152,7 @@ function FormSelect({
                     'w-full text-left px-4 py-2 text-[13px] font-medium transition-colors',
                     opt === value
                       ? 'bg-hover-bg text-accent'
-                      : 'text-[#2F3437] hover:bg-hover-bg'
+                      : 'text-[var(--color-brand-navy)] hover:bg-hover-bg'
                   )}
                 >
                   {opt}
@@ -196,7 +196,7 @@ function PhoneInput({
         <button
           type="button"
           onClick={() => setShowCodes(!showCodes)}
-          className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-warm-bg border border-[#E5E7EB] text-[13px] font-medium text-[#2F3437] hover:border-accent/30 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-warm-bg border border-[var(--color-border)] text-[13px] font-medium text-[var(--color-brand-navy)] hover:border-accent/30 transition-colors"
         >
           <span className="text-[11px] font-bold">{selected.iso}</span>
           <span>{selected.code}</span>
@@ -205,15 +205,15 @@ function PhoneInput({
         {showCodes && (
           <>
             <div className="fixed inset-0 z-10" onClick={() => setShowCodes(false)} />
-            <div className="absolute top-full left-0 mt-1 z-20 flex max-h-[300px] w-[280px] flex-col overflow-hidden rounded-xl border border-[#E5E7EB] bg-warm-card shadow-card-md">
-              <div className="border-b border-[#E5E7EB] p-2">
-                <div className="flex items-center gap-2 rounded-lg border border-[#E5E7EB] bg-warm-bg px-2.5 py-1.5">
+            <div className="absolute top-full left-0 mt-1 z-20 flex max-h-[300px] w-[280px] flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-warm-card shadow-card-md">
+              <div className="border-b border-[var(--color-border)] p-2">
+                <div className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-warm-bg px-2.5 py-1.5">
                   <Search size={13} className="text-gray-400" />
                   <input
                     value={codeSearch}
                     onChange={(event) => setCodeSearch(event.target.value)}
                     placeholder="Search country or code..."
-                    className="w-full bg-transparent text-[13px] text-[#2F3437] outline-none placeholder:text-gray-400"
+                    className="w-full bg-transparent text-[13px] text-[var(--color-brand-navy)] outline-none placeholder:text-gray-400"
                     autoFocus
                   />
                 </div>
@@ -226,7 +226,7 @@ function PhoneInput({
                     onClick={() => { onCountryChange(c.code); setShowCodes(false); setCodeSearch(''); }}
                     className={cn(
                       'flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] font-medium transition-colors',
-                      c.code === countryCode ? 'bg-hover-bg text-accent' : 'text-[#2F3437] hover:bg-hover-bg'
+                      c.code === countryCode ? 'bg-hover-bg text-accent' : 'text-[var(--color-brand-navy)] hover:bg-hover-bg'
                     )}
                   >
                     <span className="w-7 text-[11px] font-bold text-gray-400">{c.iso}</span>
@@ -247,7 +247,7 @@ function PhoneInput({
         value={phone}
         onChange={(e) => onPhoneChange(e.target.value)}
         placeholder="Enter phone number"
-        className="flex-1 py-2.5 px-4 rounded-xl text-[14px] font-medium bg-warm-bg border border-[#E5E7EB] text-[#2F3437] placeholder:text-gray-400 outline-none transition-all focus:border-accent/40 focus:ring-2 focus:ring-accent-light font-sans"
+        className="flex-1 py-2.5 px-4 rounded-xl text-[14px] font-medium bg-warm-bg border border-[var(--color-border)] text-[var(--color-brand-navy)] placeholder:text-gray-400 outline-none transition-all focus:border-accent/40 focus:ring-2 focus:ring-accent-light font-sans"
       />
     </div>
   );
@@ -276,6 +276,9 @@ interface FormState {
   reportingManager: string;
   joiningDate: string;
   workLocation: string;
+  workCity: string;
+  workState: string;
+  workCountry: string;
   dateOfBirth: string;
 }
 
@@ -292,6 +295,9 @@ const INITIAL_FORM: FormState = {
   reportingManager: '',
   joiningDate: '',
   workLocation: '',
+  workCity: '',
+  workState: '',
+  workCountry: '',
   dateOfBirth: '',
 };
 
@@ -329,6 +335,8 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
     if (!form.reportingManager) newErrors.reportingManager = 'Required';
     if (!form.joiningDate) newErrors.joiningDate = 'Required';
     if (!form.workLocation) newErrors.workLocation = 'Required';
+    if (!form.workCity.trim()) newErrors.workCity = 'Work city is required';
+    if (!form.workCountry.trim()) newErrors.workCountry = 'Work country is required';
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -355,6 +363,9 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
       reporting_manager: form.reportingManager,
       joining_date: form.joiningDate,
       work_location: form.workLocation,
+      work_city: form.workCity.trim(),
+      work_state: form.workState.trim() || null,
+      work_country: form.workCountry.trim(),
     };
 
     try {
@@ -380,22 +391,14 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
       setErrors({});
       onClose();
 
-      // Show success with setup code
-      if (result.setup_code) {
-        showToast({
-          message: `Employee added! Setup code: ${result.setup_code}`,
-          duration: 10000,
-        });
-      } else {
-        showToast({
-          message: result.message || 'Employee added successfully',
-          action: {
-            label: 'View employee',
-            onClick: () => console.log('Navigate to employee:', result.employee_id),
-          },
-          duration: 6000,
-        });
-      }
+      showToast({
+        message: `${result.message || 'Employee added successfully'}. Activation instructions will be sent by email.`,
+        action: {
+          label: 'View employee',
+          onClick: () => console.log('Navigate to employee:', result.employee_id),
+        },
+        duration: 6000,
+      });
 
     } catch (error) {
       showToast({
@@ -424,7 +427,7 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
         <div className="flex items-center justify-end gap-3">
           <button
             onClick={handleCancel}
-            className="px-5 py-2.5 rounded-xl text-[13px] font-semibold text-gray-500 border border-[#E5E7EB] hover:bg-hover-bg transition-colors"
+            className="px-5 py-2.5 rounded-xl text-[13px] font-semibold text-gray-500 border border-[var(--color-border)] hover:bg-hover-bg transition-colors"
           >
             Cancel
           </button>
@@ -504,8 +507,8 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
             onChange={(e) => update('dateOfBirth', e.target.value)}
             className={cn(
               'w-full py-2.5 px-4 rounded-xl text-[14px] font-medium',
-              'bg-warm-bg border border-[#E5E7EB]',
-              'text-[#2F3437] outline-none transition-all duration-150',
+              'bg-warm-bg border border-[var(--color-border)]',
+              'text-[var(--color-brand-navy)] outline-none transition-all duration-150',
               'focus:border-accent/40 focus:ring-2 focus:ring-accent-light font-sans',
               !form.dateOfBirth && 'text-gray-400'
             )}
@@ -521,7 +524,7 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
       </div>
 
       {/* ─── Section 2: Workforce Information ─── */}
-      <div className="h-px bg-[#E5E7EB] my-6" />
+      <div className="h-px bg-[var(--color-border)] my-6" />
       <SectionTitle>Workforce Information</SectionTitle>
 
       <div className="grid grid-cols-2 gap-4 mb-4">
@@ -585,8 +588,8 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
               onChange={(e) => update('joiningDate', e.target.value)}
               className={cn(
                 'w-full py-2.5 px-4 rounded-xl text-[14px] font-medium',
-                'bg-warm-bg border border-[#E5E7EB]',
-                'text-[#2F3437] outline-none transition-all duration-150',
+                'bg-warm-bg border border-[var(--color-border)]',
+                'text-[var(--color-brand-navy)] outline-none transition-all duration-150',
                 'focus:border-accent/40 focus:ring-2 focus:ring-accent-light font-sans',
                 !form.joiningDate && 'text-gray-400'
               )}
@@ -602,14 +605,31 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
       </div>
 
       <div className="mb-4">
-        <FormLabel required>Work Location</FormLabel>
+        <FormLabel required>Work Arrangement</FormLabel>
         <FormSelect
           value={form.workLocation}
           onChange={(v) => update('workLocation', v)}
-          placeholder="Select work location"
-          options={LOCATIONS}
+          placeholder="Select work arrangement"
+          options={WORK_ARRANGEMENTS}
           placement="up"
         />
+        {errors.workLocation && <div className="mt-1.5 text-[12px] font-medium text-status-error">{errors.workLocation}</div>}
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <div>
+          <FormLabel required>Work City</FormLabel>
+          <FormInput value={form.workCity} onChange={(v) => update('workCity', v)} placeholder="e.g. Hartford" error={errors.workCity} />
+        </div>
+        <div>
+          <FormLabel>State / Province</FormLabel>
+          <FormInput value={form.workState} onChange={(v) => update('workState', v)} placeholder="e.g. CT" />
+        </div>
+      </div>
+
+      <div className="mb-4">
+        <FormLabel required>Work Country</FormLabel>
+        <FormInput value={form.workCountry} onChange={(v) => update('workCountry', v)} placeholder="e.g. United States" error={errors.workCountry} />
       </div>
     </Drawer>
   );

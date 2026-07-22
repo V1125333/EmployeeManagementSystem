@@ -148,13 +148,13 @@ export function SecurityCenterPage() {
     const hasTemporaryPassword = Boolean(unlockResult?.temporaryPassword);
     return (
       <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/45 px-4">
-        <div className="w-full max-w-[520px] rounded-2xl border border-[#E5E7EB] bg-white shadow-[0_28px_90px_rgba(17,24,39,0.24)]">
-          <div className="flex items-start justify-between border-b border-[#E5E7EB] px-6 py-5">
+        <div className="w-full max-w-[520px] rounded-2xl border border-[var(--color-border)] bg-white shadow-[0_28px_90px_rgba(17,24,39,0.24)]">
+          <div className="flex items-start justify-between border-b border-[var(--color-border)] px-6 py-5">
             <div>
-              <div className="text-lg font-bold text-[#2F3437]">{hasTemporaryPassword ? 'Account unlocked' : unlockIntent.title}</div>
+              <div className="text-lg font-bold text-[var(--color-brand-navy)]">{hasTemporaryPassword ? 'Account unlocked' : unlockIntent.title}</div>
               <div className="mt-1 text-sm text-gray-500">{unlockIntent.employeeName}</div>
             </div>
-            <button type="button" onClick={closeUnlockModal} className="rounded-lg p-1.5 text-gray-400 transition hover:bg-hover-bg hover:text-[#2F3437]" aria-label="Close">
+            <button type="button" onClick={closeUnlockModal} className="rounded-lg p-1.5 text-gray-400 transition hover:bg-hover-bg hover:text-[var(--color-brand-navy)]" aria-label="Close">
               <X size={18} />
             </button>
           </div>
@@ -167,8 +167,8 @@ export function SecurityCenterPage() {
               </div>
               <div>
                 <div className="mb-2 text-[12px] font-bold uppercase tracking-wide text-gray-400">Temporary password</div>
-                <div className="flex items-center gap-2 rounded-xl border border-[#E5E7EB] bg-warm-bg p-3">
-                  <code className="min-w-0 flex-1 select-all truncate text-[15px] font-bold text-[#2F3437]">{unlockResult?.temporaryPassword}</code>
+                <div className="flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-warm-bg p-3">
+                  <code className="min-w-0 flex-1 select-all truncate text-[15px] font-bold text-[var(--color-brand-navy)]">{unlockResult?.temporaryPassword}</code>
                   <Button size="sm" variant="ghost" icon={<Copy size={14} />} onClick={copyTemporaryPassword}>Copy</Button>
                 </div>
                 <p className="mt-2 text-xs leading-5 text-gray-500">
@@ -182,11 +182,11 @@ export function SecurityCenterPage() {
           ) : (
             <div className="space-y-4 px-6 py-5">
               <label className="block">
-                <span className="mb-2 block text-[13px] font-semibold text-[#2F3437]">Admin notes for audit trail</span>
+                <span className="mb-2 block text-[13px] font-semibold text-[var(--color-brand-navy)]">Admin notes for audit trail</span>
                 <textarea
                   value={adminNotes}
                   onChange={(event) => setAdminNotes(event.target.value.slice(0, 500))}
-                  className="min-h-[112px] w-full resize-none rounded-xl border border-[#E5E7EB] bg-warm-bg px-3.5 py-3 text-sm font-medium text-[#2F3437] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10"
+                  className="min-h-[112px] w-full resize-none rounded-xl border border-[var(--color-border)] bg-warm-bg px-3.5 py-3 text-sm font-medium text-[var(--color-brand-navy)] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10"
                   placeholder="Example: Direct admin unlock after identity verification"
                   autoFocus
                 />
@@ -213,7 +213,7 @@ export function SecurityCenterPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-[#2F3437]">Security Center</h1>
+          <h1 className="text-2xl font-bold text-[var(--color-brand-navy)]">Security Center</h1>
           <p className="mt-1 text-sm text-gray-500">Review locked accounts and account unlock requests.</p>
         </div>
         <Button variant="ghost" icon={<RefreshCw size={15} />} onClick={loadData} disabled={loading}>
@@ -247,7 +247,7 @@ export function SecurityCenterPage() {
                 <thead className="bg-warm-bg text-[11px] uppercase tracking-wide text-gray-400">
                   <tr><th className="px-5 py-3 text-left">Employee</th><th className="px-5 py-3 text-left">Department</th><th className="px-5 py-3 text-left">Locked At</th><th className="px-5 py-3 text-left">Reason</th><th className="px-5 py-3 text-left">Attempts</th><th className="px-5 py-3 text-right">Action</th></tr>
                 </thead>
-                <tbody className="divide-y divide-[#E5E7EB]">
+                <tbody className="divide-y divide-[var(--color-border)]">
                   {lockedAccounts.map((row) => (
                     <tr key={row.id}>
                       <td className="px-5 py-3"><div className="font-bold">{row.name}</div><div className="text-xs text-gray-500">{row.email}</div></td>
@@ -265,14 +265,14 @@ export function SecurityCenterPage() {
         </Card>
       ) : (
         <Card className="overflow-hidden">
-          <CardHeader title="Unlock Requests" action={<select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm"><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="all">All</option></select>} />
+          <CardHeader title="Unlock Requests" action={<select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm"><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="all">All</option></select>} />
           {unlockRequests.length === 0 ? <div className="px-5 py-10 text-center text-sm text-gray-500">No unlock requests found.</div> : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[900px] text-sm">
                 <thead className="bg-warm-bg text-[11px] uppercase tracking-wide text-gray-400">
                   <tr><th className="px-5 py-3 text-left">Employee</th><th className="px-5 py-3 text-left">Requested By</th><th className="px-5 py-3 text-left">Reason</th><th className="px-5 py-3 text-left">Created</th><th className="px-5 py-3 text-left">Status</th><th className="px-5 py-3 text-right">Action</th></tr>
                 </thead>
-                <tbody className="divide-y divide-[#E5E7EB]">
+                <tbody className="divide-y divide-[var(--color-border)]">
                   {unlockRequests.map((row) => (
                     <tr key={row.id}>
                       <td className="px-5 py-3"><div className="font-bold">{row.employee_name}</div><div className="text-xs text-gray-500">{row.employee_email}</div></td>

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.allocation import Allocation
+from app.models.client_onboarding import Client
 from app.models.employee import Employee
 from app.models.operations import Project, ProjectDocument
 from app.schemas.operations import ProjectCreate, ProjectUpdate
@@ -62,12 +63,14 @@ def serialize_project(db: Session, project: Project) -> dict[str, Any]:
         .scalar()
         or 0
     )
+    client = db.query(Client).filter(Client.id == project.client_id).first() if project.client_id else None
     return {
         "id": project.id,
         "name": project.name,
         "code": project.code,
         "description": project.description,
-        "client_name": project.client_name,
+        "client_id": project.client_id,
+        "client_name": client.client_name if client else project.client_name,
         "start_date": project.start_date,
         "end_date": project.end_date,
         "status": project.status,
@@ -89,6 +92,23 @@ def _normalize_code(code: str) -> str:
 def _validate_dates(start_date, end_date) -> None:
     if start_date and end_date and end_date < start_date:
         raise HTTPException(status_code=422, detail="end_date cannot be before start_date.")
+
+
+def _normalize_client_reference(db: Session, payload: dict[str, Any], current: Project | None = None) -> None:
+    if "client_id" not in payload and current is not None:
+        return
+    client_id = payload.get("client_id")
+    if client_id:
+        client = db.query(Client).filter(Client.id == client_id).first()
+        if not client:
+            raise HTTPException(status_code=422, detail="Selected client was not found.")
+        payload["client_id"] = client.id
+        payload["client_name"] = client.client_name
+        return
+
+    payload["client_id"] = None
+    requested_name = (payload.get("client_name") or "").strip()
+    payload["client_name"] = requested_name or "Internal"
 
 
 def list_projects(
@@ -136,6 +156,7 @@ def create_project(db: Session, data: ProjectCreate, actor: Employee) -> Project
     payload = data.model_dump()
     payload["name"] = payload["name"].strip()
     payload["code"] = _normalize_code(payload["code"])
+    _normalize_client_reference(db, payload)
     _validate_dates(payload.get("start_date"), payload.get("end_date"))
 
     existing = db.query(Project).filter(func.lower(Project.code) == payload["code"].lower()).first()
@@ -168,6 +189,7 @@ def update_project(db: Session, project_id: str, data: ProjectUpdate, actor: Emp
     project = get_project_record(db, project_id)
     old_values = serialize_project(db, project)
     patch = data.model_dump(exclude_unset=True)
+    _normalize_client_reference(db, patch, project)
     if "name" in patch and patch["name"] is not None:
         patch["name"] = patch["name"].strip()
     if "code" in patch and patch["code"] is not None:

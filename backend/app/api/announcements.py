@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.employee import Employee
@@ -54,7 +54,9 @@ def current_actor(
     if user_id:
         employee = db.query(Employee).filter(Employee.id == user_id).first()
     if not employee and user_email:
-        employee = db.query(Employee).filter(Employee.work_email == user_email).first()
+        employee = db.query(Employee).filter(
+            func.lower(Employee.work_email) == user_email.strip().lower()
+        ).first()
     if employee and user_email and employee.work_email.lower() != user_email.lower():
         raise HTTPException(status_code=401, detail="Authenticated user headers do not match.")
 

@@ -126,7 +126,7 @@ function statusVariant(status: string): 'olive' | 'success' | 'warning' | 'error
 }
 
 function inputClass() {
-  return 'mt-1 w-full rounded-xl border border-[#E5E7EB] bg-warm-bg px-3 py-2.5 text-[14px] font-medium text-[#2F3437] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10';
+  return 'mt-1 w-full rounded-xl border border-[var(--color-border)] bg-warm-bg px-3 py-2.5 text-[14px] font-medium text-[var(--color-brand-navy)] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10';
 }
 
 function CreateAllocationDrawer({
@@ -277,7 +277,7 @@ function CreateAllocationDrawer({
       )}
     >
       <div className="space-y-4">
-        {checking && <div className="rounded-xl border border-[#E5E7EB] bg-warm-bg px-4 py-3 text-sm text-gray-500">Checking capacity...</div>}
+        {checking && <div className="rounded-xl border border-[var(--color-border)] bg-warm-bg px-4 py-3 text-sm text-gray-500">Checking capacity...</div>}
         {capacityBlocked && capacity && (
           <div className="rounded-xl border border-status-error/20 bg-status-error/10 px-4 py-3 text-sm text-status-error">
             <div className="flex items-center gap-2 font-bold"><AlertTriangle size={16} /> Cannot create allocation</div>
@@ -285,7 +285,7 @@ function CreateAllocationDrawer({
           </div>
         )}
         {hasWarning && capacity && (
-          <div className="rounded-xl border border-status-warning/25 bg-status-warning/10 px-4 py-3 text-sm text-[#8A5A12]">
+          <div className="rounded-xl border border-status-warning/25 bg-status-warning/10 px-4 py-3 text-sm text-[var(--color-brand-orange)]">
             <div className="font-bold">This employee already has overlapping allocations.</div>
             <div className="mt-2 space-y-1">
               {capacity.overlapping_allocations.map((item) => (
@@ -296,12 +296,12 @@ function CreateAllocationDrawer({
           </div>
         )}
 
-        <div className="rounded-xl border border-[#E5E7EB] bg-warm-bg px-4 py-3">
+        <div className="rounded-xl border border-[var(--color-border)] bg-warm-bg px-4 py-3">
           <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Employee</div>
           <div className="mt-2 flex items-center gap-3">
             <Avatar initials={initials(candidate.employee_name)} src={candidate.profile_image_url} variant="filled" />
             <div>
-              <div className="font-bold text-[#2F3437]">{candidate.employee_name}</div>
+              <div className="font-bold text-[var(--color-brand-navy)]">{candidate.employee_name}</div>
               <div className="text-xs text-gray-500">{candidate.designation || '-'} • {candidate.available_capacity_percentage}% available</div>
             </div>
           </div>
@@ -328,7 +328,7 @@ function CreateAllocationDrawer({
           <div className="mb-2 text-[12px] font-bold text-gray-500">Billing Type</div>
           <div className="grid grid-cols-3 gap-2">
             {(['billable', 'non_billable', 'internal'] as const).map((item) => (
-              <button key={item} onClick={() => setBillingType(item)} className={`rounded-xl border px-3 py-2 text-sm font-bold ${billingType === item ? 'border-olive bg-olive text-white' : 'border-[#E5E7EB] bg-warm-bg text-gray-600'}`}>
+              <button key={item} onClick={() => setBillingType(item)} className={`rounded-xl border px-3 py-2 text-sm font-bold ${billingType === item ? 'border-olive bg-olive text-white' : 'border-[var(--color-border)] bg-warm-bg text-gray-600'}`}>
                 {titleCase(item)}
               </button>
             ))}
@@ -450,7 +450,7 @@ export function StaffingRequestDetailPage() {
         <div>
           <Button variant="ghost" size="sm" icon={<ArrowLeft size={14} />} onClick={() => navigate('/staffing-requests')}>Back</Button>
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-bold text-[#2F3437]">{request.project_name}</h1>
+            <h1 className="text-2xl font-bold text-[var(--color-brand-navy)]">{request.project_name}</h1>
             <Badge variant={statusVariant(request.status)}>{titleCase(request.status)}</Badge>
           </div>
           <p className="mt-1 text-sm text-gray-500">{request.role_needed} • {request.allocation_percentage}% allocation • {request.headcount_fulfilled}/{request.headcount_needed} fulfilled</p>
@@ -468,12 +468,12 @@ export function StaffingRequestDetailPage() {
         </div>
       </div>
 
-      <div className="mb-5 flex gap-2 border-b border-[#E5E7EB]">
+      <div className="mb-5 flex gap-2 border-b border-[var(--color-border)]">
         {['overview', 'candidates', 'activity'].map((tab) => (
           <button
             key={tab}
             onClick={() => setSearchParams(tab === 'overview' ? {} : { tab })}
-            className={`px-4 py-3 text-sm font-bold ${activeTab === tab ? 'border-b-2 border-olive text-olive' : 'text-gray-500 hover:text-[#2F3437]'}`}
+            className={`px-4 py-3 text-sm font-bold ${activeTab === tab ? 'border-b-2 border-olive text-olive' : 'text-gray-500 hover:text-[var(--color-brand-navy)]'}`}
           >
             {titleCase(tab)}
           </button>
@@ -483,7 +483,7 @@ export function StaffingRequestDetailPage() {
       {activeTab === 'overview' && (
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_360px]">
           <Card className="p-5">
-            <div className="mb-4 text-sm font-bold text-[#2F3437]">Request Details</div>
+            <div className="mb-4 text-sm font-bold text-[var(--color-brand-navy)]">Request Details</div>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {[
                 ['Requested By', request.requested_by_name],
@@ -495,26 +495,26 @@ export function StaffingRequestDetailPage() {
                 ['Priority', titleCase(request.priority)],
                 ['Skills', request.skills_required.length ? request.skills_required.join(', ') : 'No specific skills'],
               ].map(([label, value]) => (
-                <div key={label} className="rounded-xl border border-[#E5E7EB] bg-warm-bg px-4 py-3">
+                <div key={label} className="rounded-xl border border-[var(--color-border)] bg-warm-bg px-4 py-3">
                   <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">{label}</div>
-                  <div className="mt-1 text-sm font-semibold text-[#2F3437]">{value}</div>
+                  <div className="mt-1 text-sm font-semibold text-[var(--color-brand-navy)]">{value}</div>
                 </div>
               ))}
             </div>
             <div className="mt-4 grid gap-4">
-              <div className="rounded-xl border border-[#E5E7EB] bg-warm-bg px-4 py-3">
+              <div className="rounded-xl border border-[var(--color-border)] bg-warm-bg px-4 py-3">
                 <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Reason</div>
-                <div className="mt-1 text-sm text-[#2F3437]">{request.reason || 'No reason provided.'}</div>
+                <div className="mt-1 text-sm text-[var(--color-brand-navy)]">{request.reason || 'No reason provided.'}</div>
               </div>
-              <div className="rounded-xl border border-[#E5E7EB] bg-warm-bg px-4 py-3">
+              <div className="rounded-xl border border-[var(--color-border)] bg-warm-bg px-4 py-3">
                 <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Notes</div>
-                <div className="mt-1 text-sm text-[#2F3437]">{request.notes || 'No notes provided.'}</div>
+                <div className="mt-1 text-sm text-[var(--color-brand-navy)]">{request.notes || 'No notes provided.'}</div>
               </div>
             </div>
           </Card>
           <Card className="p-5">
-            <div className="mb-4 text-sm font-bold text-[#2F3437]">Fulfillment</div>
-            <div className="text-3xl font-bold text-olive">{request.headcount_fulfilled} / {request.headcount_needed} <span className="text-lg text-[#2F3437]">Filled</span></div>
+            <div className="mb-4 text-sm font-bold text-[var(--color-brand-navy)]">Fulfillment</div>
+            <div className="text-3xl font-bold text-olive">{request.headcount_fulfilled} / {request.headcount_needed} <span className="text-lg text-[var(--color-brand-navy)]">Filled</span></div>
             <div className="mt-2 h-2 rounded-full bg-hover-bg">
               <div className="h-full rounded-full bg-olive" style={{ width: `${Math.min(100, (request.headcount_fulfilled / request.headcount_needed) * 100)}%` }} />
             </div>
@@ -523,9 +523,9 @@ export function StaffingRequestDetailPage() {
               <div className="mt-2 text-xs text-gray-500">Fulfilled on {formatDateTime(request.fulfilled_at)} by {request.fulfilled_by_name || 'HR'}</div>
             )}
             {selected ? (
-              <div className="mt-5 rounded-xl border border-[#DDE6D8] bg-olive/5 p-4">
+              <div className="mt-5 rounded-xl border border-[var(--color-border)] bg-olive/5 p-4">
                 <div className="text-xs font-bold uppercase tracking-wide text-gray-400">Selected Candidate</div>
-                <div className="mt-2 font-bold text-[#2F3437]">{selected.employee_name}</div>
+                <div className="mt-2 font-bold text-[var(--color-brand-navy)]">{selected.employee_name}</div>
                 <div className="mt-1 text-sm text-gray-500">{selected.designation || '-'} • {selected.available_capacity_percentage}% available</div>
                 {canCreateStaffingAllocation(user?.role) && <Button className="mt-4" onClick={() => setAllocationDrawerCandidate(selected)}>Create Allocation</Button>}
               </div>
@@ -535,7 +535,7 @@ export function StaffingRequestDetailPage() {
           </Card>
           <Card className="p-5 xl:col-span-2">
             <div className="mb-4 flex items-center justify-between">
-              <div className="text-sm font-bold text-[#2F3437]">Created Allocations</div>
+              <div className="text-sm font-bold text-[var(--color-brand-navy)]">Created Allocations</div>
               <Badge variant="neutral">{allocations.length}</Badge>
             </div>
             {loadingAllocations ? (
@@ -543,7 +543,7 @@ export function StaffingRequestDetailPage() {
                 {Array.from({ length: 3 }).map((_, index) => <div key={index} className="h-12 animate-pulse rounded-xl bg-gray-100" />)}
               </div>
             ) : allocations.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-[#E5E7EB] bg-warm-bg px-5 py-8 text-center text-sm text-gray-500">
+              <div className="rounded-xl border border-dashed border-[var(--color-border)] bg-warm-bg px-5 py-8 text-center text-sm text-gray-500">
                 No allocations created yet. Select a candidate from the Candidate Matches tab to create an allocation.
               </div>
             ) : (
@@ -565,16 +565,16 @@ export function StaffingRequestDetailPage() {
                       const candidate = request.candidates.find((item) => item.employee_id === allocation.employee_id);
                       const name = candidate?.employee_name || allocation.employee_id;
                       return (
-                        <tr key={allocation.id} className="border-t border-[#E5E7EB] text-sm">
+                        <tr key={allocation.id} className="border-t border-[var(--color-border)] text-sm">
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
                               <Avatar initials={initials(name)} src={candidate?.profile_image_url} variant="filled" />
-                              <span className="font-semibold text-[#2F3437]">{name}</span>
+                              <span className="font-semibold text-[var(--color-brand-navy)]">{name}</span>
                             </div>
                           </td>
                           <td className="px-4 py-3 text-gray-600">{allocation.allocation_role}</td>
                           <td className="px-4 py-3">
-                            <div className="font-bold text-[#2F3437]">{allocation.allocation_percentage}%</div>
+                            <div className="font-bold text-[var(--color-brand-navy)]">{allocation.allocation_percentage}%</div>
                             <div className="mt-1 h-1.5 w-24 rounded-full bg-hover-bg">
                               <div className="h-full rounded-full bg-olive" style={{ width: `${allocation.allocation_percentage}%` }} />
                             </div>
@@ -596,18 +596,18 @@ export function StaffingRequestDetailPage() {
 
       {activeTab === 'candidates' && (
         <Card>
-          <div className="flex flex-col justify-between gap-3 border-b border-[#E5E7EB] px-5 py-4 lg:flex-row lg:items-center">
+          <div className="flex flex-col justify-between gap-3 border-b border-[var(--color-border)] px-5 py-4 lg:flex-row lg:items-center">
             <div>
-              <div className="text-sm font-bold text-[#2F3437]">Candidate Matches</div>
+              <div className="text-sm font-bold text-[var(--color-brand-navy)]">Candidate Matches</div>
               <div className="text-xs text-gray-500">Suggested using allocation capacity and availability.</div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <select value={candidateFilter} onChange={(event) => setCandidateFilter(event.target.value)} className="rounded-xl border border-[#E5E7EB] bg-warm-bg px-3 py-2 text-sm">
+              <select value={candidateFilter} onChange={(event) => setCandidateFilter(event.target.value)} className="rounded-xl border border-[var(--color-border)] bg-warm-bg px-3 py-2 text-sm">
                 {['all', 'suggested', 'shortlisted', 'selected', 'rejected'].map((item) => <option key={item} value={item}>{titleCase(item)}</option>)}
               </select>
                   {isHr(user?.role) && (
                 <>
-                  <select value={manualEmployeeId} onChange={(event) => setManualEmployeeId(event.target.value)} className="rounded-xl border border-[#E5E7EB] bg-warm-bg px-3 py-2 text-sm">
+                  <select value={manualEmployeeId} onChange={(event) => setManualEmployeeId(event.target.value)} className="rounded-xl border border-[var(--color-border)] bg-warm-bg px-3 py-2 text-sm">
                     <option value="">Add manual candidate</option>
                     {(options?.employees || []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
@@ -632,12 +632,12 @@ export function StaffingRequestDetailPage() {
               </thead>
               <tbody>
                 {filteredCandidates.map((candidate) => (
-                  <tr key={candidate.id} className="border-t border-[#E5E7EB] text-sm">
+                  <tr key={candidate.id} className="border-t border-[var(--color-border)] text-sm">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
                         <Avatar initials={initials(candidate.employee_name)} src={candidate.profile_image_url} variant="filled" />
                         <div>
-                          <div className="font-bold text-[#2F3437]">{candidate.employee_name}</div>
+                          <div className="font-bold text-[var(--color-brand-navy)]">{candidate.employee_name}</div>
                           <div className="text-xs text-gray-500">{candidate.designation || '-'}</div>
                         </div>
                       </div>
@@ -670,7 +670,7 @@ export function StaffingRequestDetailPage() {
                           <Button size="sm" variant="ghost" icon={<UserRoundX size={14} />} onClick={() => action(`/staffing-requests/${request.id}/candidates/${candidate.employee_id}/reject`)}>Reject</Button>
                         )}
                         {isHr(user?.role) && candidate.match_status === 'selected' && (
-                          <span title="Deselect first to reject" className="inline-flex items-center rounded-btn border border-[#E5E7EB] px-3 py-1.5 text-xs font-semibold text-gray-300">Reject</span>
+                          <span title="Deselect first to reject" className="inline-flex items-center rounded-btn border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-gray-300">Reject</span>
                         )}
                       </div>
                     </td>

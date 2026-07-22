@@ -44,7 +44,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
     <div
       className={cn(
         'flex items-center gap-3 px-4 py-3.5 rounded-xl',
-        'bg-warm-card border border-[#E5E7EB] shadow-card-md',
+        'bg-warm-card border border-[var(--color-border)] shadow-card-md',
         'min-w-[340px] max-w-[420px]',
         'transition-all duration-300',
         exiting
@@ -53,7 +53,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
       )}
     >
       <CheckCircle size={18} className="text-status-success shrink-0" />
-      <span className="text-[13.5px] font-medium text-[#2F3437] flex-1">
+      <span className="text-[13.5px] font-medium text-[var(--color-brand-navy)] flex-1">
         {toast.message}
       </span>
       {toast.action && (

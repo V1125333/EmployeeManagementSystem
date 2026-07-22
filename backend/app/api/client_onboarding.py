@@ -8,7 +8,7 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -259,6 +259,11 @@ def refresh_progress(db: Session, client_id: str) -> None:
     onboarding.progress_percent = progress
     if progress == 100:
         onboarding.stage = "Completed"
+        if not onboarding.actual_go_live_date:
+            onboarding.actual_go_live_date = date.today()
+        client = db.query(Client).filter(Client.id == client_id).first()
+        if client and client.status in {"prospect", "contract_signed", "onboarding", "at_risk"}:
+            client.status = "active"
 
 
 def ensure_defaults(db: Session, client_id: str, actor: Employee) -> None:
@@ -279,7 +284,7 @@ class ClientPayload(BaseModel):
     contact_phone: str | None = Field(default=None, max_length=50)
     contract_start_date: date | None = None
     contract_end_date: date | None = None
-    status: str = "prospect"
+    status: str = "contract_signed"
     owner_id: str | None = None
     notes: str | None = Field(default=None, max_length=2000)
     onboarding_stage: str = "Contract Signed"
@@ -333,7 +338,34 @@ async def list_clients(
     x_user_email: str | None = Header(None, alias="x-user-email"),
 ):
     require_admin(db, x_user_id, x_user_email)
-    total_count = db.query(Client).count()
+    status_counts = dict(
+        db.query(Client.status, func.count(Client.id))
+        .group_by(Client.status)
+        .all()
+    )
+    at_risk_ids = {
+        client_id
+        for (client_id,) in db.query(Client.id).filter(Client.status == "at_risk").all()
+    }
+    delayed_ids = {
+        client_id
+        for (client_id,) in db.query(ClientOnboarding.client_id)
+        .join(Client, Client.id == ClientOnboarding.client_id)
+        .filter(
+            ClientOnboarding.target_go_live_date.isnot(None),
+            ClientOnboarding.target_go_live_date < date.today(),
+            ClientOnboarding.actual_go_live_date.is_(None),
+            ClientOnboarding.stage != "Completed",
+            Client.status != "completed",
+        )
+        .all()
+    }
+    metrics = {
+        "total_clients": sum(status_counts.values()),
+        "in_onboarding": status_counts.get("contract_signed", 0) + status_counts.get("onboarding", 0),
+        "active_clients": status_counts.get("active", 0),
+        "at_risk": len(at_risk_ids | delayed_ids),
+    }
     query = db.query(Client)
     if search and search.strip():
         term = f"%{search.strip()}%"
@@ -347,7 +379,13 @@ async def list_clients(
     if stage and stage != "All":
         rows = [row for row in rows if row["onboarding_stage"] == stage]
     employees = db.query(Employee).filter(Employee.work_email != "superadmin@reknew.ai").order_by(Employee.first_name.asc()).all()
-    return {"clients": rows, "total_count": total_count, "employees": [serialize_employee(employee) for employee in employees], "stages": STAGES}
+    return {
+        "clients": rows,
+        "total_count": metrics["total_clients"],
+        "metrics": metrics,
+        "employees": [serialize_employee(employee) for employee in employees],
+        "stages": STAGES,
+    }
 
 
 @router.post("")

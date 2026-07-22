@@ -3,14 +3,16 @@ Dashboard API — pulls real KPI data from database.
 """
 
 from datetime import date, datetime, timedelta
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import and_, exists, func, or_
 from app.core.database import get_db
 from app.models.employee import Employee
+from app.models.allocation import Allocation
 from app.models.leave_attendance import LeaveRequest, Attendance, AttendanceCorrection
 from app.models.operations import Announcement
 from app.models.training import TrainingEnrollment
+from app.services.settings_service import get_current_employee
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
@@ -29,6 +31,78 @@ def employee_name(employee: Employee) -> str:
     return f"{employee.first_name} {employee.last_name}".strip()
 
 
+@router.get("/employee-context")
+async def get_employee_dashboard_context(
+    db: Session = Depends(get_db),
+    current_user_id: str | None = Header(None, alias="x-user-id"),
+    current_user_email: str | None = Header(None, alias="x-user-email"),
+):
+    """Return the signed-in employee's reporting context and direct-report status."""
+    actor = get_current_employee(db, current_user_id, current_user_email)
+    manager = db.query(Employee).filter(Employee.id == actor.manager_id).first() if actor.manager_id else None
+    if not manager and actor.reporting_manager:
+        manager_reference = actor.reporting_manager.strip().lower()
+        manager = next((
+            employee for employee in db.query(Employee).filter(Employee.is_active.is_(True)).all()
+            if employee.id != actor.id and manager_reference in {
+                employee_name(employee).lower(),
+                employee.work_email.lower(),
+            }
+        ), None)
+
+    actor_references = {employee_name(actor).lower(), actor.work_email.lower()}
+    direct_reports = [
+        employee for employee in db.query(Employee).filter(Employee.is_active.is_(True)).all()
+        if employee.id != actor.id and (
+            employee.manager_id == actor.id
+            or (employee.reporting_manager or "").strip().lower() in actor_references
+        )
+    ]
+    direct_reports.sort(key=lambda employee: employee_name(employee).lower())
+    report_ids = [employee.id for employee in direct_reports]
+    attendance_by_employee = {
+        attendance.employee_id: attendance
+        for attendance in db.query(Attendance).filter(
+            Attendance.employee_id.in_(report_ids),
+            Attendance.date == date.today(),
+        ).all()
+    } if report_ids else {}
+    employees_on_leave = {
+        employee_id for (employee_id,) in db.query(LeaveRequest.employee_id).filter(
+            LeaveRequest.employee_id.in_(report_ids),
+            LeaveRequest.status == "approved",
+            LeaveRequest.start_date <= date.today(),
+            LeaveRequest.end_date >= date.today(),
+        ).all()
+    } if report_ids else set()
+
+    def person_payload(employee: Employee | None) -> dict | None:
+        if not employee:
+            return None
+        return {
+            "id": employee.id,
+            "name": employee_name(employee),
+            "email": employee.work_email,
+            "designation": employee.designation or employee.role.replace("_", " ").title(),
+            "department": employee.department or "Not assigned",
+            "profile_image_url": employee.profile_image_url,
+        }
+
+    team = []
+    for employee in direct_reports:
+        attendance = attendance_by_employee.get(employee.id)
+        status = "on_leave" if employee.id in employees_on_leave else (
+            "working" if attendance and attendance.check_in and not attendance.check_out else "not_checked_in"
+        )
+        team.append({**person_payload(employee), "today_status": status})
+
+    return {
+        "employee": person_payload(actor),
+        "manager": person_payload(manager),
+        "direct_reports": team,
+    }
+
+
 @router.get("/kpis")
 async def get_kpis(db: Session = Depends(get_db)):
     """Get all dashboard KPI metrics from real data."""
@@ -41,6 +115,40 @@ async def get_kpis(db: Session = Depends(get_db)):
     total = base.count()
     active = base.filter(Employee.employment_status == "active").count()
     inactive = base.filter(Employee.employment_status != "active").count()
+
+    # New starters in the current calendar month.
+    month_start = today.replace(day=1)
+    new_this_month_employees = base.filter(
+        Employee.joining_date >= month_start,
+        Employee.joining_date <= today,
+    ).order_by(Employee.joining_date.asc()).all()
+    new_this_month = [
+        {
+            "employee_id": employee.id,
+            "name": employee_name(employee),
+            "date": employee.joining_date.isoformat(),
+            "subtitle": employee.designation or employee.department,
+        }
+        for employee in new_this_month_employees
+    ]
+
+    # Bench capacity: active non-trainees without a current active project allocation.
+    active_allocation_exists = exists().where(and_(
+        Allocation.employee_id == Employee.id,
+        Allocation.project_id.isnot(None),
+        Allocation.status == "active",
+        Allocation.start_date <= today,
+        or_(Allocation.end_date.is_(None), Allocation.end_date >= today),
+    ))
+    trainee_expression = or_(
+        func.lower(func.replace(func.replace(Employee.role, " ", "_"), "-", "_")) == "trainee",
+        func.lower(Employee.workforce_type).like("%trainee%"),
+    )
+    bench_employees = base.filter(
+        Employee.employment_status == "active",
+        ~trainee_expression,
+        ~active_allocation_exists,
+    ).order_by(Employee.first_name.asc(), Employee.last_name.asc()).all()
 
     # Pending leave requests
     pending_leave = db.query(LeaveRequest).filter(LeaveRequest.status == "pending").count()
@@ -91,8 +199,16 @@ async def get_kpis(db: Session = Depends(get_db)):
             {"label": "Inactive", "value": str(inactive), "icon": "UserX", "color": "#9CA3AF"},
             {"label": "Pending Leave", "value": str(pending_leave), "icon": "Calendar", "color": "#D6A85F"},
             {"label": "Today's Attendance", "value": attendance_rate, "icon": "CheckCircle", "color": "#7E9BB7"},
+            {"label": "New This Month", "value": str(len(new_this_month)), "trend": "this month", "icon": "UserPlus", "color": "#D97A34", "details": new_this_month},
             {"label": "Upcoming Birthdays", "value": str(len(upcoming_birthdays)), "trend": "this week", "icon": "Cake", "color": "#D97C7C", "details": upcoming_birthdays},
             {"label": "Work Anniversaries", "value": str(len(anniversaries)), "trend": "this month", "icon": "Award", "color": "#A3B18A", "details": anniversaries},
+            {
+                "label": "Bench Capacity",
+                "value": str(len(bench_employees)),
+                "trend": "available now",
+                "icon": "BriefcaseBusiness",
+                "color": "#D97A34",
+            },
         ]
     }
 

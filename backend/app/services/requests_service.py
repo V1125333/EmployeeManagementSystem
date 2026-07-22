@@ -23,6 +23,7 @@ REQUEST_TYPES = {
     "short_permission": "Short Permission",
     "overtime": "Overtime",
     "expense": "Expense Reimbursement",
+    "application_issue": "Application Issue",
 }
 
 
@@ -92,6 +93,17 @@ REQUEST_POLICIES: dict[str, RequestPolicy] = {
         past_window_message="Expense reimbursement must be submitted within 90 days of the expense date.",
         pre_joining_message="Selected date is outside the allowed reimbursement period.",
     ),
+    "application_issue": RequestPolicy(
+        request_type="application_issue",
+        label="Application Issue",
+        allow_past_dates=True,
+        allow_future_dates=True,
+        requires_manager_approval=False,
+        requires_hr_approval=True,
+        requires_attachment=False,
+        invalid_past_message="Application issues can be reported at any time.",
+        invalid_future_message="Application issues can be reported at any time.",
+    ),
 }
 
 _TICKET_PREFIX = {
@@ -99,6 +111,7 @@ _TICKET_PREFIX = {
     "short_permission": "SP",
     "overtime": "OT",
     "expense": "EXP",
+    "application_issue": "ISS",
 }
 
 STATUSES = {"draft", "pending", "approved", "rejected", "cancelled", "paid"}
@@ -190,6 +203,21 @@ def _hr_admins(db: Session) -> list[Employee]:
     return [row for row in rows if normalize_role(row.role) in HR_ADMIN_ROLES]
 
 
+def _initial_reviewer_for_request(db: Session, employee: Employee, request_type: str) -> Employee:
+    if not employee.is_active or employee.employment_status != "active":
+        raise HTTPException(status_code=400, detail="Only active employees can submit requests.")
+    policy = _policy_for(request_type)
+    if not policy.requires_manager_approval:
+        hr_admin = next((item for item in _hr_admins(db) if item.id != employee.id), None)
+        if hr_admin:
+            return hr_admin
+        manager = _manager_for_employee(db, employee)
+        if manager:
+            return manager
+        raise HTTPException(status_code=400, detail="No HR reviewer is available for this request.")
+    return _ensure_employee_can_submit_hr_request(db, employee)
+
+
 def _generate_ticket_number(db: Session, request_type: str) -> str:
     prefix = _TICKET_PREFIX.get(request_type, "REQ")
     year = utc_now().year
@@ -235,7 +263,9 @@ def _can_review(db: Session, actor: Employee, request: EmployeeRequest) -> bool:
     owner = _request_owner(db, request)
     if request.employee_id == actor.id:
         return False
-    return _is_admin(actor) or request.current_owner_id == actor.id or (_is_reviewer(actor) and _is_direct_report(actor, owner))
+    policy = REQUEST_POLICIES.get(request.request_type)
+    can_manager_review = bool(policy.requires_manager_approval) if policy else True
+    return _is_admin(actor) or request.current_owner_id == actor.id or (can_manager_review and _is_reviewer(actor) and _is_direct_report(actor, owner))
 
 
 def _ensure_review_access(db: Session, actor: Employee, request: EmployeeRequest) -> None:
@@ -268,6 +298,8 @@ def _snapshot(row: EmployeeRequest) -> dict[str, Any]:
         "exp_category": row.exp_category,
         "exp_amount": _decimal(row.exp_amount),
         "exp_currency": row.exp_currency,
+        "issue_category": row.issue_category,
+        "issue_description": row.issue_description,
     }
 
 
@@ -350,6 +382,9 @@ def _clear_inbox(db: Session, request_id: str) -> None:
 
 
 def _notify_approvers(db: Session, row: EmployeeRequest, employee: Employee) -> None:
+    from app.core.config import settings
+    from app.services.transactional_email_service import enqueue_email
+
     recipients: dict[str, Employee] = {}
     current_owner = find_employee(db, row.current_owner_id)
     if current_owner:
@@ -372,6 +407,18 @@ def _notify_approvers(db: Session, row: EmployeeRequest, employee: Employee) -> 
             f"{REQUEST_TYPES[row.request_type]} approval",
             f"{employee_name(employee)} submitted {row.ticket_number or 'a request'} for review.",
             row.id,
+        )
+        enqueue_email(
+            db,
+            recipient=recipient.work_email,
+            template_name="manager_approval",
+            idempotency_key=f"manager-approval:employee-request:{row.id}:{recipient.id}",
+            context={
+                "employee_name": employee_name(employee),
+                "request_type": REQUEST_TYPES[row.request_type],
+                "request_summary": row.ticket_number or row.title,
+                "approval_url": f"{settings.FRONTEND_BASE_URL.rstrip('/')}/requests?requestId={row.id}",
+            },
         )
 
 
@@ -413,6 +460,8 @@ def _reason(row: EmployeeRequest) -> str | None:
         return row.ot_reason
     if row.request_type == "expense":
         return row.exp_description
+    if row.request_type == "application_issue":
+        return row.issue_description
     return None
 
 
@@ -425,6 +474,8 @@ def _request_date(row: EmployeeRequest) -> date | None:
         return row.ot_date
     if row.request_type == "expense":
         return row.exp_date
+    if row.request_type == "application_issue":
+        return row.created_at.date() if row.created_at else None
     return None
 
 
@@ -551,6 +602,8 @@ def _build_title(row: EmployeeRequest) -> str:
         return f"{label}: {_hours(row):g}h on {row.ot_date}"
     if row.request_type == "expense":
         return f"{label}: {row.exp_currency or 'USD'} {_decimal(row.exp_amount):g}"
+    if row.request_type == "application_issue":
+        return f"{label}: {(row.issue_category or 'issue').replace('_', ' ').title()}"
     return label
 
 
@@ -581,6 +634,9 @@ def _apply_payload(row: EmployeeRequest, payload: RequestCreateSchema | RequestU
         row.exp_amount = payload.expense.amount
         row.exp_currency = payload.expense.currency.upper()
         row.exp_description = payload.expense.description
+    elif request_type == "application_issue" and payload.application_issue:
+        row.issue_category = payload.application_issue.category
+        row.issue_description = payload.application_issue.description
     else:
         raise HTTPException(status_code=400, detail=f"{REQUEST_TYPES[request_type]} data is required.")
     row.title = _build_title(row)
@@ -656,6 +712,10 @@ def _validate_request_fields(db: Session, row: EmployeeRequest, block_conflicts:
         if not row.exp_date or not row.exp_amount:
             raise HTTPException(status_code=400, detail="Expense requests require date and amount.")
         _validate_request_dates_by_policy(row, employee)
+    elif row.request_type == "application_issue":
+        if not row.issue_category or not row.issue_description:
+            raise HTTPException(status_code=400, detail="Application issues require category and details.")
+        return None
     return _leave_overlap_warning(db, row)
 
 
@@ -742,7 +802,7 @@ def serialize_request(db: Session, row: EmployeeRequest, actor: Employee | None 
         "hours": _hours(row),
         "amount": amount,
         "currency": row.exp_currency,
-        "category": row.exp_category,
+        "category": row.issue_category if row.request_type == "application_issue" else row.exp_category,
         "reason": _reason(row),
         "approver_name": employee_name(current_owner) if current_owner else pending_with,
         "reviewed_by_id": row.reviewed_by_id,
@@ -766,6 +826,7 @@ def serialize_request(db: Session, row: EmployeeRequest, actor: Employee | None 
         "short_permission": {"date": row.sp_date, "start_time": row.sp_start_time, "end_time": row.sp_end_time, "reason": row.sp_reason, "duration_minutes": row.sp_duration_minutes},
         "overtime": {"date": row.ot_date, "start_time": row.ot_start_time, "end_time": row.ot_end_time, "project_id": row.ot_project_id, "reason": row.ot_reason, "duration_minutes": row.ot_duration_minutes},
         "expense": {"date": row.exp_date, "category": row.exp_category, "amount": amount, "currency": row.exp_currency, "description": row.exp_description, "paid_at": row.exp_paid_at, "paid_by_id": row.exp_paid_by_id},
+        "application_issue": {"category": row.issue_category, "description": row.issue_description},
     }
     if include_detail:
         attachments = db.query(RequestAttachment).filter(
@@ -852,6 +913,8 @@ def get_my_requests(
             EmployeeRequest.sp_reason.ilike(like),
             EmployeeRequest.ot_reason.ilike(like),
             EmployeeRequest.exp_description.ilike(like),
+            EmployeeRequest.issue_category.ilike(like),
+            EmployeeRequest.issue_description.ilike(like),
         ))
     query = _date_filter(query, date_from, date_to)
     total = query.count()
@@ -880,9 +943,14 @@ def get_approval_queue(
             EmployeeRequest.employee_id != actor.id,
             or_(
                 EmployeeRequest.current_owner_id == actor.id,
-                Employee.manager_id == actor.id,
-                Employee.reporting_manager == employee_name(actor),
-                Employee.reporting_manager == actor.work_email,
+                and_(
+                    EmployeeRequest.request_type != "application_issue",
+                    or_(
+                        Employee.manager_id == actor.id,
+                        Employee.reporting_manager == employee_name(actor),
+                        Employee.reporting_manager == actor.work_email,
+                    ),
+                ),
             ),
         )
     if status and status != "all":
@@ -901,6 +969,8 @@ def get_approval_queue(
             EmployeeRequest.sp_reason.ilike(like),
             EmployeeRequest.ot_reason.ilike(like),
             EmployeeRequest.exp_description.ilike(like),
+            EmployeeRequest.issue_category.ilike(like),
+            EmployeeRequest.issue_description.ilike(like),
         ))
     query = _date_filter(query, date_from, date_to)
     total = query.count()
@@ -936,9 +1006,9 @@ def create_request(db: Session, actor: Employee, payload: RequestCreateSchema) -
         metadata={"ticket_number": row.ticket_number},
     )
     if status == "pending":
-        manager = _ensure_employee_can_submit_hr_request(db, actor)
-        row.submitted_to_id = manager.id
-        row.current_owner_id = manager.id
+        reviewer = _initial_reviewer_for_request(db, actor, row.request_type)
+        row.submitted_to_id = reviewer.id
+        row.current_owner_id = reviewer.id
         row.pending_since = utc_now()
     _transition(db, row, actor, status, "request_submitted" if status == "pending" else "request_created")
     if status == "pending":
@@ -979,9 +1049,9 @@ def submit_request(db: Session, actor: Employee, request_id: str) -> EmployeeReq
     employee = find_employee(db, row.employee_id)
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found.")
-    manager = _ensure_employee_can_submit_hr_request(db, employee)
-    row.submitted_to_id = manager.id
-    row.current_owner_id = manager.id
+    reviewer = _initial_reviewer_for_request(db, employee, row.request_type)
+    row.submitted_to_id = reviewer.id
+    row.current_owner_id = reviewer.id
     row.pending_since = utc_now()
     _transition(db, row, actor, "pending", "request_submitted")
     _notify_approvers(db, row, employee or actor)

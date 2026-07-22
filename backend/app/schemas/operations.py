@@ -11,6 +11,7 @@ class ProjectCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=200)
     code: str = Field(..., min_length=2, max_length=20)
     description: str | None = None
+    client_id: str | None = None
     client_name: str | None = Field(None, max_length=200)
     start_date: date | None = None
     end_date: date | None = None
@@ -21,6 +22,7 @@ class ProjectUpdate(BaseModel):
     name: str | None = Field(None, min_length=2, max_length=200)
     code: str | None = Field(None, min_length=2, max_length=20)
     description: str | None = None
+    client_id: str | None = None
     client_name: str | None = Field(None, max_length=200)
     start_date: date | None = None
     end_date: date | None = None
@@ -36,6 +38,7 @@ class ProjectOut(BaseModel):
     name: str
     code: str
     description: str | None = None
+    client_id: str | None = None
     client_name: str | None = None
     start_date: date | None = None
     end_date: date | None = None

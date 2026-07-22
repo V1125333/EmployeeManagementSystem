@@ -377,7 +377,7 @@ export function ProjectDetailPage() {
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-2xl font-bold tracking-tight text-[#2F3437]">{project.name}</h1>
+                <h1 className="text-2xl font-bold tracking-tight text-[var(--color-brand-navy)]">{project.name}</h1>
                 <Badge variant={statusVariant[project.status] || 'neutral'}>{label(project.status)}</Badge>
               </div>
               <p className="mt-1 text-sm text-gray-500">{project.code} {project.client_name ? `· ${project.client_name}` : ''}</p>
@@ -398,13 +398,13 @@ export function ProjectDetailPage() {
       )}
 
       <Card className="mb-5 overflow-hidden">
-        <div className="flex gap-1 overflow-x-auto border-b border-[#E5E7EB] px-3 py-2">
+        <div className="flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-3 py-2">
           {tabs.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
               className={cn(
-                'inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-gray-500 transition hover:bg-hover-bg hover:text-[#2F3437]',
+                'inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-gray-500 transition hover:bg-hover-bg hover:text-[var(--color-brand-navy)]',
                 activeTab === tab.key && 'bg-accent-light text-accent',
               )}
             >
@@ -428,8 +428,8 @@ export function ProjectDetailPage() {
                 <Metric label="Total Allocation" value={`${totalAllocation}%`} />
               </div>
             </div>
-            <div className="rounded-xl border border-[#E5E7EB] bg-warm-bg p-4">
-              <div className="mb-3 text-sm font-bold text-[#2F3437]">Assignment Snapshot</div>
+            <div className="rounded-xl border border-[var(--color-border)] bg-warm-bg p-4">
+              <div className="mb-3 text-sm font-bold text-[var(--color-brand-navy)]">Assignment Snapshot</div>
               <div className="space-y-3">
                 {allocations.slice(0, 5).map((allocation) => (
                   <AssignmentMini key={allocation.id} allocation={allocation} />
@@ -472,12 +472,12 @@ export function ProjectDetailPage() {
           <div className="p-5">
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <div className="text-sm font-bold text-[#2F3437]">Project Documents</div>
+                <div className="text-sm font-bold text-[var(--color-brand-navy)]">Project Documents</div>
                 <div className="text-sm text-gray-500">Contracts, SOWs, reports, and related files.</div>
               </div>
               {canManageProjects(user?.role) && (
                 <div className="flex gap-2">
-                  <select value={uploadType} onChange={(event) => setUploadType(event.target.value)} className="h-10 rounded-lg border border-[#E5E7EB] bg-warm-card px-3 text-sm font-semibold outline-none focus:border-accent">
+                  <select value={uploadType} onChange={(event) => setUploadType(event.target.value)} className="h-10 rounded-lg border border-[var(--color-border)] bg-warm-card px-3 text-sm font-semibold outline-none focus:border-accent">
                     {['CONTRACT', 'SOW', 'NDA', 'INVOICE', 'REPORT', 'OTHER'].map((type) => <option key={type} value={type}>{type}</option>)}
                   </select>
                   <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-btn bg-accent px-4 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-accent-dark">
@@ -493,7 +493,7 @@ export function ProjectDetailPage() {
             ) : documents.length === 0 ? (
               <EmptyState icon={<FileText size={22} />} title="No documents uploaded" text="Project files will appear here after upload." />
             ) : (
-              <div className="overflow-x-auto rounded-xl border border-[#E5E7EB]">
+              <div className="overflow-x-auto rounded-xl border border-[var(--color-border)]">
                 <table className="w-full min-w-[780px] text-left">
                   <thead className="bg-warm-bg text-[11px] font-bold uppercase tracking-wide text-gray-400">
                     <tr>
@@ -505,10 +505,10 @@ export function ProjectDetailPage() {
                       <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#E5E7EB]">
+                  <tbody className="divide-y divide-[var(--color-border)]">
                     {documents.map((doc) => (
                       <tr key={doc.id} className="text-sm">
-                        <td className="px-4 py-3 font-semibold text-[#2F3437]">{doc.original_file_name}</td>
+                        <td className="px-4 py-3 font-semibold text-[var(--color-brand-navy)]">{doc.original_file_name}</td>
                         <td className="px-4 py-3"><Badge variant="olive">{doc.document_type}</Badge></td>
                         <td className="px-4 py-3 text-gray-600">{doc.uploaded_by_name || '-'}</td>
                         <td className="px-4 py-3 text-gray-600">{formatBytes(doc.file_size_bytes)}</td>
@@ -541,9 +541,9 @@ export function ProjectDetailPage() {
             ) : (
               <div className="space-y-3">
                 {auditLogs.map((log) => (
-                  <div key={log.id} className="rounded-xl border border-[#E5E7EB] bg-warm-card p-4">
+                  <div key={log.id} className="rounded-xl border border-[var(--color-border)] bg-warm-card p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="font-bold text-[#2F3437]">{label(log.action)}</div>
+                      <div className="font-bold text-[var(--color-brand-navy)]">{label(log.action)}</div>
                       <div className="text-xs font-semibold text-gray-400">{formatDateTime(log.created_at)}</div>
                     </div>
                     <div className="mt-1 text-sm text-gray-500">By {log.actor_name || 'System'}{log.actor_role ? ` · ${label(log.actor_role)}` : ''}</div>
@@ -578,21 +578,21 @@ export function ProjectDetailPage() {
       />
 
       {managerOpen && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[#111827]/45 px-4 py-8 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[var(--color-brand-navy)]/45 px-4 py-8 backdrop-blur-sm">
           <Card className="w-full max-w-lg overflow-hidden shadow-[0_24px_80px_rgba(15,23,42,0.28)]">
-            <div className="flex items-start justify-between border-b border-[#E5E7EB] px-6 py-5">
+            <div className="flex items-start justify-between border-b border-[var(--color-border)] px-6 py-5">
               <div>
-                <h2 className="text-lg font-bold text-[#2F3437]">Assign Project Manager</h2>
+                <h2 className="text-lg font-bold text-[var(--color-brand-navy)]">Assign Project Manager</h2>
                 <p className="mt-1 text-sm text-gray-500">{project.name}</p>
               </div>
-              <button onClick={() => setManagerOpen(false)} className="rounded-lg p-2 text-gray-400 hover:bg-hover-bg hover:text-[#2F3437]">
+              <button onClick={() => setManagerOpen(false)} className="rounded-lg p-2 text-gray-400 hover:bg-hover-bg hover:text-[var(--color-brand-navy)]">
                 <X size={18} />
               </button>
             </div>
             <div className="px-6 py-5">
               <label className="space-y-1.5">
                 <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Project Manager</span>
-                <select value={selectedManagerId} onChange={(event) => setSelectedManagerId(event.target.value)} className="h-11 w-full rounded-lg border border-[#E5E7EB] bg-warm-card px-3 text-sm font-medium outline-none focus:border-accent">
+                <select value={selectedManagerId} onChange={(event) => setSelectedManagerId(event.target.value)} className="h-11 w-full rounded-lg border border-[var(--color-border)] bg-warm-card px-3 text-sm font-medium outline-none focus:border-accent">
                   <option value="">No manager assigned</option>
                   {managerOptions.map((manager) => (
                     <option key={manager.id} value={manager.id}>{manager.name || manager.work_email}</option>
@@ -600,7 +600,7 @@ export function ProjectDetailPage() {
                 </select>
               </label>
             </div>
-            <div className="flex justify-end gap-3 border-t border-[#E5E7EB] px-6 py-4">
+            <div className="flex justify-end gap-3 border-t border-[var(--color-border)] px-6 py-4">
               <Button variant="ghost" onClick={() => setManagerOpen(false)}>Cancel</Button>
               <Button onClick={saveManager}>Save Manager</Button>
             </div>
@@ -613,9 +613,9 @@ export function ProjectDetailPage() {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-[#E5E7EB] bg-warm-card p-4">
+    <div className="rounded-xl border border-[var(--color-border)] bg-warm-card p-4">
       <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">{label}</div>
-      <div className="mt-2 text-lg font-bold text-[#2F3437]">{value}</div>
+      <div className="mt-2 text-lg font-bold text-[var(--color-brand-navy)]">{value}</div>
     </div>
   );
 }
@@ -623,13 +623,13 @@ function Metric({ label, value }: { label: string; value: string }) {
 function AssignmentMini({ allocation }: { allocation: AllocationRecord }) {
   const name = allocation.employee_name || allocation.employee_email || 'Employee';
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-[#E5E7EB] bg-warm-card px-3 py-3">
+    <div className="flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-warm-card px-3 py-3">
       <Avatar initials={initials(name)} size="sm" />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-bold text-[#2F3437]">{name}</div>
+        <div className="truncate text-sm font-bold text-[var(--color-brand-navy)]">{name}</div>
         <div className="truncate text-xs text-gray-500">{allocation.allocation_role}</div>
       </div>
-      <div className="text-sm font-bold text-[#2F3437]">{allocation.allocation_percentage}%</div>
+      <div className="text-sm font-bold text-[var(--color-brand-navy)]">{allocation.allocation_percentage}%</div>
     </div>
   );
 }
@@ -650,7 +650,7 @@ function AssignmentsTable({
   }
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-[#E5E7EB]">
+    <div className="overflow-x-auto rounded-xl border border-[var(--color-border)]">
       <table className="w-full min-w-[900px] text-left">
         <thead className="bg-warm-bg text-[11px] font-bold uppercase tracking-wide text-gray-400">
           <tr>
@@ -664,11 +664,11 @@ function AssignmentsTable({
             {canEdit && <th className="px-4 py-3 text-right">Actions</th>}
           </tr>
         </thead>
-        <tbody className="divide-y divide-[#E5E7EB]">
+        <tbody className="divide-y divide-[var(--color-border)]">
           {allocations.map((allocation) => {
             const name = allocation.employee_name || allocation.employee_email || 'Employee';
             return (
-              <tr key={allocation.id} className="text-sm text-[#2F3437]">
+              <tr key={allocation.id} className="text-sm text-[var(--color-brand-navy)]">
                 <td className="px-4 py-4">
                   <div className="flex items-center gap-3">
                     <Avatar initials={initials(name)} size="sm" />
@@ -703,9 +703,9 @@ function AssignmentsTable({
 
 function EmptyState({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) {
   return (
-    <div className="rounded-xl border border-dashed border-[#DADDE2] bg-warm-bg px-6 py-12 text-center">
+    <div className="rounded-xl border border-dashed border-[var(--color-border)] bg-warm-bg px-6 py-12 text-center">
       <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-accent-light text-accent">{icon}</div>
-      <div className="text-sm font-bold text-[#2F3437]">{title}</div>
+      <div className="text-sm font-bold text-[var(--color-brand-navy)]">{title}</div>
       <div className="mt-1 text-sm text-gray-500">{text}</div>
     </div>
   );

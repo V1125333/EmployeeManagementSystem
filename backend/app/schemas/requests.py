@@ -47,12 +47,18 @@ class ExpenseData(BaseModel):
     description: str = Field(..., min_length=1, max_length=500)
 
 
+class ApplicationIssueData(BaseModel):
+    category: str = Field(..., min_length=1, max_length=80)
+    description: str = Field(..., min_length=1, max_length=500)
+
+
 class RequestCreateSchema(BaseModel):
-    request_type: str = Field(..., pattern="^(wfh|short_permission|overtime|expense)$")
+    request_type: str = Field(..., pattern="^(wfh|short_permission|overtime|expense|application_issue)$")
     wfh: WFHData | None = None
     short_permission: ShortPermissionData | None = None
     overtime: OvertimeData | None = None
     expense: ExpenseData | None = None
+    application_issue: ApplicationIssueData | None = None
     submit_immediately: bool = True
 
     @model_validator(mode="after")
@@ -65,6 +71,8 @@ class RequestCreateSchema(BaseModel):
             raise ValueError("Overtime request data is required.")
         if self.request_type == "expense" and self.expense is None:
             raise ValueError("Expense request data is required.")
+        if self.request_type == "application_issue" and self.application_issue is None:
+            raise ValueError("Application issue data is required.")
         return self
 
 
@@ -73,6 +81,7 @@ class RequestUpdateSchema(BaseModel):
     short_permission: ShortPermissionData | None = None
     overtime: OvertimeData | None = None
     expense: ExpenseData | None = None
+    application_issue: ApplicationIssueData | None = None
 
 
 class ApproveSchema(BaseModel):

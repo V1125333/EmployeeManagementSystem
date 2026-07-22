@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader } from '@/components/ui';
+import { cn } from '@/utils/cn';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
@@ -10,8 +12,16 @@ interface Task {
   color: string;
 }
 
+const taskRoutes: Record<string, string> = {
+  'Leave Approvals': '/time-off?tab=leave',
+  'Attendance Corrections': '/time-off?tab=corrections',
+  'Onboarding Tasks': '/onboarding',
+  'Profile Updates': '/employees?filter=profile-updates',
+};
+
 export function PendingTasks() {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetch(`${API_BASE}/dashboard/pending-tasks`)
@@ -30,13 +40,24 @@ export function PendingTasks() {
         badgeColor="warning"
       />
       <div className="grid gap-4 px-5 pb-5 pt-4 sm:grid-cols-2 xl:grid-cols-4">
-        {tasks.map((task) => (
-          <div
+        {tasks.map((task) => {
+          const route = taskRoutes[task.label];
+          return (
+          <button
+            type="button"
             key={task.label}
-            className="flex min-h-[112px] flex-col items-center justify-center rounded-xl border border-[#E5E7EB] bg-warm-bg px-3 py-4 transition-colors hover:border-olive/20"
+            onClick={() => route && navigate(route)}
+            disabled={!route}
+            title={route ? `Open ${task.label}` : undefined}
+            className={cn(
+              'flex min-h-[112px] flex-col items-center justify-center rounded-xl border border-[var(--color-border)] bg-warm-bg px-3 py-4 text-center transition-all',
+              route
+                ? 'cursor-pointer hover:-translate-y-0.5 hover:border-[var(--color-nav-active-bar)]/30 hover:bg-accent-light/50 focus:outline-none focus:ring-2 focus:ring-[var(--color-nav-active-bar)]/25'
+                : 'cursor-default'
+            )}
           >
             <div
-              className="text-2xl font-bold mb-1"
+              className="mb-1 text-2xl font-semibold"
               style={{ color: task.color }}
             >
               {task.count}
@@ -49,8 +70,9 @@ export function PendingTasks() {
                 {task.urgent} urgent
               </div>
             )}
-          </div>
-        ))}
+          </button>
+          );
+        })}
       </div>
     </Card>
   );

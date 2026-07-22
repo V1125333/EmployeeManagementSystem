@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ElementType } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Bell, BookOpen, HelpCircle, Inbox, InboxIcon, Keyboard, LifeBuoy,
+  Bell, HelpCircle, Inbox, InboxIcon,
   Megaphone, Search, ShieldQuestion, UserCog, X,
 } from 'lucide-react';
 import { Badge, Button } from '@/components/ui';
@@ -393,19 +393,19 @@ export function TopNav() {
     title: string;
   }) => (
     <div className="px-4 py-5">
-      <div className="flex min-h-[190px] flex-col items-center justify-center rounded-2xl border border-[#E5E7EB] bg-warm-bg/70 px-6 py-7 text-center shadow-sm">
+      <div className="flex min-h-[190px] flex-col items-center justify-center rounded-2xl border border-[var(--color-border)] bg-warm-bg/70 px-6 py-7 text-center shadow-sm">
         <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-olive/10 text-olive">
           <Icon size={22} />
         </div>
-        <div className="text-sm font-bold text-[#2F3437]">{title}</div>
+        <div className="text-sm font-bold text-[var(--color-brand-navy)]">{title}</div>
       </div>
     </div>
   );
 
   const PanelHeader = ({ title, count }: { title: string; count: number }) => (
-    <div className="flex items-center justify-between border-b border-[#E5E7EB] px-4 py-3">
+    <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
       <div className="flex items-center gap-2">
-        <div className="text-sm font-bold text-[#2F3437]">{title}</div>
+        <div className="text-sm font-bold text-[var(--color-brand-navy)]">{title}</div>
         <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-olive/10 px-2 py-0.5 text-[11px] font-bold text-olive">
           {count}
         </span>
@@ -413,7 +413,7 @@ export function TopNav() {
       <button
         aria-label={`Close ${title}`}
         onClick={() => setOpenPanel(null)}
-        className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-hover-bg hover:text-[#2F3437]"
+        className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-hover-bg hover:text-[var(--color-brand-navy)]"
       >
         <X size={15} />
       </button>
@@ -421,9 +421,9 @@ export function TopNav() {
   );
 
   return (
-    <header className="h-14 flex items-center justify-between px-7 bg-warm-card border-b border-[#E5E7EB] sticky top-0 z-40">
+    <header className="h-14 flex items-center justify-between px-7 bg-warm-card border-b border-[var(--color-border)] sticky top-0 z-40">
       <div ref={searchRef} className="relative flex items-center">
-        <div className={cn('flex items-center gap-2 bg-warm-bg border rounded-btn px-3.5 py-[7px] w-[340px] transition-colors', searchOpen ? 'border-olive shadow-sm' : 'border-[#E5E7EB]')}>
+        <div className={cn('flex items-center gap-2 bg-warm-bg border rounded-btn px-3.5 py-[7px] w-[340px] transition-colors', searchOpen ? 'border-olive shadow-sm' : 'border-[var(--color-border)]')}>
           <Search size={16} className="text-gray-400 shrink-0" />
           <input
             type="text"
@@ -438,7 +438,7 @@ export function TopNav() {
               if (event.key === 'Escape') setSearchOpen(false);
             }}
             placeholder="Search employees, projects, skills..."
-            className="bg-transparent border-none outline-none text-[13px] text-[#2F3437] placeholder:text-gray-400 w-full font-sans"
+            className="bg-transparent border-none outline-none text-[13px] text-[var(--color-brand-navy)] placeholder:text-gray-400 w-full font-sans"
           />
           {searchQuery && (
             <button aria-label="Clear search" onClick={closeSearch} className="text-gray-400 hover:text-gray-600">
@@ -447,8 +447,8 @@ export function TopNav() {
           )}
         </div>
         {searchOpen && (
-          <div className="absolute left-0 top-12 z-50 w-[460px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-[#E5E7EB] bg-warm-card shadow-card-lg">
-            <div className="border-b border-[#E5E7EB] px-4 py-3">
+          <div className="absolute left-0 top-12 z-50 w-[460px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-[var(--color-border)] bg-warm-card shadow-card-lg">
+            <div className="border-b border-[var(--color-border)] px-4 py-3">
               <div className="text-xs font-bold uppercase tracking-wide text-gray-400">Global Search</div>
               <div className="mt-1 text-[12px] text-gray-500">Search employees and jump to key workspace pages.</div>
             </div>
@@ -465,7 +465,7 @@ export function TopNav() {
                       className="mb-1 flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-hover-bg"
                     >
                       <div className="min-w-0">
-                        <div className="truncate text-[13px] font-bold text-[#2F3437]">{employeeName(employee)}</div>
+                        <div className="truncate text-[13px] font-bold text-[var(--color-brand-navy)]">{employeeName(employee)}</div>
                         <div className="truncate text-[12px] text-gray-500">{employee.work_email}</div>
                       </div>
                       <div className="shrink-0 text-right text-[11px] text-gray-400">
@@ -491,7 +491,7 @@ export function TopNav() {
                       <Search size={14} />
                     </div>
                     <div className="min-w-0">
-                      <div className="truncate text-[13px] font-bold text-[#2F3437]">{item.label}</div>
+                      <div className="truncate text-[13px] font-bold text-[var(--color-brand-navy)]">{item.label}</div>
                       <div className="truncate text-[12px] text-gray-500">{item.description}</div>
                     </div>
                   </button>
@@ -500,7 +500,7 @@ export function TopNav() {
                 )}
               </div>
             </div>
-            <div className="border-t border-[#E5E7EB] bg-warm-bg px-4 py-2 text-[11px] text-gray-400">
+            <div className="border-t border-[var(--color-border)] bg-warm-bg px-4 py-2 text-[11px] text-gray-400">
               Press Enter to open the best match.
             </div>
           </div>
@@ -512,7 +512,7 @@ export function TopNav() {
           <div className="relative">
             <IconButton type="inbox" Icon={Inbox} badge={inboxCount} />
             {openPanel === 'inbox' && (
-              <div onMouseDown={(event) => event.stopPropagation()} className="absolute right-0 top-11 w-[390px] max-w-[calc(100vw-2rem)] rounded-2xl border border-[#E5E7EB] bg-warm-card shadow-card-lg z-50 overflow-hidden">
+              <div onMouseDown={(event) => event.stopPropagation()} className="absolute right-0 top-11 w-[390px] max-w-[calc(100vw-2rem)] rounded-2xl border border-[var(--color-border)] bg-warm-card shadow-card-lg z-50 overflow-hidden">
             <PanelHeader title="Inbox" count={inboxCount} />
             <div className="max-h-[70vh] overflow-y-auto p-2">
               {loadingInbox ? (
@@ -523,15 +523,15 @@ export function TopNav() {
                   title="No pending actions"
                 />
               ) : inboxItems.map((item) => (
-                <div key={item.id} className="mb-2 rounded-xl border border-[#E5E7EB] bg-white px-3.5 py-3 shadow-sm transition-colors hover:bg-hover-bg/60 last:mb-0">
+                <div key={item.id} className="mb-2 rounded-xl border border-[var(--color-border)] bg-white px-3.5 py-3 shadow-sm transition-colors hover:bg-hover-bg/60 last:mb-0">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <div className="text-[13px] font-bold text-[#2F3437]">{item.title}</div>
+                      <div className="text-[13px] font-bold text-[var(--color-brand-navy)]">{item.title}</div>
                       <div className="mt-2 grid gap-1 text-[12px] text-gray-500">
-                        <div><span className="font-semibold text-[#2F3437]">Employee:</span> {item.employee_name || titleCase(item.item_type)}</div>
-                        <div><span className="font-semibold text-[#2F3437]">Date:</span> {formatDateTime(item.created_at)}</div>
+                        <div><span className="font-semibold text-[var(--color-brand-navy)]">Employee:</span> {item.employee_name || titleCase(item.item_type)}</div>
+                        <div><span className="font-semibold text-[var(--color-brand-navy)]">Date:</span> {formatDateTime(item.created_at)}</div>
                         {durationFromDescription(item.description) && (
-                          <div><span className="font-semibold text-[#2F3437]">Duration:</span> {durationFromDescription(item.description)}</div>
+                          <div><span className="font-semibold text-[var(--color-brand-navy)]">Duration:</span> {durationFromDescription(item.description)}</div>
                         )}
                         {!durationFromDescription(item.description) && item.description && (
                           <div className="line-clamp-2">{item.description}</div>
@@ -563,10 +563,10 @@ export function TopNav() {
           <div className="relative">
             <IconButton type="notifications" Icon={Bell} badge={notificationCount} />
             {openPanel === 'notifications' && (
-              <div onMouseDown={(event) => event.stopPropagation()} className="absolute right-0 top-11 w-[390px] max-w-[calc(100vw-2rem)] rounded-2xl border border-[#E5E7EB] bg-warm-card shadow-card-lg z-50 overflow-hidden">
+              <div onMouseDown={(event) => event.stopPropagation()} className="absolute right-0 top-11 w-[390px] max-w-[calc(100vw-2rem)] rounded-2xl border border-[var(--color-border)] bg-warm-card shadow-card-lg z-50 overflow-hidden">
             <PanelHeader title="Notifications" count={notificationCount} />
             {notificationCount > 0 && (
-              <div className="border-b border-[#E5E7EB] px-4 py-2 text-right">
+              <div className="border-b border-[var(--color-border)] px-4 py-2 text-right">
                 <button onClick={markAllRead} className="text-[12px] font-semibold text-olive">Mark all as read</button>
               </div>
             )}
@@ -581,14 +581,14 @@ export function TopNav() {
               ) : (
                 <>
                   {notificationPreview.map((notification) => (
-                    <div key={notification.id} className="mb-2 rounded-xl border border-[#E5E7EB] bg-white px-3.5 py-3 text-left shadow-sm transition-colors hover:bg-hover-bg/60 last:mb-0">
+                    <div key={notification.id} className="mb-2 rounded-xl border border-[var(--color-border)] bg-white px-3.5 py-3 text-left shadow-sm transition-colors hover:bg-hover-bg/60 last:mb-0">
                       <div className="flex items-start gap-3">
                         <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-olive/10 text-olive">
                           {notification.type === 'announcement' ? <Megaphone size={15} /> : <Bell size={15} />}
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
-                            <div className="truncate text-[13px] font-bold text-[#2F3437]">{notification.title}</div>
+                            <div className="truncate text-[13px] font-bold text-[var(--color-brand-navy)]">{notification.title}</div>
                             <span className="h-2 w-2 shrink-0 rounded-full bg-olive" />
                           </div>
                           <div className="mt-1 line-clamp-2 text-[12px] text-gray-500">{notification.message || 'New update'}</div>
@@ -623,19 +623,23 @@ export function TopNav() {
           <div className="relative">
             <IconButton type="help" Icon={HelpCircle} badge={0} />
             {openPanel === 'help' && (
-              <div onMouseDown={(event) => event.stopPropagation()} className="absolute right-0 top-11 w-[270px] max-w-[calc(100vw-2rem)] rounded-2xl border border-[#E5E7EB] bg-warm-card shadow-card-lg z-50 overflow-hidden p-2">
-            {[
-              { icon: LifeBuoy, label: 'Help Center' },
-              { icon: BookOpen, label: 'Product Guide' },
-              { icon: Keyboard, label: 'Keyboard Shortcuts' },
-              { icon: ShieldQuestion, label: 'Report an Issue' },
-              { icon: UserCog, label: 'Contact Admin' },
-            ].map(({ icon: Icon, label }) => (
-              <button key={label} onClick={() => setOpenPanel(null)} className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] font-semibold text-[#2F3437] hover:bg-hover-bg transition-colors">
-                <Icon size={15} className="text-olive" />
-                {label}
-              </button>
-            ))}
+              <div onMouseDown={(event) => event.stopPropagation()} className="absolute right-0 top-11 w-[270px] max-w-[calc(100vw-2rem)] rounded-2xl border border-[var(--color-border)] bg-warm-card shadow-card-lg z-50 overflow-hidden p-2">
+                {[
+                  { icon: ShieldQuestion, label: 'Report an Issue', path: '/requests?new=application_issue' },
+                  { icon: UserCog, label: 'Contact HR', path: '/requests?new=application_issue' },
+                ].map(({ icon: Icon, label, path }) => (
+                  <button
+                    key={label}
+                    onClick={() => {
+                      navigate(path);
+                      setOpenPanel(null);
+                    }}
+                    className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] font-semibold text-[var(--color-brand-navy)] hover:bg-hover-bg transition-colors"
+                  >
+                    <Icon size={15} className="text-olive" />
+                    {label}
+                  </button>
+                ))}
               </div>
             )}
           </div>

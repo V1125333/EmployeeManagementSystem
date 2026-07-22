@@ -166,10 +166,10 @@ export function StaffingRequestsPage() {
   if (!canUseStaffing(user?.role)) {
     return (
       <div>
-        <h1 className="mb-1 text-2xl font-bold text-[#2F3437]">Staffing Requests</h1>
+        <h1 className="mb-1 text-2xl font-bold text-[var(--color-brand-navy)]">Staffing Requests</h1>
         <p className="mb-6 text-sm text-gray-500">Request project staffing and review candidate matches.</p>
         <Card className="p-10 text-center">
-          <div className="text-[15px] font-semibold text-[#2F3437]">Access restricted</div>
+          <div className="text-[15px] font-semibold text-[var(--color-brand-navy)]">Access restricted</div>
           <div className="mt-1 text-sm text-gray-500">Only managers, HR, and admins can access staffing requests.</div>
         </Card>
       </div>
@@ -180,7 +180,7 @@ export function StaffingRequestsPage() {
     <div>
       <div className="mb-6 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
         <div>
-          <h1 className="mb-1 text-2xl font-bold text-[#2F3437]">Staffing Requests</h1>
+          <h1 className="mb-1 text-2xl font-bold text-[var(--color-brand-navy)]">Staffing Requests</h1>
           <p className="text-sm text-gray-500">Capture resource demand and match available employees to projects.</p>
         </div>
         <Button icon={<Plus size={16} />} onClick={() => setDrawerOpen(true)}>New Request</Button>
@@ -195,7 +195,7 @@ export function StaffingRequestsPage() {
         ] as Array<[string, number, ElementType]>).map(([label, value, Icon]) => (
           <Card key={label} className="p-4">
             <Icon size={18} className="mb-4 text-olive" />
-            <div className="text-2xl font-bold text-[#2F3437]">{value}</div>
+            <div className="text-2xl font-bold text-[var(--color-brand-navy)]">{value}</div>
             <div className="text-xs font-semibold text-gray-500">{label}</div>
           </Card>
         ))}
@@ -203,16 +203,16 @@ export function StaffingRequestsPage() {
 
       <Card className="mb-5 p-4">
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_170px_170px_190px]">
-          <input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search project name..." className="rounded-xl border border-[#E5E7EB] bg-warm-bg px-3 py-2.5 text-sm outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10" />
-          <select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} className="rounded-xl border border-[#E5E7EB] bg-warm-bg px-3 py-2.5 text-sm outline-none">
+          <input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search project name..." className="rounded-xl border border-[var(--color-border)] bg-warm-bg px-3 py-2.5 text-sm outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10" />
+          <select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} className="rounded-xl border border-[var(--color-border)] bg-warm-bg px-3 py-2.5 text-sm outline-none">
             <option value="all">All status</option>
             {['open', 'in_review', 'partially_fulfilled', 'fulfilled', 'cancelled', 'rejected'].map((item) => <option key={item} value={item}>{titleCase(item)}</option>)}
           </select>
-          <select value={priority} onChange={(event) => { setPriority(event.target.value); setPage(1); }} className="rounded-xl border border-[#E5E7EB] bg-warm-bg px-3 py-2.5 text-sm outline-none">
+          <select value={priority} onChange={(event) => { setPriority(event.target.value); setPage(1); }} className="rounded-xl border border-[var(--color-border)] bg-warm-bg px-3 py-2.5 text-sm outline-none">
             <option value="all">All priority</option>
             {['low', 'medium', 'high', 'urgent'].map((item) => <option key={item} value={item}>{titleCase(item)}</option>)}
           </select>
-          <select value={department} onChange={(event) => { setDepartment(event.target.value); setPage(1); }} className="rounded-xl border border-[#E5E7EB] bg-warm-bg px-3 py-2.5 text-sm outline-none">
+          <select value={department} onChange={(event) => { setDepartment(event.target.value); setPage(1); }} className="rounded-xl border border-[var(--color-border)] bg-warm-bg px-3 py-2.5 text-sm outline-none">
             <option value="all">All departments</option>
             {(options?.departments || []).map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
@@ -220,15 +220,15 @@ export function StaffingRequestsPage() {
       </Card>
 
       <Card>
-        <div className="flex items-center justify-between border-b border-[#E5E7EB] px-5 py-4">
+        <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
           <div>
-            <div className="text-sm font-bold text-[#2F3437]">Demand Pipeline</div>
+            <div className="text-sm font-bold text-[var(--color-brand-navy)]">Demand Pipeline</div>
             <div className="text-xs text-gray-500">{total} request{total === 1 ? '' : 's'}</div>
           </div>
         </div>
 
         {loading ? (
-          <div className="divide-y divide-[#E5E7EB]">
+          <div className="divide-y divide-[var(--color-border)]">
             {Array.from({ length: 5 }).map((_, index) => <div key={index} className="h-20 animate-pulse bg-gray-50/60" />)}
           </div>
         ) : error ? (
@@ -236,7 +236,7 @@ export function StaffingRequestsPage() {
         ) : rows.length === 0 ? (
           <div className="px-6 py-16 text-center">
             <SearchX size={24} className="mx-auto mb-3 text-olive" />
-            <div className="font-semibold text-[#2F3437]">No staffing requests found</div>
+            <div className="font-semibold text-[var(--color-brand-navy)]">No staffing requests found</div>
             <div className="mt-1 text-sm text-gray-500">Create a new request or adjust your filters.</div>
           </div>
         ) : (
@@ -255,14 +255,14 @@ export function StaffingRequestsPage() {
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <tr key={row.id} className="border-t border-[#E5E7EB] text-sm">
+                  <tr key={row.id} className="border-t border-[var(--color-border)] text-sm">
                     <td className="px-5 py-4">
-                      <div className="font-bold text-[#2F3437]">{row.project_name}</div>
+                      <div className="font-bold text-[var(--color-brand-navy)]">{row.project_name}</div>
                       <div className="text-xs text-gray-500">{row.role_needed} • {row.allocation_percentage}% allocation</div>
                     </td>
                     <td className="px-4 py-4 text-gray-600">{row.hiring_manager_name}</td>
                     <td className="px-4 py-4">
-                      <div className="font-semibold text-[#2F3437]">{row.headcount_fulfilled}/{row.headcount_needed}</div>
+                      <div className="font-semibold text-[var(--color-brand-navy)]">{row.headcount_fulfilled}/{row.headcount_needed}</div>
                       <div className="mt-1 h-1.5 w-24 rounded-full bg-hover-bg">
                         <div className="h-full rounded-full bg-olive" style={{ width: `${Math.min(100, (row.headcount_fulfilled / row.headcount_needed) * 100)}%` }} />
                       </div>
@@ -286,7 +286,7 @@ export function StaffingRequestsPage() {
           </div>
         )}
 
-        <div className="flex items-center justify-between border-t border-[#E5E7EB] px-5 py-3">
+        <div className="flex items-center justify-between border-t border-[var(--color-border)] px-5 py-3">
           <div className="text-xs text-gray-500">Page {page}</div>
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>Previous</Button>

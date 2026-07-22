@@ -4,6 +4,7 @@ Action inbox and notification APIs.
 
 from datetime import datetime
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.employee import Employee
@@ -38,7 +39,9 @@ def current_employee(db: Session, user_id: str | None, user_email: str | None) -
     if user_id:
         employee = db.query(Employee).filter(Employee.id == user_id).first()
     if not employee and user_email:
-        employee = db.query(Employee).filter(Employee.work_email == user_email).first()
+        employee = db.query(Employee).filter(
+            func.lower(Employee.work_email) == user_email.strip().lower()
+        ).first()
     return employee
 
 

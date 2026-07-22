@@ -79,7 +79,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-const inputClass = 'mt-1 w-full rounded-xl border border-[#E5E7EB] bg-warm-bg px-3 py-2.5 text-[14px] font-medium text-[#2F3437] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10';
+const inputClass = 'mt-1 w-full rounded-xl border border-[var(--color-border)] bg-warm-bg px-3 py-2.5 text-[14px] font-medium text-[var(--color-brand-navy)] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10';
 
 export function StaffingRequestDrawer({
   open,

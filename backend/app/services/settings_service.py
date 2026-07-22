@@ -7,6 +7,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.employee import Employee
@@ -32,7 +33,9 @@ def get_current_employee(db: Session, user_id: str | None, user_email: str | Non
     if employee and user_email and employee.work_email.lower() != user_email.lower():
         raise HTTPException(status_code=401, detail="Authenticated user headers do not match.")
     if not employee and user_email:
-        employee = db.query(Employee).filter(Employee.work_email == user_email).first()
+        employee = db.query(Employee).filter(
+            func.lower(Employee.work_email) == user_email.strip().lower()
+        ).first()
     if not employee:
         raise HTTPException(status_code=401, detail="Authenticated user not found.")
     return employee

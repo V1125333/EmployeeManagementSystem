@@ -24,7 +24,7 @@ export function ForceChangePasswordPage() {
   }
 
   const inputClass = cn(
-    'w-full rounded-xl border border-[#E5E7EB] bg-warm-bg py-3 pl-10 pr-11 text-[14px] font-medium text-[#2F3437]',
+    'w-full rounded-xl border border-[var(--color-border)] bg-warm-bg py-3 pl-10 pr-11 text-[14px] font-medium text-[var(--color-brand-navy)]',
     'outline-none transition-all placeholder:text-gray-400 focus:border-olive/40 focus:ring-2 focus:ring-olive/10',
   );
 
@@ -65,12 +65,12 @@ export function ForceChangePasswordPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-warm-bg px-6 py-12 font-sans">
-      <div className="w-full max-w-[460px] rounded-2xl border border-[#E5E7EB] bg-warm-card p-8 shadow-card-md">
+      <div className="w-full max-w-[460px] rounded-2xl border border-[var(--color-border)] bg-warm-card p-8 shadow-card-md">
         <div className="mb-7 text-center">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-olive/10">
             <ShieldCheck size={23} className="text-olive" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-[#2F3437]">Create new password</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-[var(--color-brand-navy)]">Create new password</h1>
           <p className="mt-2 text-sm leading-6 text-gray-500">
             Temporary password verified. Create a new password before continuing.
           </p>
@@ -88,7 +88,7 @@ export function ForceChangePasswordPage() {
             ['Confirm new password', confirmPassword, setConfirmPassword],
           ].map(([label, value, setter]) => (
             <label key={label as string} className="block">
-              <span className="mb-2 block text-[13px] font-semibold text-[#2F3437]">{label as string}</span>
+              <span className="mb-2 block text-[13px] font-semibold text-[var(--color-brand-navy)]">{label as string}</span>
               <span className="relative block">
                 <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input

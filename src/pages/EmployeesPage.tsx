@@ -1,14 +1,13 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Search, Filter, UserPlus, Download, ChevronDown, ChevronLeft, ChevronRight,
   Mail, Phone, MapPin, Calendar, Briefcase, Building2, User, Shield, X,
-  Pencil, Loader2, Plane, KeyRound, History, CheckCircle2, Bell, RotateCcw, Copy, Award,
+  Pencil, Loader2, Plane, KeyRound, History, CheckCircle2, Bell, RotateCcw, Copy, Award, Network,
 } from 'lucide-react';
 import { Card, CardHeader, Badge, Button, Avatar } from '@/components/ui';
 import { Drawer } from '@/components/ui/Drawer';
 import { AddEmployeeDrawer } from '@/components/dashboard/AddEmployeeDrawer';
-import { countriesForDialCode } from '@/data/countryCodes';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/hooks/useAuth';
 import { CareerProfilePanel } from '@/components/career/CareerProfilePanel';
@@ -30,8 +29,12 @@ interface EmployeeRecord {
   workforce_type: string;
   employment_status: string;
   work_location: string;
+  work_city?: string | null;
+  work_state?: string | null;
+  work_country?: string | null;
   joining_date: string | null;
   reporting_manager: string;
+  project_status?: 'in_project' | 'bench' | 'trainee';
   profile_image_url: string | null;
   workforce_status?: string;
   access_level?: string;
@@ -55,6 +58,7 @@ interface EmployeeListResponse {
   page: number;
   per_page: number;
   total_pages: number;
+  reporting_manager_options?: string[];
 }
 
 interface EmployeePreview {
@@ -128,7 +132,8 @@ interface EmployeePreview {
 const DEPARTMENTS = ['All', 'Engineering', 'Product', 'Design', 'Marketing', 'Sales', 'Operations', 'People', 'Finance'];
 const STATUSES = ['All', 'active', 'inactive', 'onboarding', 'offboarding'];
 const ROLES = ['All', 'super_admin', 'hr_admin', 'manager', 'employee', 'trainee'];
-const LOCATIONS = ['All', 'Onshore', 'Offshore', 'Remote', 'Hybrid'];
+const WORK_ARRANGEMENTS = ['All', 'Remote', 'Hybrid', 'Office', 'Onshore', 'Offshore'];
+const PROJECT_STATUSES = ['All', 'In Project', 'Bench', 'Trainee'];
 const WORKFORCE_TYPES = ['Full-Time Employee', 'Paid Intern', 'Unpaid Intern', 'Trainee', 'Guest'];
 const DESIGNATIONS = [
   'AI Developer',
@@ -152,6 +157,12 @@ const statusVariant: Record<string, 'olive' | 'success' | 'warning' | 'error' | 
   offboarding: 'warning',
 };
 
+const projectStatusPresentation: Record<string, { label: string; variant: 'success' | 'warning' | 'info' | 'neutral' }> = {
+  in_project: { label: 'In Project', variant: 'success' },
+  bench: { label: 'Bench', variant: 'warning' },
+  trainee: { label: 'Trainee', variant: 'info' },
+};
+
 const roleLabels: Record<string, string> = {
   super_admin: 'Super Admin',
   hr_admin: 'HR Admin',
@@ -159,6 +170,12 @@ const roleLabels: Record<string, string> = {
   employee: 'Employee',
   trainee: 'Trainee',
 };
+
+function employeeWorkLocation(employee: Pick<EmployeeRecord, 'work_city' | 'work_state' | 'work_country'>) {
+  return [employee.work_city?.trim(), employee.work_state?.trim()].filter(Boolean).join(', ')
+    || employee.work_country?.trim()
+    || 'Not recorded';
+}
 
 function FilterDropdown({
   label,
@@ -180,7 +197,7 @@ function FilterDropdown({
           'flex items-center gap-1.5 px-3 py-[7px] rounded-lg text-[13px] font-medium transition-colors border',
           value !== 'All'
             ? 'bg-olive/10 text-olive border-olive/20'
-            : 'bg-warm-card text-gray-500 border-[#E5E7EB] hover:bg-hover-bg'
+            : 'bg-warm-card text-gray-500 border-[var(--color-border)] hover:bg-hover-bg'
         )}
       >
         {label}: {value === 'All' ? 'All' : value}
@@ -189,14 +206,14 @@ function FilterDropdown({
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute top-full left-0 mt-1 z-20 bg-warm-card border border-[#E5E7EB] rounded-xl shadow-card-md py-1 min-w-[160px]">
+          <div className="absolute top-full left-0 mt-1 z-20 bg-warm-card border border-[var(--color-border)] rounded-xl shadow-card-md py-1 min-w-[160px]">
             {options.map((opt) => (
               <button
                 key={opt}
                 onClick={() => { onChange(opt); setOpen(false); }}
                 className={cn(
                   'w-full text-left px-4 py-2 text-[13px] font-medium transition-colors',
-                  opt === value ? 'bg-hover-bg text-olive' : 'text-[#2F3437] hover:bg-hover-bg'
+                  opt === value ? 'bg-hover-bg text-olive' : 'text-[var(--color-brand-navy)] hover:bg-hover-bg'
                 )}
               >
                 {opt === 'All' ? `All ${label}s` : opt}
@@ -231,7 +248,7 @@ function EmployeeDetail({
       <span className="text-gray-400 mt-0.5 shrink-0">{icon}</span>
       <div>
         <div className="text-[11px] text-gray-400 font-medium uppercase tracking-wider">{label}</div>
-        <div className="text-[14px] text-[#2F3437] font-medium">{value || '—'}</div>
+        <div className="text-[14px] text-[var(--color-brand-navy)] font-medium">{value || '—'}</div>
       </div>
     </div>
   );
@@ -239,12 +256,12 @@ function EmployeeDetail({
   return (
     <Drawer open={open} onClose={onClose} title={fullName} subtitle={employee.work_email} width="w-[480px]">
       {/* Profile header */}
-      <div className="flex items-center gap-4 mb-6 pb-6 border-b border-[#E5E7EB]">
+      <div className="flex items-center gap-4 mb-6 pb-6 border-b border-[var(--color-border)]">
         <div className="w-16 h-16 rounded-2xl bg-olive flex items-center justify-center text-white text-xl font-bold">
           {initials}
         </div>
         <div>
-          <div className="text-lg font-bold text-[#2F3437]">{fullName}</div>
+          <div className="text-lg font-bold text-[var(--color-brand-navy)]">{fullName}</div>
           <div className="text-[13px] text-gray-500">{employee.designation || employee.role}</div>
           <div className="flex gap-2 mt-2">
             <Badge variant={statusVariant[employee.employment_status] || 'neutral'}>
@@ -274,7 +291,7 @@ function EmployeeDetail({
       <InfoRow icon={<Mail size={15} />} label="Email" value={employee.work_email} />
       <InfoRow icon={<Phone size={15} />} label="Phone" value={employee.phone} />
 
-      <div className="h-px bg-[#E5E7EB] my-4" />
+      <div className="h-px bg-[var(--color-border)] my-4" />
 
       {/* Employment */}
       <div className="text-[11px] font-bold text-gray-400 tracking-widest uppercase mb-3">Employment</div>
@@ -283,7 +300,8 @@ function EmployeeDetail({
       <InfoRow icon={<Shield size={15} />} label="Role" value={roleLabels[employee.role] || employee.role} />
       <InfoRow icon={<User size={15} />} label="Workforce Type" value={employee.workforce_type} />
       <InfoRow icon={<User size={15} />} label="Reporting Manager" value={employee.reporting_manager} />
-      <InfoRow icon={<MapPin size={15} />} label="Work Location" value={employee.work_location} />
+      <InfoRow icon={<MapPin size={15} />} label="Work Arrangement" value={employee.work_location} />
+      <InfoRow icon={<MapPin size={15} />} label="Work Location" value={employeeWorkLocation(employee)} />
       <InfoRow icon={<Calendar size={15} />} label="Joining Date" value={employee.joining_date} />
     </Drawer>
   );
@@ -380,10 +398,6 @@ function ExecutiveEmployeeDetail({
     if (!phone) return 'Not recorded';
     return [countryCode?.trim(), phone.trim()].filter(Boolean).join(' ');
   };
-  const countryName = (countryCode?: string | null) => {
-    const country = countriesForDialCode(countryCode);
-    return country || 'Not recorded';
-  };
   const mfaLabel = (status?: string | null, enabled?: boolean | null) => {
     if (enabled === true || status === 'enabled') return 'Enabled';
     if (status === 'pending_setup') return 'Pending setup';
@@ -455,14 +469,14 @@ function ExecutiveEmployeeDetail({
   };
 
   const Metric = ({ label, value, tone = 'neutral' }: { label: string; value: string | number; tone?: 'neutral' | 'good' | 'warn' | 'bad' }) => (
-    <div className="rounded-xl border border-[#E5E7EB] bg-warm-bg px-3 py-2.5">
+    <div className="rounded-xl border border-[var(--color-border)] bg-warm-bg px-3 py-2.5">
       <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{label}</div>
       <div className={cn(
         'mt-1 text-[14px] font-semibold',
         tone === 'good' && 'text-status-success',
         tone === 'warn' && 'text-status-warning',
         tone === 'bad' && 'text-status-error',
-        tone === 'neutral' && 'text-[#2F3437]'
+        tone === 'neutral' && 'text-[var(--color-brand-navy)]'
       )}>
         {value}
       </div>
@@ -470,9 +484,9 @@ function ExecutiveEmployeeDetail({
   );
 
   const Panel = ({ id, title, icon, children }: { id: string; title: string; icon: React.ReactNode; children: React.ReactNode }) => (
-    <div className="border border-[#E5E7EB] rounded-xl bg-warm-card overflow-hidden">
+    <div className="border border-[var(--color-border)] rounded-xl bg-warm-card overflow-hidden">
       <button onClick={() => toggleSection(id)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-hover-bg transition-colors">
-        <span className="flex items-center gap-2 text-[13px] font-bold text-[#2F3437]">
+        <span className="flex items-center gap-2 text-[13px] font-bold text-[var(--color-brand-navy)]">
           <span className="text-olive">{icon}</span>
           {title}
         </span>
@@ -485,13 +499,13 @@ function ExecutiveEmployeeDetail({
   return (
     <Drawer open={open} onClose={onClose} title="Employee Snapshot" width="w-[620px]">
       <div className="space-y-4">
-        <div className="rounded-xl border border-[#E5E7EB] bg-warm-card p-4">
+        <div className="rounded-xl border border-[var(--color-border)] bg-warm-card p-4">
           <div className="flex items-start gap-4">
             <Avatar initials={initials} size="lg" variant={data.is_active ? 'filled' : 'soft'} src={data.profile_image_url} />
             <div className="min-w-0 flex-1">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="text-lg font-bold text-[#2F3437] truncate">{fullName}</div>
+                  <div className="text-lg font-bold text-[var(--color-brand-navy)] truncate">{fullName}</div>
                   <div className="text-[13px] text-gray-500 truncate">{data.designation || roleLabels[data.role] || data.role} · {data.department || 'No department'}</div>
                 </div>
                 <Button variant="ghost" size="sm" icon={<Pencil size={13} />} onClick={() => onEdit(employee)}>Edit</Button>
@@ -507,7 +521,7 @@ function ExecutiveEmployeeDetail({
               <div className="grid grid-cols-1 gap-2 mt-4 text-[12.5px] text-gray-500 sm:grid-cols-2">
                 <div className="flex items-center gap-2 min-w-0"><Mail size={14} className="text-gray-400 shrink-0" /><span className="truncate">{data.work_email}</span></div>
                 <div className="flex items-center gap-2"><Phone size={14} className="text-gray-400 shrink-0" />{formatPhone(data.country_code, data.phone)}</div>
-                <div className="flex items-center gap-2"><MapPin size={14} className="text-gray-400 shrink-0" />{data.work_location || 'Not recorded'}</div>
+                <div className="flex items-center gap-2"><MapPin size={14} className="text-gray-400 shrink-0" />{employeeWorkLocation(data)}</div>
                 <div className="flex items-center gap-2 min-w-0"><User size={14} className="text-gray-400 shrink-0" /><span className="truncate">{data.reporting_manager || 'No manager'}</span></div>
               </div>
             </div>
@@ -548,8 +562,8 @@ function ExecutiveEmployeeDetail({
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <Metric label="Work Email" value={data.work_email || 'Not recorded'} />
                 <Metric label="Phone" value={formatPhone(data.country_code, data.phone)} />
-                <Metric label="Work Country" value={countryName(data.country_code)} />
-                <Metric label="Work Location" value={data.work_location || 'Not recorded'} />
+                <Metric label="Work Arrangement" value={data.work_location || 'Not recorded'} />
+                <Metric label="Work Location" value={employeeWorkLocation(data)} />
               </div>
             </Panel>
 
@@ -561,8 +575,8 @@ function ExecutiveEmployeeDetail({
                   <Metric label="Relationship" value={data.emergency_contact_relation || 'Not recorded'} />
                 </div>
               ) : (
-                <div className="rounded-xl border border-dashed border-[#DDE3DD] bg-warm-bg px-4 py-4">
-                  <div className="text-[14px] font-semibold text-[#2F3437]">No details provided</div>
+                <div className="rounded-xl border border-dashed border-[var(--color-border)] bg-warm-bg px-4 py-4">
+                  <div className="text-[14px] font-semibold text-[var(--color-brand-navy)]">No details provided</div>
                   <div className="mt-1 text-[12.5px] text-gray-500">
                     Ask the employee to add emergency contact details in My Profile.
                   </div>
@@ -620,10 +634,10 @@ function ExecutiveEmployeeDetail({
                 )}
               </div>
               {canResetPassword && (
-                <div className="mt-3 rounded-xl border border-[#E5E7EB] bg-warm-bg p-3">
+                <div className="mt-3 rounded-xl border border-[var(--color-border)] bg-warm-bg p-3">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <div className="text-[13px] font-semibold text-[#2F3437]">Password recovery</div>
+                      <div className="text-[13px] font-semibold text-[var(--color-brand-navy)]">Password recovery</div>
                       <div className="mt-0.5 text-[12px] text-gray-500">Generate a temporary password and require a change on next login.</div>
                     </div>
                     <Button
@@ -637,8 +651,8 @@ function ExecutiveEmployeeDetail({
                     </Button>
                   </div>
                   {temporaryPassword && (
-                    <div className="mt-3 flex items-center gap-2 rounded-lg border border-[#DDE3DD] bg-white px-3 py-2">
-                      <code className="min-w-0 flex-1 select-all truncate text-[13px] font-bold text-[#2F3437]">{temporaryPassword}</code>
+                    <div className="mt-3 flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-white px-3 py-2">
+                      <code className="min-w-0 flex-1 select-all truncate text-[13px] font-bold text-[var(--color-brand-navy)]">{temporaryPassword}</code>
                       <button
                         type="button"
                         onClick={copyTemporaryPassword}
@@ -665,7 +679,7 @@ function ExecutiveEmployeeDetail({
                   tone={preview?.leave_summary?.current_leave_status === 'on_leave' ? 'warn' : 'neutral'}
                 />
               </div>
-              <div className="mt-3 rounded-xl bg-warm-bg border border-[#E5E7EB] px-3 py-2.5 text-[12.5px] text-gray-500">
+              <div className="mt-3 rounded-xl bg-warm-bg border border-[var(--color-border)] px-3 py-2.5 text-[12.5px] text-gray-500">
                 {preview?.leave_summary?.upcoming_leave_start
                   ? `Upcoming: ${formatDate(preview.leave_summary.upcoming_leave_start)} - ${formatDate(preview.leave_summary.upcoming_leave_end)} (${titleCase(preview.leave_summary.upcoming_leave_status)})`
                   : previewError ? 'No leave data available' : 'No leave scheduled'}
@@ -676,9 +690,9 @@ function ExecutiveEmployeeDetail({
               {auditChanges.length > 0 ? (
                 <div className="space-y-2">
                   {auditChanges.map((change) => (
-                    <div key={change.id} className="rounded-xl bg-warm-bg border border-[#E5E7EB] px-3 py-2.5">
+                    <div key={change.id} className="rounded-xl bg-warm-bg border border-[var(--color-border)] px-3 py-2.5">
                       <div className="flex items-center justify-between gap-3">
-                        <div className="text-[13px] font-semibold text-[#2F3437]">{titleCase(change.field_name)} updated</div>
+                        <div className="text-[13px] font-semibold text-[var(--color-brand-navy)]">{titleCase(change.field_name)} updated</div>
                         <div className="text-[11px] text-gray-400 shrink-0">{formatDate(change.changed_at)}</div>
                       </div>
                       <div className="mt-1 text-[12px] text-gray-500">{change.old_value || 'Empty'} to {change.new_value || 'Empty'}</div>
@@ -687,23 +701,23 @@ function ExecutiveEmployeeDetail({
                   ))}
                   <button className="text-[12px] font-semibold text-olive hover:text-olive-dark transition-colors">View All</button>
                 </div>
-              ) : <div className="rounded-xl bg-warm-bg border border-[#E5E7EB] px-3 py-3 text-[13px] text-gray-400">No recent audit changes</div>}
+              ) : <div className="rounded-xl bg-warm-bg border border-[var(--color-border)] px-3 py-3 text-[13px] text-gray-400">No recent audit changes</div>}
             </Panel>
           </>
         )}
       </div>
       {passwordResetModalOpen && (
         <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/45 px-4">
-          <div className="w-full max-w-[520px] overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-[0_28px_90px_rgba(17,24,39,0.24)]">
-            <div className="flex items-start justify-between border-b border-[#E5E7EB] px-6 py-5">
+          <div className="w-full max-w-[520px] overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white shadow-[0_28px_90px_rgba(17,24,39,0.24)]">
+            <div className="flex items-start justify-between border-b border-[var(--color-border)] px-6 py-5">
               <div>
-                <div className="text-lg font-bold text-[#2F3437]">Generate temporary password</div>
+                <div className="text-lg font-bold text-[var(--color-brand-navy)]">Generate temporary password</div>
                 <div className="mt-1 text-sm text-gray-500">{fullName} · {data.work_email}</div>
               </div>
               <button
                 type="button"
                 onClick={() => !resettingPassword && setPasswordResetModalOpen(false)}
-                className="rounded-lg p-1.5 text-gray-400 transition hover:bg-hover-bg hover:text-[#2F3437]"
+                className="rounded-lg p-1.5 text-gray-400 transition hover:bg-hover-bg hover:text-[var(--color-brand-navy)]"
                 aria-label="Close"
               >
                 <X size={18} />
@@ -711,11 +725,11 @@ function ExecutiveEmployeeDetail({
             </div>
             <div className="space-y-4 px-6 py-5">
               <label className="block">
-                <span className="mb-2 block text-[13px] font-semibold text-[#2F3437]">Admin reason</span>
+                <span className="mb-2 block text-[13px] font-semibold text-[var(--color-brand-navy)]">Admin reason</span>
                 <textarea
                   value={passwordResetReason}
                   onChange={(event) => setPasswordResetReason(event.target.value.slice(0, 500))}
-                  className="min-h-[112px] w-full resize-none rounded-xl border border-[#E5E7EB] bg-warm-bg px-3.5 py-3 text-sm font-medium text-[#2F3437] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10"
+                  className="min-h-[112px] w-full resize-none rounded-xl border border-[var(--color-border)] bg-warm-bg px-3.5 py-3 text-sm font-medium text-[var(--color-brand-navy)] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10"
                   placeholder="Example: Employee account locked; identity verified by HR"
                   autoFocus
                 />
@@ -751,7 +765,12 @@ interface EditFormState {
   workforce_type: string;
   employment_status: string;
   work_location: string;
+  work_city: string;
+  work_state: string;
+  work_country: string;
   reporting_manager: string;
+  joining_date: string;
+  change_reason: string;
 }
 
 function EditEmployeeDrawer({
@@ -778,7 +797,12 @@ function EditEmployeeDrawer({
     workforce_type: '',
     employment_status: '',
     work_location: '',
+    work_city: '',
+    work_state: '',
+    work_country: '',
     reporting_manager: '',
+    joining_date: '',
+    change_reason: '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -786,9 +810,9 @@ function EditEmployeeDrawer({
   const uniqueOptions = (values: Array<string | null | undefined>) => Array.from(new Set(values.filter((value): value is string => !!value?.trim())));
   const optionWithCurrent = (options: string[], current: string) => current && !options.includes(current) ? [current, ...options] : options;
   const managerOptions = optionWithCurrent(
-    uniqueOptions(employees
+    ['Not assigned', ...uniqueOptions(employees
       .filter((item) => item.id !== employee?.id && ['super_admin', 'hr_admin', 'manager'].includes(item.role))
-      .map((item) => `${item.first_name} ${item.last_name}`)),
+      .map((item) => `${item.first_name} ${item.last_name}`))],
     form.reporting_manager
   );
   const designationOptions = optionWithCurrent(uniqueOptions([...DESIGNATIONS, ...employees.map((item) => item.designation)]), form.designation);
@@ -805,7 +829,12 @@ function EditEmployeeDrawer({
       workforce_type: employee.workforce_type,
       employment_status: employee.employment_status,
       work_location: employee.work_location,
+      work_city: employee.work_city || '',
+      work_state: employee.work_state || '',
+      work_country: employee.work_country || '',
       reporting_manager: employee.reporting_manager,
+      joining_date: employee.joining_date || '',
+      change_reason: '',
     });
     setError('');
   }, [employee]);
@@ -817,8 +846,31 @@ function EditEmployeeDrawer({
 
   const save = async () => {
     if (!employee) return;
-    if (!form.first_name.trim() || !form.last_name.trim() || !form.phone.trim()) {
-      setError('First name, last name, and phone are required.');
+    if (!form.first_name.trim() || !form.last_name.trim() || !form.phone.trim() || !form.joining_date) {
+      setError('First name, last name, phone, and joining date are required.');
+      return;
+    }
+
+    const employmentFields: Array<keyof EditFormState> = [
+      'department', 'designation', 'role', 'workforce_type', 'employment_status',
+      'work_location', 'work_city', 'work_state', 'work_country', 'reporting_manager', 'joining_date',
+    ];
+    const originalValues: Partial<Record<keyof EditFormState, string>> = {
+      department: employee.department,
+      designation: employee.designation || '',
+      role: employee.role,
+      workforce_type: employee.workforce_type,
+      employment_status: employee.employment_status,
+      work_location: employee.work_location,
+      work_city: employee.work_city || '',
+      work_state: employee.work_state || '',
+      work_country: employee.work_country || '',
+      reporting_manager: employee.reporting_manager,
+      joining_date: employee.joining_date || '',
+    };
+    const hasEmploymentChanges = employmentFields.some((field) => form[field] !== originalValues[field]);
+    if (hasEmploymentChanges && !form.change_reason.trim()) {
+      setError('Enter a reason for changing employment details.');
       return;
     }
 
@@ -839,6 +891,8 @@ function EditEmployeeDrawer({
         body: JSON.stringify({
           ...form,
           designation: form.designation || null,
+          joining_date: form.joining_date || null,
+          change_reason: form.change_reason.trim() || null,
         }),
       });
       const result = await res.json();
@@ -861,21 +915,23 @@ function EditEmployeeDrawer({
     value,
     onChange,
     options,
+    type = 'text',
   }: {
     label: string;
     value: string;
     onChange: (value: string) => void;
     options?: string[];
+    type?: string;
   }) => (
     <div>
-      <label className="block text-[13px] font-semibold text-[#2F3437] mb-1.5">
+      <label className="block text-[13px] font-semibold text-[var(--color-brand-navy)] mb-1.5">
         {label}
       </label>
       {options ? (
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full px-3.5 py-2.5 rounded-xl text-[14px] font-medium bg-warm-bg border border-[#E5E7EB] text-[#2F3437] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10"
+          className="w-full px-3.5 py-2.5 rounded-xl text-[14px] font-medium bg-warm-bg border border-[var(--color-border)] text-[var(--color-brand-navy)] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10"
         >
           {options.map((option) => (
             <option key={option} value={option}>{option}</option>
@@ -883,9 +939,10 @@ function EditEmployeeDrawer({
         </select>
       ) : (
         <input
+          type={type}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full px-3.5 py-2.5 rounded-xl text-[14px] font-medium bg-warm-bg border border-[#E5E7EB] text-[#2F3437] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10"
+          className="w-full px-3.5 py-2.5 rounded-xl text-[14px] font-medium bg-warm-bg border border-[var(--color-border)] text-[var(--color-brand-navy)] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10"
         />
       )}
     </div>
@@ -904,7 +961,7 @@ function EditEmployeeDrawer({
           <div className="flex items-center gap-2">
             <button
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl text-[13px] font-semibold text-gray-500 border border-[#E5E7EB] hover:bg-hover-bg transition-colors"
+              className="px-4 py-2.5 rounded-xl text-[13px] font-semibold text-gray-500 border border-[var(--color-border)] hover:bg-hover-bg transition-colors"
             >
               Cancel
             </button>
@@ -929,11 +986,29 @@ function EditEmployeeDrawer({
         <Field label="Phone" value={form.phone} onChange={(v) => update('phone', v)} />
         <Field label="Department" value={form.department} onChange={(v) => update('department', v)} options={DEPARTMENTS.slice(1)} />
         <Field label="Designation" value={form.designation} onChange={(v) => update('designation', v)} options={designationOptions} />
-        <Field label="Role" value={form.role} onChange={(v) => update('role', v)} options={ROLES.slice(1)} />
+        <Field label="Role" value={form.role} onChange={(v) => update('role', v)} options={optionWithCurrent(ROLES.slice(1), form.role)} />
         <Field label="Workforce Type" value={form.workforce_type} onChange={(v) => update('workforce_type', v)} options={optionWithCurrent(WORKFORCE_TYPES, form.workforce_type)} />
         <Field label="Status" value={form.employment_status} onChange={(v) => update('employment_status', v)} options={STATUSES.slice(1)} />
-        <Field label="Work Location" value={form.work_location} onChange={(v) => update('work_location', v)} options={LOCATIONS.slice(1)} />
+        <Field label="Work Arrangement" value={form.work_location} onChange={(v) => update('work_location', v)} options={optionWithCurrent(WORK_ARRANGEMENTS.slice(1), form.work_location)} />
+        <Field label="Work City" value={form.work_city} onChange={(v) => update('work_city', v)} />
+        <Field label="State / Province" value={form.work_state} onChange={(v) => update('work_state', v)} />
+        <Field label="Work Country" value={form.work_country} onChange={(v) => update('work_country', v)} />
         <Field label="Reporting Manager" value={form.reporting_manager} onChange={(v) => update('reporting_manager', v)} options={managerOptions} />
+        <Field label="Joining Date" value={form.joining_date} onChange={(v) => update('joining_date', v)} type="date" />
+        <div className="col-span-2">
+          <label className="mb-1.5 block text-[13px] font-semibold text-[var(--color-brand-navy)]">
+            Reason for employment change
+          </label>
+          <textarea
+            value={form.change_reason}
+            onChange={(event) => update('change_reason', event.target.value)}
+            rows={3}
+            maxLength={500}
+            placeholder="Required when changing role, department, manager, status, location, or employment dates"
+            className="w-full resize-none rounded-xl border border-[var(--color-border)] bg-warm-bg px-3.5 py-2.5 text-[14px] font-medium text-[var(--color-brand-navy)] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10"
+          />
+          <div className="mt-1 text-[11px] text-gray-400">This reason is recorded in the audit trail and included in the employee notification.</div>
+        </div>
       </div>
     </Drawer>
   );
@@ -941,6 +1016,7 @@ function EditEmployeeDrawer({
 
 export function EmployeesPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialSearch = searchParams.get('search') || '';
   const [employees, setEmployees] = useState<EmployeeRecord[]>([]);
@@ -954,6 +1030,9 @@ export function EmployeesPage() {
   const [statusFilter, setStatusFilter] = useState('All');
   const [roleFilter, setRoleFilter] = useState('All');
   const [locationFilter, setLocationFilter] = useState('All');
+  const [projectStatusFilter, setProjectStatusFilter] = useState('All');
+  const [reportingManagerFilter, setReportingManagerFilter] = useState('All');
+  const [reportingManagerOptions, setReportingManagerOptions] = useState<string[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRecord | null>(null);
   const [editingEmployee, setEditingEmployee] = useState<EmployeeRecord | null>(null);
   const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
@@ -982,6 +1061,8 @@ export function EmployeesPage() {
       if (statusFilter !== 'All') params.set('status', statusFilter);
       if (roleFilter !== 'All') params.set('role', roleFilter);
       if (locationFilter !== 'All') params.set('location', locationFilter);
+      if (projectStatusFilter !== 'All') params.set('project_status', projectStatusFilter.toLowerCase().replace(/ /g, '_'));
+      if (reportingManagerFilter !== 'All') params.set('reporting_manager', reportingManagerFilter);
 
       const res = await fetch(`${API_BASE}/employees/?${params.toString()}`, { headers: authHeaders });
       if (!res.ok) throw new Error(`Unable to load employees (${res.status})`);
@@ -991,6 +1072,7 @@ export function EmployeesPage() {
       setTotal(data.total);
       setOrganizationTotal(data.organization_total ?? data.total);
       setTotalPages(data.total_pages);
+      setReportingManagerOptions(data.reporting_manager_options || []);
     } catch {
       console.log('Backend not available — showing empty state');
       setEmployees([]);
@@ -999,7 +1081,7 @@ export function EmployeesPage() {
     } finally {
       setLoading(false);
     }
-  }, [authHeaders, page, search, deptFilter, statusFilter, roleFilter, locationFilter, user?.email, user?.id]);
+  }, [authHeaders, page, search, deptFilter, statusFilter, roleFilter, locationFilter, projectStatusFilter, reportingManagerFilter, user?.email, user?.id]);
 
   useEffect(() => {
     fetchEmployees();
@@ -1029,13 +1111,15 @@ export function EmployeesPage() {
     setStatusFilter('All');
     setRoleFilter('All');
     setLocationFilter('All');
+    setProjectStatusFilter('All');
+    setReportingManagerFilter('All');
     setSearchInput('');
     setSearch('');
     setSearchParams({}, { replace: true });
     setPage(1);
   };
 
-  const hasActiveFilters = deptFilter !== 'All' || statusFilter !== 'All' || roleFilter !== 'All' || locationFilter !== 'All' || search.trim() !== '' || searchInput.trim() !== '';
+  const hasActiveFilters = deptFilter !== 'All' || statusFilter !== 'All' || roleFilter !== 'All' || locationFilter !== 'All' || projectStatusFilter !== 'All' || reportingManagerFilter !== 'All' || search.trim() !== '' || searchInput.trim() !== '';
   const organizationCount = organizationTotal || total;
   const headerCountText = hasActiveFilters
     ? `Showing ${total} of ${organizationCount} ${organizationCount === 1 ? 'employee' : 'employees'}`
@@ -1057,6 +1141,8 @@ export function EmployeesPage() {
       if (statusFilter !== 'All') params.set('status', statusFilter);
       if (roleFilter !== 'All') params.set('role', roleFilter);
       if (locationFilter !== 'All') params.set('location', locationFilter);
+      if (projectStatusFilter !== 'All') params.set('project_status', projectStatusFilter.toLowerCase().replace(/ /g, '_'));
+      if (reportingManagerFilter !== 'All') params.set('reporting_manager', reportingManagerFilter);
       params.set('level', exportLevel);
 
       const res = await fetch(`${API_BASE}/employees/export?${params.toString()}`, { headers: authHeaders });
@@ -1083,14 +1169,15 @@ export function EmployeesPage() {
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-[#2F3437] tracking-tight mb-1">Employees</h1>
+          <h1 className="text-2xl font-bold text-[var(--color-brand-navy)] tracking-tight mb-1">Employees</h1>
           <p className="text-sm text-gray-500">
             {headerCountText}
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="ghost" icon={<Network size={14} />} onClick={() => navigate('/organization')}>Organization Chart</Button>
           <select
-            className="h-10 rounded-md border border-[#DDE3DD] bg-white px-3 text-sm font-semibold text-[#66785F] outline-none"
+            className="h-10 rounded-md border border-[var(--color-border)] bg-white px-3 text-sm font-semibold text-[var(--color-brand-orange)] outline-none"
             value={exportLevel}
             onChange={(event) => setExportLevel(event.target.value as 'basic' | 'hr' | 'payroll')}
             aria-label="Employee export level"
@@ -1111,14 +1198,14 @@ export function EmployeesPage() {
         <div className="px-5 py-4">
           {/* Search bar */}
           <div className="flex items-center gap-3 mb-4">
-            <div className="flex-1 flex items-center gap-2 px-3.5 py-[8px] bg-warm-bg border border-[#E5E7EB] rounded-lg">
+            <div className="flex-1 flex items-center gap-2 px-3.5 py-[8px] bg-warm-bg border border-[var(--color-border)] rounded-lg">
               <Search size={16} className="text-gray-400 shrink-0" />
               <input
                 type="text"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 placeholder="Search by name or email..."
-                className="bg-transparent border-none outline-none text-[13px] text-[#2F3437] placeholder:text-gray-400 w-full font-sans"
+                className="bg-transparent border-none outline-none text-[13px] text-[var(--color-brand-navy)] placeholder:text-gray-400 w-full font-sans"
               />
               {searchInput && (
                 <button onClick={() => { setSearchInput(''); setSearch(''); }} className="text-gray-400 hover:text-gray-600">
@@ -1134,7 +1221,9 @@ export function EmployeesPage() {
             <FilterDropdown label="Department" value={deptFilter} options={DEPARTMENTS} onChange={(v) => { setDeptFilter(v); setPage(1); }} />
             <FilterDropdown label="Status" value={statusFilter} options={STATUSES} onChange={(v) => { setStatusFilter(v); setPage(1); }} />
             <FilterDropdown label="Role" value={roleFilter} options={ROLES} onChange={(v) => { setRoleFilter(v); setPage(1); }} />
-            <FilterDropdown label="Location" value={locationFilter} options={LOCATIONS} onChange={(v) => { setLocationFilter(v); setPage(1); }} />
+            <FilterDropdown label="Work Arrangement" value={locationFilter} options={WORK_ARRANGEMENTS} onChange={(v) => { setLocationFilter(v); setPage(1); }} />
+            <FilterDropdown label="Project Status" value={projectStatusFilter} options={PROJECT_STATUSES} onChange={(v) => { setProjectStatusFilter(v); setPage(1); }} />
+            <FilterDropdown label="Reporting Manager" value={reportingManagerFilter} options={['All', ...reportingManagerOptions]} onChange={(v) => { setReportingManagerFilter(v); setPage(1); }} />
             {hasActiveFilters && (
               <button onClick={clearFilters} className="text-[12px] text-status-error font-medium hover:underline ml-1">
                 Clear all
@@ -1145,7 +1234,7 @@ export function EmployeesPage() {
       </Card>
 
       {/* Table */}
-      <Card>
+      <Card className="overflow-x-auto">
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="text-sm text-gray-400">Loading employees...</div>
@@ -1153,7 +1242,7 @@ export function EmployeesPage() {
         ) : employees.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20">
             <div className="text-3xl mb-3">👥</div>
-            <div className="text-[15px] font-semibold text-[#2F3437] mb-1">No employees found</div>
+            <div className="text-[15px] font-semibold text-[var(--color-brand-navy)] mb-1">No employees found</div>
             <div className="text-sm text-gray-500">
               {hasActiveFilters ? 'Try adjusting your filters' : 'Add your first employee to get started'}
             </div>
@@ -1161,11 +1250,13 @@ export function EmployeesPage() {
         ) : (
           <>
             {/* Table header */}
-            <div className="grid grid-cols-[1fr_140px_120px_120px_100px_100px_64px] gap-4 px-5 py-3 border-b border-[#E5E7EB] text-[11px] font-bold text-gray-400 tracking-wider uppercase">
+            <div className="grid min-w-[1420px] grid-cols-[minmax(260px,1fr)_130px_100px_160px_110px_100px_90px_110px_52px] gap-4 px-5 py-3 border-b border-[var(--color-border)] text-[11px] font-bold text-gray-400 tracking-wider uppercase">
               <div>Employee</div>
               <div>Department</div>
               <div>Role</div>
-              <div>Location</div>
+              <div>Reporting Manager</div>
+              <div>Project Status</div>
+              <div>Work Location</div>
               <div>Status</div>
               <div>Joined</div>
               <div className="text-right">Edit</div>
@@ -1178,13 +1269,13 @@ export function EmployeesPage() {
                 <div
                   key={emp.id}
                   onClick={() => setSelectedEmployee(emp)}
-                  className="grid grid-cols-[1fr_140px_120px_120px_100px_100px_64px] gap-4 px-5 py-3 border-b border-[#E5E7EB] hover:bg-hover-bg cursor-pointer transition-colors items-center"
+                  className="grid min-w-[1420px] grid-cols-[minmax(260px,1fr)_130px_100px_160px_110px_100px_90px_110px_52px] gap-4 px-5 py-3 border-b border-[var(--color-border)] hover:bg-hover-bg cursor-pointer transition-colors items-center"
                 >
                   {/* Name + email */}
                   <div className="flex items-center gap-3 min-w-0">
                     <Avatar initials={initials} size="md" variant={emp.is_active ? 'filled' : 'soft'} />
                     <div className="min-w-0">
-                      <div className="text-[13.5px] font-semibold text-[#2F3437] truncate">
+                      <div className="text-[13.5px] font-semibold text-[var(--color-brand-navy)] truncate">
                         {emp.first_name} {emp.last_name}
                       </div>
                       <div className="text-[12px] text-gray-400 truncate">{emp.work_email}</div>
@@ -1199,8 +1290,24 @@ export function EmployeesPage() {
                     {roleLabels[emp.role] || emp.role}
                   </div>
 
-                  {/* Location */}
-                  <div className="text-[13px] text-gray-500 truncate">{emp.work_location}</div>
+                  {/* Reporting Manager */}
+                  <div className="text-[13px] text-gray-500 truncate" title={emp.reporting_manager || 'Not assigned'}>
+                    {emp.reporting_manager || 'Not assigned'}
+                  </div>
+
+                  {/* Current project status */}
+                  <div>
+                    {(() => {
+                      const presentation = projectStatusPresentation[emp.project_status || 'bench'] || projectStatusPresentation.bench;
+                      return <Badge variant={presentation.variant}>{presentation.label}</Badge>;
+                    })()}
+                  </div>
+
+                  {/* Work location and arrangement */}
+                  <div className="min-w-0">
+                    <div className="truncate text-[13px] text-gray-500" title={employeeWorkLocation(emp)}>{employeeWorkLocation(emp)}</div>
+                    <div className="truncate text-[11px] text-gray-400">{emp.work_location || 'Arrangement not set'}</div>
+                  </div>
 
                   {/* Status */}
                   <div>

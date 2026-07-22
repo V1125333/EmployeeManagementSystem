@@ -16,6 +16,7 @@ import {
   Users,
 } from 'lucide-react';
 import { AssignEmployeeModal } from '@/components/projects/AssignEmployeeModal';
+import { AllocationMixBar } from '@/components/allocations/AllocationMixBar';
 import { Avatar, Badge, Button, Card, StatusDot } from '@/components/ui';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/hooks/useAuth';
@@ -28,12 +29,19 @@ interface ProjectRecord {
   name: string;
   code: string;
   description: string | null;
+  client_id: string | null;
   client_name: string | null;
   start_date: string | null;
   end_date: string | null;
   status: string;
   allocation_count: number;
   active_allocation_count: number;
+}
+
+interface ClientOption {
+  id: string;
+  client_name: string;
+  status: string;
 }
 
 interface AllocationRecord {
@@ -43,6 +51,8 @@ interface AllocationRecord {
   employee_email: string | null;
   project_id: string | null;
   project_name: string | null;
+  project_code?: string | null;
+  project_location?: string | null;
   manager_id: string;
   manager_name: string | null;
   allocation_percentage: number;
@@ -54,10 +64,16 @@ interface AllocationRecord {
   notes?: string | null;
 }
 
+interface AllocationDisplayRow extends AllocationRecord {
+  isDerivedAvailability?: boolean;
+}
+
 const STATUS_OPTIONS = ['all', 'planning', 'active', 'on_hold', 'completed', 'cancelled'];
 const statusVariant: Record<string, 'olive' | 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   planning: 'info',
   active: 'success',
+  available: 'info',
+  bench: 'warning',
   on_hold: 'warning',
   completed: 'neutral',
   cancelled: 'error',
@@ -80,8 +96,80 @@ function formatDate(value?: string | null) {
   return new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function toDateOnly(value?: string | null) {
+  if (!value) return null;
+  const parsed = new Date(`${value.slice(0, 10)}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function toIsoDate(value: Date) {
+  return value.toISOString().slice(0, 10);
+}
+
+function addDays(value: Date, days: number) {
+  const next = new Date(value);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function isCurrentAllocation(allocation: AllocationRecord) {
+  if (allocation.status !== 'active') return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const start = toDateOnly(allocation.start_date);
+  const end = toDateOnly(allocation.end_date);
+  if (!start) return false;
+  return start <= today && (!end || end >= today);
+}
+
+function effectiveAllocationStatus(allocation: AllocationRecord) {
+  if (allocation.status === 'active' && !isCurrentAllocation(allocation)) {
+    return 'completed';
+  }
+  return allocation.status;
+}
+
 function label(value: string) {
   return value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function buildAvailabilityRow(allocations: AllocationRecord[]): AllocationDisplayRow | null {
+  const currentAllocations = allocations.filter(isCurrentAllocation);
+  const activeTotal = currentAllocations.reduce(
+    (total, allocation) => total + Number(allocation.allocation_percentage || 0),
+    0
+  );
+  if (activeTotal >= 100) return null;
+
+  const endedDates = allocations
+    .filter((allocation) => allocation.status !== 'cancelled')
+    .map((allocation) => toDateOnly(allocation.end_date))
+    .filter((value): value is Date => Boolean(value))
+    .sort((a, b) => b.getTime() - a.getTime());
+  const benchStart = endedDates[0] ? addDays(endedDates[0], 1) : new Date();
+  benchStart.setHours(0, 0, 0, 0);
+  const reviewDate = addDays(benchStart, 30);
+
+  return {
+    id: 'derived-availability',
+    employee_id: allocations[0]?.employee_id || '',
+    employee_name: allocations[0]?.employee_name || null,
+    employee_email: allocations[0]?.employee_email || null,
+    project_id: null,
+    project_code: activeTotal === 0 ? 'BENCH' : 'AVAILABLE',
+    project_name: activeTotal === 0 ? 'Bench / Available' : 'Available Capacity',
+    project_location: allocations[0]?.project_location || 'Remote',
+    manager_id: currentAllocations[0]?.manager_id || allocations[0]?.manager_id || '',
+    manager_name: currentAllocations[0]?.manager_name || allocations[0]?.manager_name || 'Resource Management',
+    allocation_percentage: 100 - activeTotal,
+    allocation_role: activeTotal === 0 ? 'Bench' : 'Available capacity',
+    billing_type: 'internal',
+    status: activeTotal === 0 ? 'bench' : 'available',
+    start_date: toIsoDate(benchStart),
+    end_date: toIsoDate(reviewDate),
+    notes: 'Derived from project allocation dates',
+    isDerivedAvailability: true,
+  };
 }
 
 function initials(name: string) {
@@ -92,7 +180,8 @@ function emptyForm() {
   return {
     name: '',
     code: '',
-    client_name: '',
+    client_id: '',
+    client_name: 'Internal',
     description: '',
     start_date: '',
     end_date: '',
@@ -105,6 +194,7 @@ export function ProjectsPage() {
   const { showToast } = useToast();
   const navigate = useNavigate();
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [clientOptions, setClientOptions] = useState<ClientOption[]>([]);
   const [selectedProject, setSelectedProject] = useState<ProjectRecord | null>(null);
   const [allocations, setAllocations] = useState<AllocationRecord[]>([]);
   const [myAllocations, setMyAllocations] = useState<AllocationRecord[]>([]);
@@ -144,11 +234,41 @@ export function ProjectsPage() {
     });
     return entries;
   }, [myAllocations]);
+  const myAllocationRows = useMemo<AllocationDisplayRow[]>(() => {
+    const availabilityRow = buildAvailabilityRow(myAllocations);
+    return availabilityRow ? [...myAllocations, availabilityRow] : myAllocations;
+  }, [myAllocations]);
+  const visibleMyAllocations = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return myAllocationRows.filter((allocation) => {
+      const allocationStatus = allocation.isDerivedAvailability ? allocation.status : effectiveAllocationStatus(allocation);
+      const matchesStatus = status === 'all' || allocationStatus === status;
+      const haystack = [
+        allocation.project_code,
+        allocation.project_name,
+        allocation.manager_name,
+        allocation.project_location,
+        allocation.allocation_role,
+      ].filter(Boolean).join(' ').toLowerCase();
+      return matchesStatus && (!query || haystack.includes(query));
+    });
+  }, [myAllocationRows, search, status]);
 
   const loadProjects = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
+      if (isEmployeeAllocationsView) {
+        const allocationsRes = user?.id
+          ? await fetch(`${API_BASE}/allocations/employee/${user.id}`, { headers })
+          : await fetch(`${API_BASE}/projects/my-allocations`, { headers });
+        const allocationsPayload = await allocationsRes.json().catch(() => []);
+        if (!allocationsRes.ok) throw new Error(allocationsPayload.detail || 'Could not load your allocations.');
+        setProjects([]);
+        setMyAllocations(Array.isArray(allocationsPayload) ? allocationsPayload : []);
+        setSelectedProject(null);
+        return;
+      }
       const params = new URLSearchParams();
       if (search.trim()) params.set('search', search.trim());
       if (status !== 'all') params.set('status', status);
@@ -157,14 +277,7 @@ export function ProjectsPage() {
       if (!res.ok) throw new Error(payload.detail || 'Could not load projects.');
       const rows = payload.projects || [];
       setProjects(rows);
-      if (isEmployeeAllocationsView) {
-        const allocationsRes = await fetch(`${API_BASE}/projects/my-allocations`, { headers });
-        const allocationsPayload = await allocationsRes.json().catch(() => []);
-        if (!allocationsRes.ok) throw new Error(allocationsPayload.detail || 'Could not load your allocations.');
-        setMyAllocations(allocationsPayload);
-      } else {
-        setMyAllocations([]);
-      }
+      setMyAllocations([]);
       setSelectedProject((current) => {
         if (!current) return rows[0] || null;
         return rows.find((row: ProjectRecord) => row.id === current.id) || rows[0] || null;
@@ -190,10 +303,30 @@ export function ProjectsPage() {
     }
   }, [headers]);
 
+  const loadClientOptions = useCallback(async () => {
+    if (!isProjectAdmin) {
+      setClientOptions([]);
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/projects/client-options`, { headers });
+      const payload = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(payload.detail || 'Could not load clients.');
+      setClientOptions(Array.isArray(payload) ? payload : []);
+    } catch (err) {
+      setClientOptions([]);
+      showToast({ message: err instanceof Error ? err.message : 'Could not load clients.' });
+    }
+  }, [headers, isProjectAdmin, showToast]);
+
   useEffect(() => {
     const timeout = window.setTimeout(() => loadProjects(), 200);
     return () => window.clearTimeout(timeout);
   }, [loadProjects]);
+
+  useEffect(() => {
+    loadClientOptions();
+  }, [loadClientOptions]);
 
   useEffect(() => {
     if (selectedProject?.id) {
@@ -216,6 +349,7 @@ export function ProjectsPage() {
     setForm({
       name: project.name,
       code: project.code,
+      client_id: project.client_id || '',
       client_name: project.client_name || '',
       description: project.description || '',
       start_date: project.start_date || '',
@@ -236,7 +370,8 @@ export function ProjectsPage() {
       const body = {
         name: form.name.trim(),
         code: form.code.trim(),
-        client_name: form.client_name.trim() || null,
+        client_id: form.client_id || null,
+        client_name: form.client_id ? null : 'Internal',
         description: form.description.trim() || null,
         start_date: form.start_date || null,
         end_date: form.end_date || null,
@@ -310,10 +445,17 @@ export function ProjectsPage() {
     }
   };
 
-  const activeProjects = projects.filter((project) => project.status === 'active').length;
+  const currentMyAllocations = myAllocations.filter(isCurrentAllocation);
+  const employeeProjectCount = new Set(myAllocations.map((allocation) => allocation.project_id || allocation.project_name || allocation.id)).size;
+  const employeeActiveAllocationPercent = currentMyAllocations.reduce((sum, allocation) => sum + Number(allocation.allocation_percentage || 0), 0);
+  const employeeAvailablePercent = Math.max(0, 100 - employeeActiveAllocationPercent);
+  const activeProjects = isEmployeeAllocationsView ? new Set(currentMyAllocations.map((allocation) => allocation.project_id || allocation.project_name || allocation.id)).size : projects.filter((project) => project.status === 'active').length;
   const totalActiveAssignments = isEmployeeAllocationsView
-    ? myAllocations.length
+    ? currentMyAllocations.length
     : projects.reduce((sum, project) => sum + (project.active_allocation_count || 0), 0);
+  const statusOptions = isEmployeeAllocationsView
+    ? ['all', 'active', 'available', 'bench', 'completed', 'cancelled']
+    : STATUS_OPTIONS;
   const pageTitle = isEmployeeAllocationsView ? 'My Allocations' : 'Projects';
   const pageDescription = isEmployeeAllocationsView
     ? 'View your active project allocations and assignment details.'
@@ -323,7 +465,7 @@ export function ProjectsPage() {
     <div className="p-6 lg:p-8">
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-[#2F3437]">{pageTitle}</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-[var(--color-brand-navy)]">{pageTitle}</h1>
           <p className="mt-1 text-sm text-gray-500">{pageDescription}</p>
         </div>
         <div className="flex gap-2">
@@ -342,18 +484,28 @@ export function ProjectsPage() {
         </div>
       )}
 
-      <div className="mb-5 grid gap-4 md:grid-cols-3">
+      <div className={cn('mb-5 grid gap-4', isEmployeeAllocationsView ? 'md:grid-cols-2 xl:grid-cols-5' : 'md:grid-cols-3')}>
         <Card className="p-5">
           <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">{isEmployeeAllocationsView ? 'My Projects' : 'Total Projects'}</div>
-          <div className="mt-2 text-2xl font-bold text-[#2F3437]">{projects.length}</div>
+          <div className="mt-2 text-2xl font-bold text-[var(--color-brand-navy)]">{isEmployeeAllocationsView ? employeeProjectCount : projects.length}</div>
         </Card>
+        {isEmployeeAllocationsView && (
+          <Card className="p-5 md:col-span-2">
+            <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Allocation Mix</div>
+            <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
+              <div className="text-2xl font-bold text-[var(--color-brand-navy)]">{employeeActiveAllocationPercent}% allocated</div>
+              <div className="text-sm font-bold text-status-success">{employeeAvailablePercent}% available</div>
+            </div>
+            <AllocationMixBar allocated={employeeActiveAllocationPercent} className="mt-4" />
+          </Card>
+        )}
         <Card className="p-5">
           <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Active Projects</div>
-          <div className="mt-2 text-2xl font-bold text-[#2F3437]">{activeProjects}</div>
+          <div className="mt-2 text-2xl font-bold text-[var(--color-brand-navy)]">{activeProjects}</div>
         </Card>
         <Card className="p-5">
           <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">{isEmployeeAllocationsView ? 'Active Allocations' : 'Active Assignments'}</div>
-          <div className="mt-2 text-2xl font-bold text-[#2F3437]">{totalActiveAssignments}</div>
+          <div className="mt-2 text-2xl font-bold text-[var(--color-brand-navy)]">{totalActiveAssignments}</div>
         </Card>
       </div>
 
@@ -365,13 +517,13 @@ export function ProjectsPage() {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder={isEmployeeAllocationsView ? 'Search my allocations...' : 'Search projects, clients, or codes...'}
-              className="h-11 w-full rounded-lg border border-[#E5E7EB] bg-warm-card pl-10 pr-3 text-sm font-medium text-[#2F3437] outline-none focus:border-accent"
+              className="h-11 w-full rounded-lg border border-[var(--color-border)] bg-warm-card pl-10 pr-3 text-sm font-medium text-[var(--color-brand-navy)] outline-none focus:border-accent"
             />
           </div>
           <div className="flex items-center gap-2">
             <SlidersHorizontal size={17} className="text-gray-400" />
-            <select value={status} onChange={(event) => setStatus(event.target.value)} className="h-11 rounded-lg border border-[#E5E7EB] bg-warm-card px-3 text-sm font-semibold text-gray-600 outline-none focus:border-accent">
-              {STATUS_OPTIONS.map((option) => (
+            <select value={status} onChange={(event) => setStatus(event.target.value)} className="h-11 rounded-lg border border-[var(--color-border)] bg-warm-card px-3 text-sm font-semibold text-gray-600 outline-none focus:border-accent">
+              {statusOptions.map((option) => (
                 <option key={option} value={option}>{option === 'all' ? 'All statuses' : label(option)}</option>
               ))}
             </select>
@@ -379,6 +531,60 @@ export function ProjectsPage() {
         </div>
       </Card>
 
+      {isEmployeeAllocationsView ? (
+        <Card className="overflow-hidden">
+          {loading ? (
+            <div className="px-6 py-16 text-center text-sm text-gray-500">Loading allocations...</div>
+          ) : visibleMyAllocations.length === 0 ? (
+            <div className="px-6 py-16 text-center">
+              <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-accent-light text-accent">
+                <Briefcase size={20} />
+              </div>
+              <div className="text-[15px] font-semibold text-[var(--color-brand-navy)]">No allocations found</div>
+              <div className="mt-1 text-sm text-gray-500">You do not have allocations for the selected filters.</div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[980px] text-left">
+                <thead className="bg-warm-bg">
+                  <tr className="text-[11px] font-bold uppercase tracking-wide text-gray-400">
+                    <th className="px-5 py-3">Project Code</th>
+                    <th className="px-4 py-3">Project Name</th>
+                    <th className="px-4 py-3">Manager</th>
+                    <th className="px-4 py-3">Project Location</th>
+                    <th className="px-4 py-3">Allocation %</th>
+                    <th className="px-4 py-3">Start Date</th>
+                    <th className="px-4 py-3">End / Review Date</th>
+                    <th className="px-4 py-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--color-border)]">
+                  {visibleMyAllocations.map((allocation) => {
+                    const rowStatus = allocation.isDerivedAvailability ? allocation.status : effectiveAllocationStatus(allocation);
+                    return (
+                    <tr key={allocation.id} className="text-sm text-[var(--color-brand-navy)] hover:bg-hover-bg/60">
+                      <td className="px-5 py-4 font-bold">{allocation.project_code || '-'}</td>
+                      <td className="px-4 py-4">
+                        <div className="font-bold">{allocation.project_name || 'Assigned project'}</div>
+                        <div className="text-xs text-gray-500">{allocation.allocation_role}</div>
+                      </td>
+                      <td className="px-4 py-4 text-gray-600">{allocation.manager_name || 'Not assigned'}</td>
+                      <td className="px-4 py-4 text-gray-600">{allocation.project_location || 'Remote'}</td>
+                      <td className="px-4 py-4 font-bold">{allocation.allocation_percentage}%</td>
+                      <td className="px-4 py-4 text-gray-600">{formatDate(allocation.start_date)}</td>
+                      <td className="px-4 py-4 text-gray-600">{formatDate(allocation.end_date)}</td>
+                      <td className="px-4 py-4">
+                        <Badge variant={statusVariant[rowStatus] || 'neutral'}>{label(rowStatus)}</Badge>
+                      </td>
+                    </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      ) : (
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
         <Card className="overflow-visible">
           {loading ? (
@@ -388,7 +594,7 @@ export function ProjectsPage() {
               <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-accent-light text-accent">
                 <Briefcase size={20} />
               </div>
-              <div className="text-[15px] font-semibold text-[#2F3437]">
+              <div className="text-[15px] font-semibold text-[var(--color-brand-navy)]">
                 {isEmployeeAllocationsView ? 'No active allocations found' : 'No projects found'}
               </div>
               <div className="mt-1 text-sm text-gray-500">
@@ -420,12 +626,12 @@ export function ProjectsPage() {
                     </tr>
                   )}
                 </thead>
-                <tbody className="divide-y divide-[#E5E7EB]">
+                <tbody className="divide-y divide-[var(--color-border)]">
                   {projects.map((project) => (
                     <tr
                       key={project.id}
                       onClick={() => setSelectedProject(project)}
-                      className={cn('cursor-pointer text-sm text-[#2F3437] hover:bg-hover-bg/60', selectedProject?.id === project.id && 'bg-accent-light/50')}
+                      className={cn('cursor-pointer text-sm text-[var(--color-brand-navy)] hover:bg-hover-bg/60', selectedProject?.id === project.id && 'bg-accent-light/50')}
                     >
                       <td className="px-5 py-4">
                         <div className="font-bold">{project.name}</div>
@@ -435,7 +641,7 @@ export function ProjectsPage() {
                       {isEmployeeAllocationsView ? (
                         <>
                           <td className="px-4 py-4 text-gray-600">{allocationByProjectId.get(project.id)?.allocation_role || '-'}</td>
-                          <td className="px-4 py-4 font-bold text-[#2F3437]">{allocationByProjectId.get(project.id)?.allocation_percentage ?? 0}%</td>
+                          <td className="px-4 py-4 font-bold text-[var(--color-brand-navy)]">{allocationByProjectId.get(project.id)?.allocation_percentage ?? 0}%</td>
                           <td className="px-4 py-4 text-gray-600">{allocationByProjectId.get(project.id)?.manager_name || '-'}</td>
                           <td className="px-4 py-4 text-gray-600">
                             {formatDate(allocationByProjectId.get(project.id)?.start_date)} - {formatDate(allocationByProjectId.get(project.id)?.end_date)}
@@ -478,12 +684,12 @@ export function ProjectsPage() {
         <Card className="overflow-visible">
           {selectedProject ? (
             <>
-              <div className="border-b border-[#E5E7EB] px-5 py-4">
+              <div className="border-b border-[var(--color-border)] px-5 py-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <StatusDot color="#66785F" />
-                      <h2 className="text-base font-bold text-[#2F3437]">{selectedProject.name}</h2>
+                      <StatusDot color="var(--color-brand-orange)" />
+                      <h2 className="text-base font-bold text-[var(--color-brand-navy)]">{selectedProject.name}</h2>
                     </div>
                     <div className="mt-1 text-xs font-semibold text-gray-400">{selectedProject.code}</div>
                   </div>
@@ -493,49 +699,49 @@ export function ProjectsPage() {
               </div>
 
               <div className="grid grid-cols-2 gap-3 px-5 py-4 text-sm">
-                <div className="rounded-xl border border-[#E5E7EB] bg-warm-bg p-3">
+                <div className="rounded-xl border border-[var(--color-border)] bg-warm-bg p-3">
                   <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Client</div>
-                  <div className="mt-1 font-semibold text-[#2F3437]">{selectedProject.client_name || '-'}</div>
+                  <div className="mt-1 font-semibold text-[var(--color-brand-navy)]">{selectedProject.client_name || '-'}</div>
                 </div>
-                <div className="rounded-xl border border-[#E5E7EB] bg-warm-bg p-3">
+                <div className="rounded-xl border border-[var(--color-border)] bg-warm-bg p-3">
                   <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">
                     {isEmployeeAllocationsView ? 'My Allocation' : 'Active Assignments'}
                   </div>
-                  <div className="mt-1 font-semibold text-[#2F3437]">
+                  <div className="mt-1 font-semibold text-[var(--color-brand-navy)]">
                     {isEmployeeAllocationsView ? `${allocationByProjectId.get(selectedProject.id)?.allocation_percentage ?? 0}%` : selectedProject.active_allocation_count}
                   </div>
                 </div>
-                <div className="col-span-2 rounded-xl border border-[#E5E7EB] bg-warm-bg p-3">
+                <div className="col-span-2 rounded-xl border border-[var(--color-border)] bg-warm-bg p-3">
                   <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-gray-400">
                     <Calendar size={13} /> Timeline
                   </div>
-                  <div className="mt-1 font-semibold text-[#2F3437]">{formatDate(selectedProject.start_date)} - {formatDate(selectedProject.end_date)}</div>
+                  <div className="mt-1 font-semibold text-[var(--color-brand-navy)]">{formatDate(selectedProject.start_date)} - {formatDate(selectedProject.end_date)}</div>
                 </div>
               </div>
 
-              <div className="border-t border-[#E5E7EB] px-5 py-4">
+              <div className="border-t border-[var(--color-border)] px-5 py-4">
                 <div className="mb-3 flex items-center justify-between">
-                  <div className="text-sm font-bold text-[#2F3437]">{isEmployeeAllocationsView ? 'My Assignment' : 'Assignments'}</div>
+                  <div className="text-sm font-bold text-[var(--color-brand-navy)]">{isEmployeeAllocationsView ? 'My Assignment' : 'Assignments'}</div>
                   {canEditAllocations && <Button size="sm" variant="soft" onClick={openAssignModal} icon={<UserPlus size={13} />}>Assign</Button>}
                 </div>
                 {detailLoading ? (
                   <div className="py-8 text-center text-sm text-gray-500">Loading assignments...</div>
                 ) : allocations.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-[#DADDE2] px-4 py-8 text-center text-sm text-gray-500">No employees assigned yet.</div>
+                  <div className="rounded-xl border border-dashed border-[var(--color-border)] px-4 py-8 text-center text-sm text-gray-500">No employees assigned yet.</div>
                 ) : (
                   <div className="space-y-2">
                     {allocations.map((allocation) => (
-                      <div key={allocation.id} className="relative flex items-center gap-3 rounded-xl border border-[#E5E7EB] bg-warm-card px-3 py-3">
+                      <div key={allocation.id} className="relative flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-warm-card px-3 py-3">
                         <Avatar initials={initials(allocation.employee_name || allocation.employee_email || 'Employee')} size="sm" />
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-bold text-[#2F3437]">{allocation.employee_name || allocation.employee_email}</div>
+                          <div className="truncate text-sm font-bold text-[var(--color-brand-navy)]">{allocation.employee_name || allocation.employee_email}</div>
                           <div className="mt-0.5 truncate text-[11px] font-medium text-gray-400">
                             {formatDate(allocation.start_date)} - {formatDate(allocation.end_date)}
                           </div>
                           <div className="truncate text-xs text-gray-500">{allocation.allocation_role} · {allocation.manager_name || 'No manager'}</div>
                         </div>
                         <div className="text-right">
-                          <div className="text-sm font-bold text-[#2F3437]">{allocation.allocation_percentage}%</div>
+                          <div className="text-sm font-bold text-[var(--color-brand-navy)]">{allocation.allocation_percentage}%</div>
                           <Badge variant={statusVariant[allocation.status] || 'neutral'}>{allocation.status}</Badge>
                         </div>
                         {canEditAllocations && (
@@ -543,23 +749,23 @@ export function ProjectsPage() {
                             <button
                               type="button"
                               onClick={() => setOpenAllocationMenu((current) => current === allocation.id ? '' : allocation.id)}
-                              className="rounded-lg p-2 text-gray-400 hover:bg-hover-bg hover:text-[#2F3437]"
+                              className="rounded-lg p-2 text-gray-400 hover:bg-hover-bg hover:text-[var(--color-brand-navy)]"
                               aria-label="Open assignment actions"
                             >
                               <MoreVertical size={16} />
                             </button>
                             {openAllocationMenu === allocation.id && (
-                              <div className="absolute right-0 top-9 z-20 w-52 overflow-hidden rounded-xl border border-[#E5E7EB] bg-white py-1 shadow-[0_18px_45px_rgba(15,23,42,0.16)]">
-                                <button className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-[#2F3437] hover:bg-hover-bg" onClick={() => openAllocationModal(allocation, 'edit')}>
+                              <div className="absolute right-0 top-9 z-20 w-52 overflow-hidden rounded-xl border border-[var(--color-border)] bg-white py-1 shadow-[0_18px_45px_rgba(15,23,42,0.16)]">
+                                <button className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-[var(--color-brand-navy)] hover:bg-hover-bg" onClick={() => openAllocationModal(allocation, 'edit')}>
                                   <Edit3 size={14} /> Edit Allocation
                                 </button>
-                                <button className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-[#2F3437] hover:bg-hover-bg" onClick={() => openAllocationModal(allocation, 'change')}>
+                                <button className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-[var(--color-brand-navy)] hover:bg-hover-bg" onClick={() => openAllocationModal(allocation, 'change')}>
                                   <ArrowRightLeft size={14} /> Change Project
                                 </button>
-                                <button className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-[#2F3437] hover:bg-hover-bg" onClick={() => openAllocationModal(allocation, 'extend')}>
+                                <button className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-[var(--color-brand-navy)] hover:bg-hover-bg" onClick={() => openAllocationModal(allocation, 'extend')}>
                                   <CalendarPlus size={14} /> Extend Assignment
                                 </button>
-                                <button className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-[#2F3437] hover:bg-hover-bg" onClick={() => { setOpenAllocationMenu(''); setConfirmAllocationAction({ type: 'end', allocation }); }}>
+                                <button className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-[var(--color-brand-navy)] hover:bg-hover-bg" onClick={() => { setOpenAllocationMenu(''); setConfirmAllocationAction({ type: 'end', allocation }); }}>
                                   <UserMinus size={14} /> End Assignment
                                 </button>
                                 <button className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-status-error hover:bg-status-error/[0.06]" onClick={() => { setOpenAllocationMenu(''); setConfirmAllocationAction({ type: 'remove', allocation }); }}>
@@ -580,44 +786,59 @@ export function ProjectsPage() {
           )}
         </Card>
       </div>
+      )}
 
       {formOpen && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#111827]/35 px-4 py-8 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[var(--color-brand-navy)]/35 px-4 py-8 backdrop-blur-sm">
           <Card className="w-full max-w-2xl overflow-hidden shadow-[0_24px_70px_rgba(15,23,42,0.25)]">
-            <div className="border-b border-[#E5E7EB] px-6 py-5">
-              <h2 className="text-lg font-bold text-[#2F3437]">{editingProject ? 'Edit Project' : 'Add Project'}</h2>
+            <div className="border-b border-[var(--color-border)] px-6 py-5">
+              <h2 className="text-lg font-bold text-[var(--color-brand-navy)]">{editingProject ? 'Edit Project' : 'Add Project'}</h2>
               <p className="mt-1 text-sm text-gray-500">Project information used for allocation and timesheets.</p>
             </div>
             <div className="grid max-h-[70vh] gap-4 overflow-y-auto px-6 py-5 md:grid-cols-2">
               <label className="space-y-1.5">
                 <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Project Name</span>
-                <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="h-11 w-full rounded-lg border border-[#E5E7EB] bg-warm-card px-3 text-sm font-medium outline-none focus:border-accent" />
+                <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="h-11 w-full rounded-lg border border-[var(--color-border)] bg-warm-card px-3 text-sm font-medium outline-none focus:border-accent" />
               </label>
               <label className="space-y-1.5">
                 <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Code</span>
-                <input value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} className="h-11 w-full rounded-lg border border-[#E5E7EB] bg-warm-card px-3 text-sm font-medium uppercase outline-none focus:border-accent" />
+                <input value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} className="h-11 w-full rounded-lg border border-[var(--color-border)] bg-warm-card px-3 text-sm font-medium uppercase outline-none focus:border-accent" />
               </label>
               <label className="space-y-1.5">
                 <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Client</span>
-                <input value={form.client_name} onChange={(event) => setForm({ ...form, client_name: event.target.value })} className="h-11 w-full rounded-lg border border-[#E5E7EB] bg-warm-card px-3 text-sm font-medium outline-none focus:border-accent" />
+                <select
+                  value={form.client_id}
+                  onChange={(event) => {
+                    const clientId = event.target.value;
+                    const selectedClient = clientOptions.find((client) => client.id === clientId);
+                    setForm({ ...form, client_id: clientId, client_name: selectedClient?.client_name || 'Internal' });
+                  }}
+                  className="h-11 w-full rounded-lg border border-[var(--color-border)] bg-warm-card px-3 text-sm font-medium outline-none focus:border-accent"
+                >
+                  <option value="">Internal project</option>
+                  {clientOptions.map((client) => (
+                    <option key={client.id} value={client.id}>{client.client_name} ({label(client.status)})</option>
+                  ))}
+                </select>
+                {clientOptions.length === 0 && <span className="block text-xs text-gray-400">Add external clients in Client Onboarding first.</span>}
               </label>
               <label className="space-y-1.5">
                 <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Status</span>
-                <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })} className="h-11 w-full rounded-lg border border-[#E5E7EB] bg-warm-card px-3 text-sm font-medium outline-none focus:border-accent">
+                <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })} className="h-11 w-full rounded-lg border border-[var(--color-border)] bg-warm-card px-3 text-sm font-medium outline-none focus:border-accent">
                   {STATUS_OPTIONS.filter((option) => option !== 'all').map((option) => <option key={option} value={option}>{label(option)}</option>)}
                 </select>
               </label>
               <label className="space-y-1.5">
                 <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Start Date</span>
-                <input type="date" value={form.start_date} onChange={(event) => setForm({ ...form, start_date: event.target.value })} className="h-11 w-full rounded-lg border border-[#E5E7EB] bg-warm-card px-3 text-sm font-medium outline-none focus:border-accent" />
+                <input type="date" value={form.start_date} onChange={(event) => setForm({ ...form, start_date: event.target.value })} className="h-11 w-full rounded-lg border border-[var(--color-border)] bg-warm-card px-3 text-sm font-medium outline-none focus:border-accent" />
               </label>
               <label className="space-y-1.5">
                 <span className="text-xs font-bold uppercase tracking-wide text-gray-500">End Date</span>
-                <input type="date" value={form.end_date} onChange={(event) => setForm({ ...form, end_date: event.target.value })} className="h-11 w-full rounded-lg border border-[#E5E7EB] bg-warm-card px-3 text-sm font-medium outline-none focus:border-accent" />
+                <input type="date" value={form.end_date} onChange={(event) => setForm({ ...form, end_date: event.target.value })} className="h-11 w-full rounded-lg border border-[var(--color-border)] bg-warm-card px-3 text-sm font-medium outline-none focus:border-accent" />
               </label>
               <label className="space-y-1.5 md:col-span-2">
                 <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Description</span>
-                <textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} className="min-h-[92px] w-full rounded-lg border border-[#E5E7EB] bg-warm-card px-3 py-3 text-sm font-medium outline-none focus:border-accent" />
+                <textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} className="min-h-[92px] w-full rounded-lg border border-[var(--color-border)] bg-warm-card px-3 py-3 text-sm font-medium outline-none focus:border-accent" />
               </label>
             </div>
             {error && (
@@ -625,7 +846,7 @@ export function ProjectsPage() {
                 {error}
               </div>
             )}
-            <div className="flex justify-end gap-3 border-t border-[#E5E7EB] px-6 py-4">
+            <div className="flex justify-end gap-3 border-t border-[var(--color-border)] px-6 py-4">
               <Button variant="ghost" onClick={() => { setFormOpen(false); setError(''); }} disabled={saving}>Cancel</Button>
               <Button onClick={submitProject} disabled={saving}>{saving ? 'Saving...' : 'Save Project'}</Button>
             </div>
@@ -654,10 +875,10 @@ export function ProjectsPage() {
       />
 
       {confirmAllocationAction && (
-        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-[#111827]/45 px-4 py-8 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-[var(--color-brand-navy)]/45 px-4 py-8 backdrop-blur-sm">
           <Card className="w-full max-w-md overflow-hidden shadow-[0_24px_80px_rgba(15,23,42,0.28)]">
-            <div className="border-b border-[#E5E7EB] px-6 py-5">
-              <h2 className="text-lg font-bold text-[#2F3437]">
+            <div className="border-b border-[var(--color-border)] px-6 py-5">
+              <h2 className="text-lg font-bold text-[var(--color-brand-navy)]">
                 {confirmAllocationAction.type === 'remove' ? 'Remove Assignment' : 'End Assignment'}
               </h2>
               <p className="mt-1 text-sm leading-6 text-gray-500">
@@ -667,8 +888,8 @@ export function ProjectsPage() {
               </p>
             </div>
             <div className="px-6 py-5">
-              <div className="rounded-xl border border-[#E5E7EB] bg-warm-bg p-4">
-                <div className="text-sm font-bold text-[#2F3437]">
+              <div className="rounded-xl border border-[var(--color-border)] bg-warm-bg p-4">
+                <div className="text-sm font-bold text-[var(--color-brand-navy)]">
                   {confirmAllocationAction.allocation.employee_name || confirmAllocationAction.allocation.employee_email}
                 </div>
                 <div className="mt-1 text-sm text-gray-600">
@@ -679,7 +900,7 @@ export function ProjectsPage() {
                 </div>
               </div>
             </div>
-            <div className="flex justify-end gap-3 border-t border-[#E5E7EB] px-6 py-4">
+            <div className="flex justify-end gap-3 border-t border-[var(--color-border)] px-6 py-4">
               <Button
                 variant="ghost"
                 onClick={() => setConfirmAllocationAction(null)}
