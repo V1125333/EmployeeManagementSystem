@@ -48,6 +48,7 @@ from app.models import (
     AuditLog,
     EmployeeRequest, RequestAttachment, RequestComment, RequestStatusHistory,
     EmailOutbox, AccountActivationToken, SecurityRateLimit,
+    EmployeeDocument,
 )
 from app.services.auth_service import hash_password
 from app.services.allocation_service import ensure_allocation_ending_notifications
@@ -73,6 +74,7 @@ from app.api.staffing_requests import router as staffing_requests_router
 from app.api.admin_security import router as admin_security_router
 from app.api.requests import router as requests_router
 from app.api.holidays import router as holidays_router
+from app.api.documents import router as documents_router
 
 _log_level = logging.DEBUG if os.getenv("APP_ENV", "development") == "development" else logging.INFO
 logging.basicConfig(
@@ -161,27 +163,61 @@ def seed_leave_types(db):
 
 
 def seed_company_holidays(db):
-    """Seed region-aware company holidays if missing."""
+    """Upsert the 2026 regional public calendar and company holidays."""
     holidays = [
-        ("New Year's Day", date(2026, 1, 1), "public", "all"),
-        ("Independence Day", date(2026, 7, 4), "public", "US"),
-        ("Thanksgiving", date(2026, 11, 26), "public", "US"),
-        ("Christmas Day", date(2026, 12, 25), "public", "all"),
+        # U.S. Office of Personnel Management — 2026 federal holiday schedule.
+        ("New Year's Day", date(2026, 1, 1), "public", "US"),
+        ("Birthday of Martin Luther King, Jr.", date(2026, 1, 19), "public", "US"),
+        ("Washington's Birthday", date(2026, 2, 16), "public", "US"),
+        ("Memorial Day", date(2026, 5, 25), "public", "US"),
+        ("Juneteenth National Independence Day", date(2026, 6, 19), "public", "US"),
+        ("Independence Day", date(2026, 7, 3), "public", "US"),
+        ("Labor Day", date(2026, 9, 7), "public", "US"),
+        ("Columbus Day", date(2026, 10, 12), "public", "US"),
+        ("Veterans Day", date(2026, 11, 11), "public", "US"),
+        ("Thanksgiving Day", date(2026, 11, 26), "public", "US"),
+        # India central gazetted holidays for 2026.
         ("Republic Day", date(2026, 1, 26), "public", "IN"),
-        ("Holi", date(2026, 3, 25), "public", "IN"),
-        ("Diwali", date(2026, 11, 8), "floating", "IN"),
-        ("Dussehra", date(2026, 10, 28), "optional", "IN"),
+        ("Holi", date(2026, 3, 4), "public", "IN"),
+        ("Id-ul-Fitr", date(2026, 3, 21), "public", "IN"),
+        ("Ram Navami", date(2026, 3, 26), "public", "IN"),
+        ("Mahavir Jayanti", date(2026, 3, 31), "public", "IN"),
+        ("Good Friday", date(2026, 4, 3), "public", "IN"),
+        ("Buddha Purnima", date(2026, 5, 1), "public", "IN"),
+        ("Id-ul-Zuha (Bakrid)", date(2026, 5, 27), "public", "IN"),
+        ("Muharram", date(2026, 6, 26), "public", "IN"),
+        ("Independence Day", date(2026, 8, 15), "public", "IN"),
+        ("Milad-un-Nabi / Id-e-Milad", date(2026, 8, 26), "public", "IN"),
+        ("Janmashtami", date(2026, 9, 4), "public", "IN"),
+        ("Mahatma Gandhi's Birthday", date(2026, 10, 2), "public", "IN"),
+        ("Dussehra", date(2026, 10, 20), "public", "IN"),
+        ("Diwali (Deepavali)", date(2026, 11, 8), "public", "IN"),
+        ("Guru Nanak's Birthday", date(2026, 11, 24), "public", "IN"),
+        ("Christmas Day", date(2026, 12, 25), "public", "IN,US"),
+        # A future restricted holiday remains available for employee selection.
+        ("Ganesh Chaturthi", date(2026, 9, 14), "optional", "IN"),
         ("UAE National Day", date(2026, 12, 2), "public", "AE"),
         ("Eid Al Fitr", date(2026, 3, 31), "floating", "AE"),
         ("Company Foundation Day", date(2026, 9, 15), "company", "all"),
     ]
     created = 0
+    updated = 0
     for name, holiday_date, holiday_type, regions in holidays:
         existing = db.query(CompanyHoliday).filter(
             CompanyHoliday.name == name,
-            CompanyHoliday.holiday_date == holiday_date,
+            CompanyHoliday.regions == regions,
         ).first()
+        if not existing:
+            candidates = db.query(CompanyHoliday).filter(CompanyHoliday.name == name).all()
+            if len(candidates) == 1 and candidates[0].regions.lower() == "all":
+                existing = candidates[0]
         if existing:
+            if existing.holiday_date != holiday_date or existing.holiday_type != holiday_type or existing.regions != regions:
+                existing.holiday_date = holiday_date
+                existing.holiday_type = holiday_type
+                existing.regions = regions
+                existing.is_active = True
+                updated += 1
             continue
         db.add(CompanyHoliday(
             name=name,
@@ -190,9 +226,19 @@ def seed_company_holidays(db):
             regions=regions,
         ))
         created += 1
+    # Retire renamed demo rows so they cannot appear beside the authoritative entries.
+    for legacy_name, legacy_region in [("Thanksgiving", "US"), ("Diwali", "IN")]:
+        legacy_rows = db.query(CompanyHoliday).filter(
+            CompanyHoliday.name == legacy_name,
+            CompanyHoliday.regions == legacy_region,
+            CompanyHoliday.is_active == True,
+        ).all()
+        for legacy in legacy_rows:
+            legacy.is_active = False
+            updated += 1
     db.commit()
-    if created:
-        logger.info(f"Seeded {created} company holidays")
+    if created or updated:
+        logger.info(f"Holiday calendar synchronized: {created} created, {updated} updated")
 
 
 def seed_default_channels(db):
@@ -319,6 +365,7 @@ app.include_router(staffing_requests_router, prefix="/api/v1")
 app.include_router(admin_security_router, prefix="/api/v1")
 app.include_router(requests_router, prefix="/api/v1")
 app.include_router(holidays_router, prefix="/api/v1")
+app.include_router(documents_router, prefix="/api/v1")
 
 
 

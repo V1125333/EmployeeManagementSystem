@@ -79,3 +79,6 @@ from app.models.requests import EmployeeRequest, RequestAttachment, RequestComme
 
 # Transactional email delivery and security tokens/rate limits
 from app.models.transactional_email import EmailOutbox, AccountActivationToken, SecurityRateLimit
+
+# Employee and shared company file browser
+from app.models.documents import EmployeeDocument

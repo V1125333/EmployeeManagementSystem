@@ -27,6 +27,7 @@ import { ProjectDetailPage } from '@/pages/ProjectDetailPage';
 import { ProjectsPage } from '@/pages/ProjectsPage';
 import { AskOrbitAIPage } from '@/pages/AskOrbitAIPage';
 import { AuthCallbackPage } from '@/pages/AuthCallbackPage';
+import { EmployeeDocumentsPage } from '@/pages/EmployeeDocumentsPage';
 import {
   OnboardingPage,
   ClientOnboardingPage,
@@ -42,7 +43,6 @@ import {
   CheckInOutPage,
   CompanyHandbookPage,
   EmployeeDashboardPage,
-  EmployeeDocumentsPage,
   EmployeeNotificationsPage,
   HolidaysPage,
   LeaveApprovalsPage,

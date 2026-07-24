@@ -8,7 +8,7 @@ import {
   BookOpen,
   CalendarCheck, CalendarClock, CalendarPlus, CheckCircle2, ChevronDown, ClipboardCheck,
   Clock3, Copy, Download, FileText, FolderKanban, LogIn, Pencil, Plus,
-  RefreshCw, Send, Trash2, Upload, UsersRound, WalletCards, X,
+  Grid2X2, List, MapPin, RefreshCw, Send, Trash2, Upload, UsersRound, WalletCards, X,
 } from 'lucide-react';
 import { Badge, Button, Card, CardHeader } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
@@ -668,10 +668,10 @@ function PageShell({
 }
 
 const HOLIDAY_REGIONS = [
-  { code: 'all', label: 'All' },
-  { code: 'IN', label: 'India' },
-  { code: 'AE', label: 'UAE' },
-  { code: 'US', label: 'United States' },
+  { code: 'all', label: 'All', short: '🌐' },
+  { code: 'IN', label: 'India', short: 'IN' },
+  { code: 'US', label: 'United States', short: 'US' },
+  { code: 'AE', label: 'UAE', short: 'AE' },
 ] as const;
 
 function holidayRegionLabel(regions: string) {
@@ -683,14 +683,30 @@ function holidayRegionLabel(regions: string) {
   return regions;
 }
 
-function holidayTypeVariant(type: string): 'olive' | 'warning' | 'neutral' {
-  if (type === 'company') return 'olive';
-  if (type === 'floating') return 'warning';
-  return 'neutral';
+function holidayTypeLabel(type: string) {
+  if (type === 'floating' || type === 'optional') return 'Optional';
+  return type.charAt(0).toUpperCase() + type.slice(1);
 }
 
-function holidayTypeLabel(type: string) {
-  return type.charAt(0).toUpperCase() + type.slice(1);
+function holidayRegions(regions: string) {
+  return regions.toUpperCase().split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+function holidayVisibleInRegion(holiday: HolidayItem, region: 'all' | 'IN' | 'AE' | 'US') {
+  if (region === 'all') return true;
+  const regions = holidayRegions(holiday.regions);
+  return regions.includes('ALL') || regions.includes(region);
+}
+
+function isLongWeekend(holiday: HolidayItem) {
+  const day = new Date(`${holiday.holiday_date}T00:00:00`).getDay();
+  return day === 1 || day === 5;
+}
+
+function holidayTone(type: string) {
+  if (type === 'company') return 'bg-[#fff2d8] text-[#bd7800]';
+  if (type === 'floating' || type === 'optional') return 'bg-[#f0e7fb] text-[#8c5ac7]';
+  return 'bg-[#e9eff7] text-[#426a9b]';
 }
 
 function HolidayCalendarContent({
@@ -699,9 +715,13 @@ function HolidayCalendarContent({
   headers: Record<string, string>;
 }) {
   const [holidays, setHolidays] = useState<HolidayItem[]>([]);
+  const [optionalHolidays, setOptionalHolidays] = useState<HolidayItem[]>([]);
   const [loadingHolidays, setLoadingHolidays] = useState(false);
   const [holidayError, setHolidayError] = useState<string | null>(null);
   const [holidayRegionFilter, setHolidayRegionFilter] = useState<'all' | 'IN' | 'AE' | 'US'>('all');
+  const [holidayView, setHolidayView] = useState<'list' | 'grid'>('list');
+  const [holidayYear, setHolidayYear] = useState(new Date().getFullYear());
+  const navigate = useNavigate();
 
   useEffect(() => {
     let cancelled = false;
@@ -709,13 +729,22 @@ function HolidayCalendarContent({
       setLoadingHolidays(true);
       setHolidayError(null);
       try {
-        const today = toDateInput(new Date());
-        const nextYear = toDateInput(addDays(new Date(`${today}T00:00:00`), 365));
-        const params = new URLSearchParams({ from_date: today, to_date: nextYear });
-        const res = await fetch(`${API_BASE}/holidays?${params.toString()}`, { headers });
-        const data = await res.json().catch(() => null);
-        if (!res.ok) throw new Error(data?.detail || 'Could not load holidays.');
-        if (!cancelled) setHolidays(data.holidays || []);
+        const params = new URLSearchParams({
+          region: 'ALL',
+          from_date: `${holidayYear}-01-01`,
+          to_date: `${holidayYear}-12-31`,
+        });
+        const [calendarRes, optionalRes] = await Promise.all([
+          fetch(`${API_BASE}/holidays?${params.toString()}`, { headers }),
+          fetch(`${API_BASE}/holidays/available-floating`, { headers }),
+        ]);
+        const calendarData = await calendarRes.json().catch(() => null);
+        const optionalData = await optionalRes.json().catch(() => null);
+        if (!calendarRes.ok) throw new Error(calendarData?.detail || 'Could not load holidays.');
+        if (!cancelled) {
+          setHolidays(calendarData.holidays || []);
+          setOptionalHolidays(optionalRes.ok ? (optionalData?.holidays || []) : []);
+        }
       } catch (err) {
         if (!cancelled) setHolidayError(err instanceof Error ? err.message : 'Could not load holidays.');
       } finally {
@@ -724,12 +753,10 @@ function HolidayCalendarContent({
     };
     loadHolidays();
     return () => { cancelled = true; };
-  }, [headers]);
+  }, [headers, holidayYear]);
 
   const filteredHolidays = useMemo(() => holidays.filter((holiday) => {
-    if (holidayRegionFilter === 'all') return true;
-    const regions = holiday.regions.toUpperCase().split(',').map((item) => item.trim());
-    return regions.includes('ALL') || regions.includes(holidayRegionFilter);
+    return holidayVisibleInRegion(holiday, holidayRegionFilter);
   }), [holidayRegionFilter, holidays]);
 
   const holidaysByMonth = useMemo(() => {
@@ -741,59 +768,100 @@ function HolidayCalendarContent({
     return Array.from(grouped.entries());
   }, [filteredHolidays]);
 
+  const regionCounts = useMemo(() => Object.fromEntries(HOLIDAY_REGIONS.map((region) => [
+    region.code,
+    holidays.filter((holiday) => holidayVisibleInRegion(holiday, region.code)).length,
+  ])), [holidays]);
+
+  const todayKey = toDateInput(new Date());
+  const upcoming = filteredHolidays.filter((holiday) => holiday.holiday_date >= todayKey);
+  const nextHoliday = upcoming[0] || filteredHolidays[0] || null;
+  const daysUntilNext = nextHoliday
+    ? Math.max(0, Math.ceil((new Date(`${nextHoliday.holiday_date}T00:00:00`).getTime() - new Date(`${todayKey}T00:00:00`).getTime()) / 86400000))
+    : 0;
+  const optionalForYear = optionalHolidays.filter((holiday) => holiday.holiday_date.startsWith(`${holidayYear}-`));
+  const monthCards = useMemo(() => Array.from({ length: 12 }, (_, monthIndex) => {
+    const monthDate = new Date(holidayYear, monthIndex, 1);
+    const firstDay = monthDate.getDay();
+    const days = new Date(holidayYear, monthIndex + 1, 0).getDate();
+    const byDate = new Map(filteredHolidays
+      .filter((holiday) => new Date(`${holiday.holiday_date}T00:00:00`).getMonth() === monthIndex)
+      .map((holiday) => [Number(holiday.holiday_date.slice(-2)), holiday]));
+    return { monthIndex, monthDate, firstDay, days, byDate };
+  }), [filteredHolidays, holidayYear]);
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-2">
-        {HOLIDAY_REGIONS.map((region) => (
-          <button
-            key={region.code}
-            onClick={() => setHolidayRegionFilter(region.code)}
-            className={cn(
-              'rounded-btn border px-3 py-2 text-sm font-semibold transition-colors',
-              holidayRegionFilter === region.code
-                ? 'border-accent bg-accent text-white'
-                : 'border-[var(--color-border)] bg-white text-gray-600 hover:border-accent/30 hover:text-accent'
-            )}
-          >
-            {region.label}
-          </button>
-        ))}
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-3">
+          {HOLIDAY_REGIONS.map((region) => (
+            <button key={region.code} type="button" onClick={() => setHolidayRegionFilter(region.code)} className={cn(
+              'rounded-xl border px-4 py-2.5 text-sm font-bold transition-all',
+              holidayRegionFilter === region.code ? 'border-[#d97a34] bg-[#d97a34] text-white shadow-[0_4px_12px_rgba(217,122,52,.2)]' : 'border-[#ece5d8] bg-white text-[#1f2430] hover:border-[#d97a34]'
+            )}>
+              <span className="mr-2 text-xs">{region.short}</span>{region.label}
+              <span className={cn('ml-2 text-xs', holidayRegionFilter === region.code ? 'text-white/80' : 'text-[#a99e8a]')}>{regionCounts[region.code] || 0}</span>
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-3">
+          <select aria-label="Holiday year" value={holidayYear} onChange={(event) => setHolidayYear(Number(event.target.value))} className="rounded-xl border border-[#ece5d8] bg-white px-4 py-2.5 text-sm font-bold text-[#1f2430] outline-none focus:border-[#d97a34]">
+            {[holidayYear - 1, holidayYear, holidayYear + 1].map((year) => <option key={year}>{year}</option>)}
+          </select>
+          <div className="flex rounded-xl border border-[#ece5d8] bg-white p-1">
+            <button type="button" onClick={() => setHolidayView('list')} className={cn('flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold', holidayView === 'list' ? 'bg-[#1f2430] text-white' : 'text-[#7a7263]')}><List size={15} /> List</button>
+            <button type="button" onClick={() => setHolidayView('grid')} className={cn('flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold', holidayView === 'grid' ? 'bg-[#1f2430] text-white' : 'text-[#7a7263]')}><Grid2X2 size={15} /> Month grid</button>
+          </div>
+        </div>
       </div>
       {holidayError && (
         <div className="rounded-lg border border-status-error/20 bg-status-error/10 px-4 py-3 text-sm text-status-error">
           {holidayError}
         </div>
       )}
-      <Card className="overflow-hidden">
-        <CardHeader title="Upcoming Holidays" icon={<CalendarCheck size={17} />} />
-        {loadingHolidays ? (
-          <div className="px-5 py-8 text-sm text-gray-500">Loading holidays...</div>
-        ) : holidaysByMonth.length === 0 ? (
-          <div className="px-5 py-8 text-sm text-gray-500">No upcoming holidays for this region.</div>
-        ) : (
-          <div className="divide-y divide-[var(--color-border)]">
-            {holidaysByMonth.map(([month, monthHolidays]) => (
-              <div key={month} className="px-5 py-4">
-                <div className="mb-3 text-xs font-bold uppercase tracking-wide text-gray-400">{month}</div>
-                <div className="space-y-2">
-                  {monthHolidays.map((holiday) => (
-                    <div key={holiday.id} className="grid gap-3 rounded-lg border border-[var(--color-border)] bg-white px-4 py-3 text-sm md:grid-cols-[90px_1fr_140px_110px] md:items-center">
-                      <div className="font-bold text-[var(--color-brand-navy)]">
-                        {new Date(`${holiday.holiday_date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      </div>
-                      <div className="font-semibold text-[var(--color-brand-navy)]">{holiday.name}</div>
-                      <div className="text-gray-500">{holidayRegionLabel(holiday.regions)}</div>
-                      <div className="md:text-right">
-                        <Badge variant={holidayTypeVariant(holiday.holiday_type)}>{holidayTypeLabel(holiday.holiday_type)}</Badge>
-                      </div>
-                    </div>
-                  ))}
+      {loadingHolidays ? <div className="rounded-2xl border border-[#ece5d8] bg-white p-10 text-sm text-[#8a8371]">Loading holiday calendar...</div> : holidayView === 'list' ? (
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,.9fr)]">
+          <div className="space-y-5">
+            {holidaysByMonth.length === 0 ? <div className="rounded-2xl border border-[#ece5d8] bg-white p-10 text-center text-sm text-[#8a8371]">No holidays found for this region and year.</div> : holidaysByMonth.map(([month, monthHolidays]) => (
+              <section key={month}>
+                <h2 className="mb-2 px-0.5 text-[11px] font-bold uppercase tracking-[.08em] text-[#a99e8a]">{month}</h2>
+                <div className="overflow-hidden rounded-2xl border border-[#ece5d8] bg-white">
+                  {monthHolidays.map((holiday, index) => {
+                    const holidayDate = new Date(`${holiday.holiday_date}T00:00:00`);
+                    return <div key={holiday.id} className={cn('grid grid-cols-[70px_1px_minmax(0,1fr)_auto] items-center gap-5 px-6 py-4', index > 0 && 'border-t border-[#f4eee2]')}>
+                      <div className="text-center"><div className="text-2xl font-bold text-[#1f2430]">{holidayDate.getDate().toString().padStart(2, '0')}</div><div className="text-xs text-[#a99e8a]">{holidayDate.toLocaleDateString('en-US', { weekday: 'short' })}</div></div>
+                      <div className="h-12 bg-[#ece5d8]" />
+                      <div className="min-w-0"><div className="truncate text-[15px] font-bold text-[#1f2430]">{holiday.name}</div><div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#a99e8a]"><span><MapPin size={11} className="mr-1 inline" />{holidayRegionLabel(holiday.regions)}</span>{isLongWeekend(holiday) && <><span>·</span><span>Long weekend</span></>}</div></div>
+                      <span className={cn('rounded-full px-3 py-1 text-[11px] font-bold', holidayTone(holiday.holiday_type))}>{holidayTypeLabel(holiday.holiday_type)}</span>
+                    </div>;
+                  })}
                 </div>
-              </div>
+              </section>
             ))}
           </div>
-        )}
-      </Card>
+          <aside className="space-y-5">
+            <div className="rounded-[20px] bg-[#354052] p-7 text-white shadow-[0_12px_28px_rgba(31,36,48,.14)]">
+              <div className="text-[11px] font-bold uppercase tracking-[.08em] text-white/70">Next holiday</div>
+              {nextHoliday ? <><div className="mt-3 text-2xl font-bold">{nextHoliday.name}</div><div className="mt-1 text-sm text-white/75">{holidayRegionLabel(nextHoliday.regions)} · {new Date(`${nextHoliday.holiday_date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</div><div className="my-6 h-px bg-white/15" /><div><span className="text-4xl font-bold text-[#f1a05b]">{daysUntilNext}</span><span className="ml-2 text-sm text-white/75">days away</span></div></> : <div className="mt-4 text-sm text-white/70">No remaining holidays in this view.</div>}
+            </div>
+            <div className="rounded-2xl border border-[#ece5d8] bg-white p-6">
+              <h3 className="text-base font-bold text-[#1f2430]">{holidayYear} at a glance</h3>
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                {[['Total holidays', filteredHolidays.length, '#1f2430'], ['Still upcoming', upcoming.length, '#d97a34'], ['Long weekends', filteredHolidays.filter(isLongWeekend).length, '#3f9b52'], ['Optional listed', filteredHolidays.filter((item) => ['floating', 'optional'].includes(item.holiday_type)).length, '#bd7800']].map(([label, value, color]) => <div key={String(label)} className="rounded-xl border border-[#eee3d3] bg-[#fdfbf7] p-4"><div className="text-2xl font-bold" style={{ color: String(color) }}>{value}</div><div className="mt-1 text-xs text-[#8a8371]">{label}</div></div>)}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-[#ece5d8] bg-white p-6">
+              <div className="flex items-center justify-between"><h3 className="text-base font-bold text-[#1f2430]">Optional holidays</h3><span className="rounded-full bg-[#fff2d8] px-2.5 py-1 text-[10px] font-bold text-[#bd7800]">Request through leave</span></div>
+              <p className="mt-1 text-xs leading-5 text-[#8a8371]">Availability follows your work region and company leave policy.</p>
+              <div className="mt-4 space-y-2">{optionalForYear.length ? optionalForYear.map((holiday) => <button key={holiday.id} type="button" onClick={() => navigate('/employee/apply-leave')} className="flex w-full items-center justify-between rounded-xl border border-[#ece5d8] bg-[#fdfbf7] px-4 py-3 text-left hover:border-[#d97a34]"><span><span className="block text-sm font-bold text-[#1f2430]">{holiday.name}</span><span className="text-xs text-[#a99e8a]">{formatDate(holiday.holiday_date)} · {holidayRegionLabel(holiday.regions)}</span></span><ArrowRight size={15} className="text-[#d97a34]" /></button>) : <div className="rounded-xl border border-dashed border-[#e3d7c5] p-4 text-xs text-[#8a8371]">No optional holidays currently available for your region.</div>}</div>
+            </div>
+          </aside>
+        </div>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {monthCards.map(({ monthIndex, monthDate, firstDay, days, byDate }) => <div key={monthIndex} className="rounded-2xl border border-[#ece5d8] bg-white p-5"><h3 className="mb-4 text-base font-bold text-[#1f2430]">{monthDate.toLocaleDateString('en-US', { month: 'long' })}</h3><div className="grid grid-cols-7 gap-1 text-center">{['S','M','T','W','T','F','S'].map((day, index) => <div key={`${day}-${index}`} className="pb-2 text-[10px] font-bold text-[#a99e8a]">{day}</div>)}{Array.from({ length: firstDay }).map((_, index) => <div key={`blank-${index}`} />)}{Array.from({ length: days }, (_, index) => { const day = index + 1; const holiday = byDate.get(day); return <div key={day} title={holiday?.name} className={cn('flex aspect-square items-center justify-center rounded-lg text-xs', holiday ? 'bg-[#fbeee1] font-bold text-[#b8611f] ring-1 ring-[#e7a06b]' : 'text-[#5f5a50]')}>{day}</div>; })}</div></div>)}
+        </div>
+      )}
     </div>
   );
 }
@@ -3826,11 +3894,13 @@ export function HolidaysPage() {
     'x-user-email': user?.email || '',
   }), [user]);
 
-  return (
-    <PageShell title="Holiday Calendar" description="View company holidays and optional holiday options.">
-      <HolidayCalendarContent headers={headers} />
-    </PageShell>
-  );
+  return <div className="-mx-[var(--layout-main-padding-x)] -my-[var(--layout-main-padding-y)] min-h-[calc(100vh-3.5rem)] bg-[#f7f3ec] px-8 py-[26px]">
+    <div className="mb-6">
+      <h1 className="text-[26px] font-bold tracking-[-.5px] text-[#1f2430]">Holiday Calendar</h1>
+      <p className="mt-1 text-sm text-[#7a7263]">View company holidays and public holiday schedules for India and the United States.</p>
+    </div>
+    <HolidayCalendarContent headers={headers} />
+  </div>;
 }
 
 export function EmployeeNotificationsPage() {

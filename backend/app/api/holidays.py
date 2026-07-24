@@ -62,11 +62,12 @@ async def holidays(
     selected_region = (region or employee_region(employee)).upper()
     start = from_date or date.today()
     end = to_date or start + timedelta(days=365)
-    rows = visible_holidays_query(db, selected_region).filter(
+    base_query = db.query(CompanyHoliday).filter(CompanyHoliday.is_active == True) if selected_region == "ALL" else visible_holidays_query(db, selected_region)
+    rows = base_query.filter(
         CompanyHoliday.holiday_date >= start,
         CompanyHoliday.holiday_date <= end,
     ).order_by(CompanyHoliday.holiday_date.asc(), CompanyHoliday.name.asc()).all()
-    return {"holidays": [serialize_holiday(row) for row in rows if region_visible(row.regions, selected_region)]}
+    return {"holidays": [serialize_holiday(row) for row in rows if selected_region == "ALL" or region_visible(row.regions, selected_region)]}
 
 
 @router.get("/available-floating")

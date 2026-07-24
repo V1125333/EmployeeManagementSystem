@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, type DragEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Search, Filter, UserPlus, Download, ChevronDown, ChevronLeft, ChevronRight,
   Mail, Phone, MapPin, Calendar, Briefcase, Building2, User, Shield, X,
   Pencil, Loader2, Plane, KeyRound, History, CheckCircle2, Bell, RotateCcw, Copy, Award, Network,
+  Upload, AlertCircle, UsersRound,
 } from 'lucide-react';
 import { Card, CardHeader, Badge, Button, Avatar } from '@/components/ui';
 import { Drawer } from '@/components/ui/Drawer';
@@ -59,6 +60,23 @@ interface EmployeeListResponse {
   per_page: number;
   total_pages: number;
   reporting_manager_options?: string[];
+  stats?: {
+    total: number;
+    active: number;
+    bench: number;
+    in_project: number;
+    trainees: number;
+  };
+}
+
+interface BulkValidationRow {
+  row: number;
+  name: string;
+  email: string;
+  department: string;
+  valid: boolean;
+  error: string | null;
+  errors: string[];
 }
 
 interface EmployeePreview {
@@ -194,10 +212,10 @@ function FilterDropdown({
       <button
         onClick={() => setOpen(!open)}
         className={cn(
-          'flex items-center gap-1.5 px-3 py-[7px] rounded-lg text-[13px] font-medium transition-colors border',
+          'flex items-center gap-1.5 rounded-[9px] border bg-[#faf8f3] px-4 py-[9px] text-[12px] font-semibold transition-colors',
           value !== 'All'
-            ? 'bg-olive/10 text-olive border-olive/20'
-            : 'bg-warm-card text-gray-500 border-[var(--color-border)] hover:bg-hover-bg'
+            ? 'border-[#d97a34]/30 text-[#b8611f]'
+            : 'border-[#ece5d8] text-[#1f2430] hover:border-[#d97a34]/40'
         )}
       >
         {label}: {value === 'All' ? 'All' : value}
@@ -1014,8 +1032,154 @@ function EditEmployeeDrawer({
   );
 }
 
+function BulkEmployeeUploadModal({
+  open,
+  onClose,
+  headers,
+  onImported,
+}: {
+  open: boolean;
+  onClose: () => void;
+  headers: Record<string, string>;
+  onImported: (count: number) => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [rows, setRows] = useState<BulkValidationRow[]>([]);
+  const [validating, setValidating] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  const uploadHeaders = useMemo(() => ({
+    'x-user-id': headers['x-user-id'] || '',
+    'x-user-email': headers['x-user-email'] || '',
+    'x-user-name': headers['x-user-name'] || '',
+  }), [headers]);
+
+  useEffect(() => {
+    if (!open) {
+      setFile(null);
+      setRows([]);
+      setError(null);
+      setDragging(false);
+    }
+  }, [open]);
+
+  const validateFile = async (nextFile: File | null) => {
+    if (!nextFile) return;
+    setFile(nextFile);
+    setRows([]);
+    setError(null);
+    setValidating(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', nextFile);
+      const res = await fetch(`${API_BASE}/employees/bulk/validate`, { method: 'POST', headers: uploadHeaders, body: formData });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.detail || 'Could not validate the employee file.');
+      setRows(data?.rows || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not validate the employee file.');
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  const downloadTemplate = async () => {
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/employees/bulk-template.csv`, { headers: uploadHeaders });
+      const data = !res.ok ? await res.json().catch(() => null) : null;
+      if (!res.ok) throw new Error(data?.detail || 'Could not download the template.');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'orbit-employee-import-template.csv';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not download the template.');
+    }
+  };
+
+  const importEmployees = async () => {
+    if (!file) return;
+    setImporting(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch(`${API_BASE}/employees/bulk`, { method: 'POST', headers: uploadHeaders, body: formData });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.detail || 'Could not import employees.');
+      onImported(Number(data?.imported || 0));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not import employees.');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const validCount = rows.filter((row) => row.valid).length;
+  const invalidCount = rows.length - validCount;
+  if (!open) return null;
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setDragging(false);
+    void validateFile(event.dataTransfer.files?.[0] || null);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[180] flex items-center justify-center bg-[#1f2430]/45 p-5" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div role="dialog" aria-modal="true" aria-labelledby="bulk-upload-title" className="max-h-[90vh] w-full max-w-[640px] overflow-y-auto rounded-[20px] border border-[#ece5d8] bg-[#f7f3ec] shadow-[0_22px_60px_rgba(31,36,48,.22)]">
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[#ece5d8] bg-[#f7f3ec] px-6 py-5">
+          <div><h2 id="bulk-upload-title" className="text-[19px] font-bold text-[#1f2430]">Bulk upload employees</h2><p className="mt-1 text-[13px] text-[#8a8371]">Import many employees at once from a CSV or Excel file.</p></div>
+          <button type="button" onClick={onClose} aria-label="Close bulk upload" className="grid h-8 w-8 place-items-center rounded-lg text-[#a99e8a] hover:bg-white hover:text-[#1f2430]"><X size={17} /></button>
+        </div>
+        <div className="space-y-4 p-6">
+          <section className="flex flex-wrap items-center justify-between gap-4 rounded-[14px] border border-[#ece5d8] bg-white p-4">
+            <div className="flex min-w-0 items-center gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-[11px] bg-[#e9f4ea] text-[#3f9b52]"><Download size={17} /></span><div><h3 className="text-[14px] font-bold text-[#1f2430]">1 · Download the template</h3><p className="mt-1 text-[11.5px] leading-5 text-[#8a8371]">Name, email, department, role, manager, work arrangement and join date.</p></div></div>
+            <button type="button" onClick={downloadTemplate} className="rounded-[9px] border border-[#ece5d8] bg-white px-3.5 py-2 text-[12px] font-bold text-[#1f2430] hover:border-[#d97a34] hover:text-[#b8611f]">Template .csv</button>
+          </section>
+
+          <section>
+            <h3 className="mb-2 text-[14px] font-bold text-[#1f2430]">2 · Upload your completed file</h3>
+            <div onDragEnter={(event) => { event.preventDefault(); setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={handleDrop} className={cn('flex min-h-[164px] flex-col items-center justify-center rounded-[14px] border border-dashed px-6 py-7 text-center transition-colors', dragging ? 'border-[#d97a34] bg-[#fff7ef]' : 'border-[#d8cdb8] bg-[#fdfbf7]')}>
+              <span className="mb-3 grid h-11 w-11 place-items-center rounded-[12px] bg-[#fbeee1] text-[#d97a34]"><Upload size={19} /></span>
+              <div className="text-[14px] font-bold text-[#1f2430]">{validating ? 'Validating file…' : file ? file.name : 'Drop CSV or Excel here, or browse'}</div>
+              <div className="mt-1 text-[11.5px] text-[#a99e8a]">Up to 500 rows · .csv, .xlsx</div>
+              <button type="button" disabled={validating} onClick={() => fileInputRef.current?.click()} className="mt-4 rounded-[9px] border border-[#d97a34] bg-white px-4 py-2 text-[12px] font-bold text-[#b8611f] hover:bg-[#fff7ef] disabled:opacity-50">{file ? 'Replace file' : 'Browse files'}</button>
+              <input ref={fileInputRef} type="file" accept=".csv,.xlsx" className="hidden" onChange={(event) => void validateFile(event.target.files?.[0] || null)} />
+            </div>
+          </section>
+
+          {(rows.length > 0 || validating) && <section className="overflow-hidden rounded-[14px] border border-[#ece5d8] bg-white">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#f0e7d8] px-4 py-3"><h3 className="text-[14px] font-bold text-[#1f2430]">3 · Review — {validCount} ready, {invalidCount} need fixes</h3><span className="text-[11px] text-[#a99e8a]">{file?.name} · {rows.length} rows</span></div>
+            <div className="max-h-[250px] overflow-auto">
+              <div className="grid min-w-[520px] grid-cols-[36px_1.4fr_1fr_110px] gap-3 bg-[#fdfbf7] px-4 py-2 text-[10px] font-bold uppercase tracking-wide text-[#a99e8a]"><div>Row</div><div>Name</div><div>Department</div><div>Status</div></div>
+              {rows.map((row) => <div key={row.row} className="grid min-w-[520px] grid-cols-[36px_1.4fr_1fr_110px] items-center gap-3 border-t border-[#f6f0e6] px-4 py-2.5 text-[12px]"><div className="text-[#a99e8a]">{row.row}</div><div className="min-w-0"><div className="truncate font-semibold text-[#1f2430]">{row.name}</div><div className="truncate text-[11px] text-[#a99e8a]">{row.email || 'Email missing'}</div></div><div className="truncate text-[#8a8371]">{row.department || '—'}</div><div><span className={cn('inline-flex max-w-full rounded-full px-2.5 py-1 text-[10px] font-bold', row.valid ? 'bg-[#e9f4ea] text-[#3f9b52]' : 'bg-[#fbe9e4] text-[#c0503a]')} title={row.errors.join(', ')}>{row.valid ? 'Ready' : row.error}</span></div></div>)}
+            </div>
+          </section>}
+
+          {error && <div className="flex items-start gap-2 rounded-xl border border-[#e9b6aa] bg-[#fbe9e4] px-4 py-3 text-[12px] text-[#c0503a]"><AlertCircle size={15} className="mt-0.5 shrink-0" />{error}</div>}
+        </div>
+        <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-4 border-t border-[#ece5d8] bg-[#f7f3ec] px-6 py-4">
+          <p className="max-w-[330px] text-[11px] leading-5 text-[#8a8371]">Only valid rows will be imported. Fix errors and re-upload for the rest.</p>
+          <div className="flex gap-2"><button type="button" onClick={onClose} className="rounded-[10px] border border-[#ece5d8] bg-white px-4 py-2.5 text-[12px] font-bold text-[#1f2430]">Cancel</button><button type="button" disabled={validCount < 1 || importing} onClick={importEmployees} className="rounded-[10px] bg-[#2b3243] px-4 py-2.5 text-[12px] font-bold text-white shadow-[0_3px_10px_rgba(43,50,67,.2)] disabled:cursor-not-allowed disabled:opacity-45">{importing ? 'Importing…' : `Import ${validCount} employees`}</button></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function EmployeesPage() {
   const { user } = useAuth();
+  const { showToast } = useToast();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialSearch = searchParams.get('search') || '';
@@ -1037,6 +1201,8 @@ export function EmployeesPage() {
   const [editingEmployee, setEditingEmployee] = useState<EmployeeRecord | null>(null);
   const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
   const [showAddEmployee, setShowAddEmployee] = useState(false);
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [employeeStats, setEmployeeStats] = useState({ total: 0, active: 0, bench: 0, in_project: 0, trainees: 0 });
   const [exporting, setExporting] = useState(false);
   const [exportLevel, setExportLevel] = useState<'basic' | 'hr' | 'payroll'>('basic');
   const authHeaders = useMemo(() => ({
@@ -1073,11 +1239,13 @@ export function EmployeesPage() {
       setOrganizationTotal(data.organization_total ?? data.total);
       setTotalPages(data.total_pages);
       setReportingManagerOptions(data.reporting_manager_options || []);
+      setEmployeeStats(data.stats || { total: data.organization_total ?? data.total, active: 0, bench: 0, in_project: 0, trainees: 0 });
     } catch {
       console.log('Backend not available — showing empty state');
       setEmployees([]);
       setTotal(0);
       setOrganizationTotal(0);
+      setEmployeeStats({ total: 0, active: 0, bench: 0, in_project: 0, trainees: 0 });
     } finally {
       setLoading(false);
     }
@@ -1164,41 +1332,52 @@ export function EmployeesPage() {
     }
   };
 
+  const statCards = [
+    { label: 'Total employees', value: employeeStats.total, icon: <UsersRound size={16} />, tone: 'bg-[#f5f0e6] text-[#8a7a5c]' },
+    { label: 'Active', value: employeeStats.active, icon: <CheckCircle2 size={16} />, tone: 'bg-[#e9f4ea] text-[#3f9b52]' },
+    { label: 'On bench', value: employeeStats.bench, icon: <Briefcase size={16} />, tone: 'bg-[#fbf1dc] text-[#c98a1e]' },
+    { label: 'In project', value: employeeStats.in_project, icon: <Briefcase size={16} />, tone: 'bg-[#fff7ef] text-[#d97a34]' },
+    { label: 'Trainees', value: employeeStats.trainees, icon: <Award size={16} />, tone: 'bg-[#f0eafb] text-[#8a6bbf]' },
+  ];
+
   return (
-    <div>
+    <div className="-mx-[var(--layout-main-padding-x)] -my-[var(--layout-main-padding-y)] min-h-[calc(100vh-3.5rem)] bg-[#f7f3ec] px-8 py-[26px]">
       {/* Header */}
-      <div className="flex items-start justify-between mb-6">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-[var(--color-brand-navy)] tracking-tight mb-1">Employees</h1>
-          <p className="text-sm text-gray-500">
+          <h1 className="mb-1 text-[26px] font-bold tracking-[-.5px] text-[#1f2430]">Employees</h1>
+          <p className="text-sm text-[#7a7263]">
             {headerCountText}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" icon={<Network size={14} />} onClick={() => navigate('/organization')}>Organization Chart</Button>
+        <div className="flex flex-wrap items-center justify-end gap-2.5">
+          <button type="button" onClick={() => navigate('/organization')} className="flex h-11 items-center gap-2 rounded-[11px] border border-[#ece5d8] bg-white px-4 text-[13px] font-bold text-[#1f2430] hover:border-[#d97a34]"><Network size={15} />Organization Chart</button>
           <select
-            className="h-10 rounded-md border border-[var(--color-border)] bg-white px-3 text-sm font-semibold text-[var(--color-brand-orange)] outline-none"
+            className="h-11 rounded-[11px] border border-[#ece5d8] bg-white px-4 text-[13px] font-bold text-[#d97a34] outline-none focus:border-[#d97a34]"
             value={exportLevel}
             onChange={(event) => setExportLevel(event.target.value as 'basic' | 'hr' | 'payroll')}
             aria-label="Employee export level"
           >
             <option value="basic">Basic CSV</option>
-            <option value="hr">HR CSV</option>
+            <option value="hr">Full export</option>
             <option value="payroll">Payroll CSV</option>
           </select>
-          <Button variant="ghost" icon={<Download size={14} />} disabled={exporting} onClick={exportCsv}>
-            {exporting ? 'Exporting' : 'Export'}
-          </Button>
-          <Button icon={<UserPlus size={14} />} onClick={() => setShowAddEmployee(true)}>Add Employee</Button>
+          <button type="button" disabled={exporting} onClick={exportCsv} className="flex h-11 items-center gap-2 rounded-[11px] border border-[#ece5d8] bg-white px-4 text-[13px] font-bold text-[#1f2430] hover:border-[#d97a34] disabled:opacity-50"><Download size={15} />{exporting ? 'Exporting' : 'Export'}</button>
+          <button type="button" onClick={() => setShowBulkUpload(true)} className="flex h-11 items-center gap-2 rounded-[11px] border border-[#d97a34] bg-white px-4 text-[13px] font-bold text-[#d97a34] hover:bg-[#fff7ef]"><Upload size={15} />Bulk Upload</button>
+          <button type="button" onClick={() => setShowAddEmployee(true)} className="flex h-11 items-center gap-2 rounded-[11px] bg-[#2b3243] px-4 text-[13px] font-bold text-white shadow-[0_4px_12px_rgba(43,50,67,.22)] hover:bg-[#1f2430]"><UserPlus size={15} />Add Employee</button>
         </div>
       </div>
 
+      <div className="mb-5 grid grid-cols-2 gap-3.5 md:grid-cols-3 xl:grid-cols-5">
+        {statCards.map((stat) => <div key={stat.label} className="flex items-center gap-3 rounded-[14px] border border-[#ece5d8] bg-white px-[18px] py-[15px]"><span className={cn('grid h-[38px] w-[38px] shrink-0 place-items-center rounded-[11px]', stat.tone)}>{stat.icon}</span><div><div className="text-[21px] font-bold leading-none text-[#1f2430]">{stat.value}</div><div className="mt-1.5 text-[11.5px] text-[#8a8371]">{stat.label}</div></div></div>)}
+      </div>
+
       {/* Search + Filters */}
-      <Card className="mb-5">
-        <div className="px-5 py-4">
+      <div className="mb-5 rounded-[16px] border border-[#ece5d8] bg-white px-[18px] py-4">
+        <div>
           {/* Search bar */}
           <div className="flex items-center gap-3 mb-4">
-            <div className="flex-1 flex items-center gap-2 px-3.5 py-[8px] bg-warm-bg border border-[var(--color-border)] rounded-lg">
+            <div className="flex flex-1 items-center gap-2 rounded-[10px] border border-[#ece5d8] bg-[#faf8f3] px-3.5 py-[11px]">
               <Search size={16} className="text-gray-400 shrink-0" />
               <input
                 type="text"
@@ -1216,7 +1395,7 @@ export function EmployeesPage() {
           </div>
 
           {/* Filter pills */}
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex flex-wrap items-center gap-2.5">
             <Filter size={14} className="text-gray-400" />
             <FilterDropdown label="Department" value={deptFilter} options={DEPARTMENTS} onChange={(v) => { setDeptFilter(v); setPage(1); }} />
             <FilterDropdown label="Status" value={statusFilter} options={STATUSES} onChange={(v) => { setStatusFilter(v); setPage(1); }} />
@@ -1231,10 +1410,10 @@ export function EmployeesPage() {
             )}
           </div>
         </div>
-      </Card>
+      </div>
 
       {/* Table */}
-      <Card className="overflow-x-auto">
+      <div className="overflow-x-auto rounded-[16px] border border-[#ece5d8] bg-white">
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="text-sm text-gray-400">Loading employees...</div>
@@ -1250,7 +1429,7 @@ export function EmployeesPage() {
         ) : (
           <>
             {/* Table header */}
-            <div className="grid min-w-[1420px] grid-cols-[minmax(260px,1fr)_130px_100px_160px_110px_100px_90px_110px_52px] gap-4 px-5 py-3 border-b border-[var(--color-border)] text-[11px] font-bold text-gray-400 tracking-wider uppercase">
+            <div className="grid min-w-[1420px] grid-cols-[2.1fr_1fr_.9fr_1.2fr_1fr_1.1fr_.9fr_.9fr_60px] gap-3 border-b border-[#f0e7d8] bg-[#fdfbf7] px-[22px] py-3.5 text-[10px] font-bold uppercase tracking-wider text-[#a99e8a]">
               <div>Employee</div>
               <div>Department</div>
               <div>Role</div>
@@ -1263,17 +1442,18 @@ export function EmployeesPage() {
             </div>
 
             {/* Table rows */}
-            {employees.map((emp) => {
+            {employees.map((emp, employeeIndex) => {
               const initials = `${emp.first_name[0]}${emp.last_name[0]}`.toUpperCase();
+              const avatarTones = ['bg-[#fff0e1] text-[#d97a34]', 'bg-[#edf5ec] text-[#3f7d3f]', 'bg-[#eaeef6] text-[#5a6f9e]', 'bg-[#f0eafb] text-[#8a6bbf]', 'bg-[#f5f0e6] text-[#8a7a5c]'];
               return (
                 <div
                   key={emp.id}
                   onClick={() => setSelectedEmployee(emp)}
-                  className="grid min-w-[1420px] grid-cols-[minmax(260px,1fr)_130px_100px_160px_110px_100px_90px_110px_52px] gap-4 px-5 py-3 border-b border-[var(--color-border)] hover:bg-hover-bg cursor-pointer transition-colors items-center"
+                  className="grid min-w-[1420px] cursor-pointer grid-cols-[2.1fr_1fr_.9fr_1.2fr_1fr_1.1fr_.9fr_.9fr_60px] items-center gap-3 border-b border-[#f6f0e6] px-[22px] py-3.5 transition-colors hover:bg-[#fdfbf7]"
                 >
                   {/* Name + email */}
                   <div className="flex items-center gap-3 min-w-0">
-                    <Avatar initials={initials} size="md" variant={emp.is_active ? 'filled' : 'soft'} />
+                    <span className={cn('grid h-[38px] w-[38px] shrink-0 place-items-center rounded-full text-[12px] font-bold', avatarTones[employeeIndex % avatarTones.length])}>{initials}</span>
                     <div className="min-w-0">
                       <div className="text-[13.5px] font-semibold text-[var(--color-brand-navy)] truncate">
                         {emp.first_name} {emp.last_name}
@@ -1310,11 +1490,7 @@ export function EmployeesPage() {
                   </div>
 
                   {/* Status */}
-                  <div>
-                    <Badge variant={statusVariant[emp.employment_status] || 'neutral'}>
-                      {emp.employment_status}
-                    </Badge>
-                  </div>
+                  <div className={cn('flex items-center gap-2 text-[12px] font-semibold', emp.employment_status === 'active' ? 'text-[#3f9b52]' : 'text-[#a99e8a]')}><span className={cn('h-2 w-2 rounded-full', emp.employment_status === 'active' ? 'bg-[#3f9b52]' : 'bg-[#a99e8a]')} />{emp.employment_status}</div>
 
                   {/* Joined */}
                   <div className="text-[12px] text-gray-400">
@@ -1330,7 +1506,7 @@ export function EmployeesPage() {
                         setEditingEmployee(emp);
                       }}
                       title="Edit employee"
-                      className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-olive/10 hover:text-olive transition-colors"
+                      className="flex h-[30px] w-[30px] items-center justify-center rounded-[9px] border border-[#ece5d8] text-[#8a8371] transition-colors hover:border-[#d97a34] hover:text-[#d97a34]"
                     >
                       <Pencil size={15} />
                     </button>
@@ -1383,7 +1559,7 @@ export function EmployeesPage() {
             )}
           </>
         )}
-      </Card>
+      </div>
 
       {/* Employee Detail Drawer */}
       <ExecutiveEmployeeDetail
@@ -1410,6 +1586,17 @@ export function EmployeesPage() {
         onClose={() => {
           setShowAddEmployee(false);
           fetchEmployees(); // Refresh list after adding
+        }}
+      />
+      <BulkEmployeeUploadModal
+        open={showBulkUpload}
+        onClose={() => setShowBulkUpload(false)}
+        headers={authHeaders}
+        onImported={(count) => {
+          setShowBulkUpload(false);
+          showToast({ message: `${count} ${count === 1 ? 'employee' : 'employees'} added.` });
+          setPage(1);
+          void fetchEmployees();
         }}
       />
     </div>

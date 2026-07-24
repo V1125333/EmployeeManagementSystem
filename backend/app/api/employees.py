@@ -2,6 +2,8 @@
 Employee API endpoints.
 """
 
+import csv
+import io
 import logging
 import re
 from urllib.parse import quote
@@ -30,6 +32,147 @@ import base64
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/employees", tags=["Employees"])
+
+BULK_EMPLOYEE_HEADERS = (
+    "first_name", "last_name", "work_email", "phone", "country_code",
+    "department", "designation", "role", "reporting_manager",
+    "workforce_type", "work_arrangement", "work_city", "work_state",
+    "work_country", "joining_date",
+)
+BULK_REQUIRED_FIELDS = (
+    "first_name", "last_name", "work_email", "phone", "department", "role",
+    "reporting_manager", "workforce_type", "work_arrangement", "joining_date",
+)
+BULK_ALLOWED_ROLES = {"super_admin", "hr_admin", "manager", "employee", "trainee"}
+BULK_ALLOWED_ARRANGEMENTS = {"remote", "hybrid", "office", "onshore", "offshore"}
+
+
+def _normalize_bulk_header(value: object) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower()).strip("_")
+
+
+def _bulk_cell_text(value: object) -> str:
+    if isinstance(value, (date, datetime)):
+        return value.date().isoformat() if isinstance(value, datetime) else value.isoformat()
+    return str(value or "").strip()
+
+
+def _parse_bulk_employee_file(filename: str, content: bytes) -> list[dict[str, str]]:
+    suffix = (filename or "").lower().rsplit(".", 1)[-1]
+    if suffix == "csv":
+        try:
+            text_content = content.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(status_code=400, detail="CSV files must use UTF-8 encoding.") from exc
+        reader = csv.DictReader(io.StringIO(text_content))
+        if not reader.fieldnames:
+            raise HTTPException(status_code=400, detail="The uploaded CSV has no header row.")
+        rows = [
+            {_normalize_bulk_header(key): str(value or "").strip() for key, value in row.items() if key}
+            for row in reader
+            if any(str(value or "").strip() for value in row.values())
+        ]
+    elif suffix == "xlsx":
+        try:
+            from openpyxl import load_workbook
+        except ImportError as exc:
+            raise HTTPException(status_code=500, detail="Excel import support is not installed.") from exc
+        try:
+            workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+            sheet = workbook.active
+            values = sheet.iter_rows(values_only=True)
+            headers = [_normalize_bulk_header(value) for value in next(values, ())]
+            if not any(headers):
+                raise HTTPException(status_code=400, detail="The uploaded workbook has no header row.")
+            rows = []
+            for values_row in values:
+                row = {headers[index]: _bulk_cell_text(value) for index, value in enumerate(values_row) if index < len(headers) and headers[index]}
+                if any(row.values()):
+                    rows.append(row)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="The Excel workbook could not be read.") from exc
+    else:
+        raise HTTPException(status_code=400, detail="Upload a .csv or .xlsx file.")
+    if not rows:
+        raise HTTPException(status_code=400, detail="The uploaded file contains no employee rows.")
+    if len(rows) > 500:
+        raise HTTPException(status_code=400, detail="Bulk import supports up to 500 employee rows at a time.")
+    return rows
+
+
+def _validate_bulk_employee_rows(db: Session, rows: list[dict[str, str]]) -> list[dict]:
+    employees = db.query(Employee).all()
+    existing_emails = {(employee.work_email or "").strip().lower() for employee in employees}
+    departments = {(employee.department or "").strip().lower() for employee in employees if (employee.department or "").strip()}
+    managers = {
+        (employee.work_email or "").strip().lower()
+        for employee in employees
+        if (employee.work_email or "").strip()
+    } | {
+        employee_name(employee).strip().lower()
+        for employee in employees
+        if employee_name(employee).strip()
+    }
+    seen_emails: set[str] = set()
+    validated = []
+    for index, raw in enumerate(rows, start=2):
+        row = {header: (raw.get(header) or "").strip() for header in BULK_EMPLOYEE_HEADERS}
+        row["work_email"] = row["work_email"].lower()
+        row["role"] = row["role"].lower().replace(" ", "_").replace("-", "_")
+        errors: list[str] = []
+        missing = [field for field in BULK_REQUIRED_FIELDS if not row[field]]
+        if missing:
+            errors.append(f"{missing[0].replace('_', ' ').title()} required")
+        if row["work_email"] and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", row["work_email"]):
+            errors.append("Invalid email")
+        elif row["work_email"] in existing_emails or row["work_email"] in seen_emails:
+            errors.append("Duplicate email")
+        if row["work_email"]:
+            seen_emails.add(row["work_email"])
+        if row["department"] and departments and row["department"].lower() not in departments:
+            errors.append("Unknown department")
+        if row["role"] and row["role"] not in BULK_ALLOWED_ROLES:
+            errors.append("Unknown role")
+        if row["reporting_manager"] and row["reporting_manager"].lower() not in managers:
+            errors.append("Manager not found")
+        arrangement = row["work_arrangement"].lower()
+        if arrangement and arrangement not in BULK_ALLOWED_ARRANGEMENTS:
+            errors.append("Invalid work arrangement")
+        parsed_date = None
+        if row["joining_date"]:
+            for date_format in ("%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y"):
+                try:
+                    parsed_date = datetime.strptime(row["joining_date"], date_format).date()
+                    break
+                except ValueError:
+                    pass
+            if parsed_date is None:
+                errors.append("Invalid joining date")
+        payload = {
+            "first_name": row["first_name"], "last_name": row["last_name"],
+            "work_email": row["work_email"], "phone": row["phone"],
+            "country_code": row["country_code"] or "+1",
+            "department": row["department"], "designation": row["designation"] or None,
+            "role": row["role"], "reporting_manager": row["reporting_manager"],
+            "workforce_type": row["workforce_type"],
+            "work_location": row["work_arrangement"],
+            "work_city": row["work_city"] or None, "work_state": row["work_state"] or None,
+            "work_country": row["work_country"] or None,
+            "joining_date": parsed_date.isoformat() if parsed_date else row["joining_date"],
+        }
+        validated.append({
+            "row": index,
+            "name": f"{row['first_name']} {row['last_name']}".strip() or "Unnamed employee",
+            "email": row["work_email"],
+            "department": row["department"],
+            "valid": not errors,
+            "error": errors[0] if errors else None,
+            "errors": errors,
+            "payload": payload,
+        })
+    return validated
 
 
 SELF_PROFILE_FIELDS = {
@@ -300,7 +443,35 @@ async def list_employees(
     """List employees with search, filters, and pagination."""
     require_admin_employee(db, current_user_id, current_user_email)
     query = db.query(Employee).filter(Employee.work_email != "superadmin@reknew.ai")
-    organization_total = query.count()
+    organization_employees = query.all()
+    organization_total = len(organization_employees)
+    organization_ids = [employee.id for employee in organization_employees]
+    stats_today = date.today()
+    organization_allocated_ids = {
+        employee_id for (employee_id,) in db.query(Allocation.employee_id).filter(
+            Allocation.employee_id.in_(organization_ids),
+            Allocation.project_id.isnot(None),
+            Allocation.status == "active",
+            Allocation.start_date <= stats_today,
+            or_(Allocation.end_date.is_(None), Allocation.end_date >= stats_today),
+        ).distinct().all()
+    } if organization_ids else set()
+
+    def is_trainee(employee: Employee) -> bool:
+        role_name = (employee.role or "").strip().lower().replace(" ", "_").replace("-", "_")
+        workforce_name = (employee.workforce_type or "").strip().lower().replace(" ", "_").replace("-", "_")
+        return role_name == "trainee" or "trainee" in workforce_name
+
+    trainee_ids = {employee.id for employee in organization_employees if is_trainee(employee)}
+    in_project_ids = organization_allocated_ids - trainee_ids
+    bench_ids = set(organization_ids) - trainee_ids - in_project_ids
+    organization_stats = {
+        "total": organization_total,
+        "active": sum(1 for employee in organization_employees if (employee.employment_status or "").lower() == "active" and employee.is_active),
+        "bench": len(bench_ids),
+        "in_project": len(in_project_ids),
+        "trainees": len(trainee_ids),
+    }
     manager_references = db.query(Employee.manager_id, Employee.reporting_manager).filter(
         Employee.work_email != "superadmin@reknew.ai"
     ).all()
@@ -455,6 +626,7 @@ async def list_employees(
         ],
         "total": total,
         "organization_total": organization_total,
+        "stats": organization_stats,
         "reporting_manager_options": reporting_manager_options,
         "page": page,
         "per_page": per_page,
@@ -587,6 +759,91 @@ async def export_employees(
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/bulk-template.csv")
+async def bulk_employee_template(
+    db: Session = Depends(get_db),
+    current_user_id: str | None = Header(None, alias="x-user-id"),
+    current_user_email: str | None = Header(None, alias="x-user-email"),
+):
+    """Download the canonical employee-import template."""
+    require_admin_employee(db, current_user_id, current_user_email)
+    output = io.StringIO()
+    writer = csv.writer(output, lineterminator="\n")
+    writer.writerow(BULK_EMPLOYEE_HEADERS)
+    writer.writerow([
+        "Asha", "Rao", "asha.rao@example.com", "5550101234", "+1",
+        "Engineering", "Software Engineer", "employee", "Manager Name",
+        "Full-Time Employee", "Remote", "Hartford", "CT", "USA", "2026-08-01",
+    ])
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="orbit-employee-import-template.csv"'},
+    )
+
+
+@router.post("/bulk/validate")
+async def validate_bulk_employees(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user_id: str | None = Header(None, alias="x-user-id"),
+    current_user_email: str | None = Header(None, alias="x-user-email"),
+):
+    """Validate a bulk employee file without writing any employee records."""
+    require_admin_employee(db, current_user_id, current_user_email)
+    content = await file.read()
+    rows = _parse_bulk_employee_file(file.filename or "", content)
+    validated = _validate_bulk_employee_rows(db, rows)
+    return {
+        "filename": file.filename,
+        "row_count": len(validated),
+        "ready": sum(1 for row in validated if row["valid"]),
+        "invalid": sum(1 for row in validated if not row["valid"]),
+        "rows": [{key: value for key, value in row.items() if key != "payload"} for row in validated],
+    }
+
+
+@router.post("/bulk")
+async def import_bulk_employees(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user_id: str | None = Header(None, alias="x-user-id"),
+    current_user_email: str | None = Header(None, alias="x-user-email"),
+):
+    """Import valid rows only, queueing the normal secure activation email for each."""
+    actor = require_admin_employee(db, current_user_id, current_user_email)
+    content = await file.read()
+    rows = _validate_bulk_employee_rows(db, _parse_bulk_employee_file(file.filename or "", content))
+    imported = 0
+    skipped = []
+    for row in rows:
+        if not row["valid"]:
+            skipped.append({"row": row["row"], "email": row["email"], "error": row["error"]})
+            continue
+        try:
+            data = AddEmployeeRequest(**row["payload"])
+            result = create_employee(db, data)
+            if not result.success or not result.employee_id:
+                skipped.append({"row": row["row"], "email": row["email"], "error": result.message})
+                continue
+            imported += 1
+            log_audit(
+                db,
+                actor,
+                action="employee.created.bulk",
+                entity_type="employee",
+                entity_id=result.employee_id,
+                new_values=data.model_dump(),
+                metadata={"source_file": file.filename, "source_row": row["row"]},
+            )
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            logger.exception("Bulk employee import failed for row %s", row["row"])
+            skipped.append({"row": row["row"], "email": row["email"], "error": str(exc)})
+    return {"imported": imported, "skipped": len(skipped), "skipped_rows": skipped}
 
 
 @router.get("/organization", response_model=dict)
