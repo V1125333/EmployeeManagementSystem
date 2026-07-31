@@ -230,6 +230,7 @@ class VerifyLoginPasswordRequest(BaseModel):
 class VerifyLoginPasswordResponse(BaseModel):
     success: bool
     message: str
+    token: Optional[str] = None
     login_challenge_token: Optional[str] = None
     account_locked: bool = False
     attempts_remaining: Optional[int] = None

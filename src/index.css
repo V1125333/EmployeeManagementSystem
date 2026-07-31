@@ -2,6 +2,54 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes aiPulse {
+  0%, 100% {
+    opacity: .55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+}
+
+.orbit-ai-glyph {
+  animation: aiPulse 2.6s ease-in-out infinite;
+  transform-origin: center;
+}
+
+@keyframes orbitAiBreathe {
+  0%, 100% { opacity: .5; box-shadow: 0 0 0 0 rgba(28,125,115,.12); }
+  50% { opacity: 1; box-shadow: 0 0 0 5px rgba(28,125,115,0); }
+}
+
+.orbit-ai-breathe {
+  animation: orbitAiBreathe 3.4s ease-in-out infinite;
+}
+
+.orbit-ai-scrim {
+  background: radial-gradient(120% 90% at 88% 92%, rgba(34,31,26,.30), rgba(34,31,26,.16) 45%, rgba(34,31,26,.06));
+  transition: opacity 180ms ease-out;
+}
+
+.orbit-ai-surface {
+  transition: opacity 220ms ease-out, transform 220ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orbit-ai-glyph {
+    animation: none;
+    opacity: 1;
+  }
+  .orbit-ai-breathe {
+    animation: none;
+    opacity: 1;
+  }
+  .orbit-ai-surface {
+    transform: none !important;
+  }
+}
+
 @layer base {
   body {
     @apply bg-warm-bg text-[var(--color-text-primary)] font-sans antialiased;

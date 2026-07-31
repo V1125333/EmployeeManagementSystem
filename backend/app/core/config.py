@@ -3,9 +3,19 @@ Core configuration — loads environment variables.
 """
 
 import os
+from pathlib import Path
+from urllib.parse import urlparse
+
 from dotenv import load_dotenv
 
-load_dotenv()
+
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+BACKEND_ENV_FILE = BACKEND_ROOT / ".env"
+
+# Always load server configuration from backend/.env, regardless of the
+# directory used to start Uvicorn, pytest, or a worker. Explicit process
+# environment variables continue to take precedence.
+load_dotenv(dotenv_path=BACKEND_ENV_FILE, override=False)
 
 
 class Settings:
@@ -31,6 +41,57 @@ class Settings:
     CORS_ORIGINS: list[str] = os.getenv(
         "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
     ).split(",")
+    AUTH_JWT_SECRET: str = os.getenv("AUTH_JWT_SECRET", "")
+    AUTH_JWT_ISSUER: str = os.getenv("AUTH_JWT_ISSUER", "reknew-orbit-api")
+    AUTH_JWT_AUDIENCE: str = os.getenv("AUTH_JWT_AUDIENCE", "reknew-orbit-web")
+    AUTH_ACCESS_TOKEN_MINUTES: int = int(os.getenv("AUTH_ACCESS_TOKEN_MINUTES", "15"))
+    AI_CHAT_REQUESTS_PER_MINUTE: int = int(os.getenv("AI_CHAT_REQUESTS_PER_MINUTE", "10"))
+    AI_CHAT_REQUESTS_PER_DAY: int = int(os.getenv("AI_CHAT_REQUESTS_PER_DAY", "100"))
+    AI_CHAT_TIMEOUT_SECONDS: float = float(os.getenv("AI_CHAT_TIMEOUT_SECONDS", "15"))
+    AI_CHAT_MAX_REQUEST_BYTES: int = int(os.getenv("AI_CHAT_MAX_REQUEST_BYTES", "4096"))
+    AI_CHAT_MAX_RESPONSE_BYTES: int = int(os.getenv("AI_CHAT_MAX_RESPONSE_BYTES", "24576"))
+    AI_CHAT_MAX_BALANCES: int = int(os.getenv("AI_CHAT_MAX_BALANCES", "20"))
+    AI_CONVERSATION_RETENTION_DAYS: int = int(
+        os.getenv("AI_CONVERSATION_RETENTION_DAYS", "90")
+    )
+    AI_CONVERSATION_HISTORY_LIMIT: int = int(
+        os.getenv("AI_CONVERSATION_HISTORY_LIMIT", "50")
+    )
+    # Contextual LLM Phase A. These settings are backend-only and shadow mode
+    # cannot influence routing, tools, workflows, or user-visible responses.
+    CONTEXTUAL_LLM_ENABLED: bool = (
+        os.getenv("CONTEXTUAL_LLM_ENABLED", "false").lower() == "true"
+    )
+    CONTEXTUAL_LLM_SHADOW_MODE: bool = (
+        os.getenv("CONTEXTUAL_LLM_SHADOW_MODE", "true").lower() == "true"
+    )
+    CONTEXTUAL_LLM_PROVIDER: str = os.getenv(
+        "CONTEXTUAL_LLM_PROVIDER", "disabled"
+    )
+    CONTEXTUAL_LLM_MODEL: str = os.getenv("CONTEXTUAL_LLM_MODEL", "")
+    CONTEXTUAL_LLM_API_KEY: str = os.getenv("CONTEXTUAL_LLM_API_KEY", "")
+    CONTEXTUAL_LLM_BASE_URL: str = os.getenv(
+        "CONTEXTUAL_LLM_BASE_URL", "https://api.openai.com/v1"
+    )
+    CONTEXTUAL_LLM_TIMEOUT_SECONDS: float = float(
+        os.getenv("CONTEXTUAL_LLM_TIMEOUT_SECONDS", "4")
+    )
+    CONTEXTUAL_LLM_RETRY_COUNT: int = int(
+        os.getenv("CONTEXTUAL_LLM_RETRY_COUNT", "1")
+    )
+    CONTEXTUAL_LLM_MAX_INPUT_TOKENS: int = int(
+        os.getenv("CONTEXTUAL_LLM_MAX_INPUT_TOKENS", "6000")
+    )
+    CONTEXTUAL_LLM_MAX_OUTPUT_TOKENS: int = int(
+        os.getenv("CONTEXTUAL_LLM_MAX_OUTPUT_TOKENS", "700")
+    )
+    CONTEXTUAL_LLM_TEMPERATURE: float = float(
+        os.getenv("CONTEXTUAL_LLM_TEMPERATURE", "0")
+    )
+    CONTEXTUAL_LLM_PROMPT_VERSION: str = os.getenv(
+        "CONTEXTUAL_LLM_PROMPT_VERSION",
+        "contextual_leave_interpreter_v2",
+    )
     COMPLIANCE_COMPLIANT_THRESHOLD_HOURS: float = float(os.getenv("COMPLIANCE_COMPLIANT_THRESHOLD_HOURS", "2.0"))
     COMPLIANCE_WARNING_THRESHOLD_HOURS: float = float(os.getenv("COMPLIANCE_WARNING_THRESHOLD_HOURS", "5.0"))
 
@@ -85,3 +146,77 @@ class Settings:
 
 
 settings = Settings()
+
+
+def contextual_provider_configuration_errors(
+    *,
+    require_enabled_configuration: bool = False,
+) -> list[str]:
+    """Return safe configuration errors without returning credential values."""
+    if (
+        not settings.CONTEXTUAL_LLM_ENABLED
+        and not require_enabled_configuration
+    ):
+        return []
+    errors: list[str] = []
+    if not settings.CONTEXTUAL_LLM_SHADOW_MODE:
+        errors.append(
+            "CONTEXTUAL_LLM_SHADOW_MODE must remain true in Phase A."
+        )
+    provider = settings.CONTEXTUAL_LLM_PROVIDER.strip().lower()
+    if provider not in {"openai", "openai_compatible"}:
+        errors.append(
+            "CONTEXTUAL_LLM_PROVIDER must be openai or openai_compatible "
+            "when contextual interpretation is enabled."
+        )
+    if not settings.CONTEXTUAL_LLM_MODEL.strip():
+        errors.append("CONTEXTUAL_LLM_MODEL is required.")
+    if not settings.CONTEXTUAL_LLM_API_KEY.strip():
+        errors.append("CONTEXTUAL_LLM_API_KEY is required.")
+    parsed_url = urlparse(settings.CONTEXTUAL_LLM_BASE_URL.strip())
+    if parsed_url.scheme != "https" or not parsed_url.netloc:
+        errors.append("CONTEXTUAL_LLM_BASE_URL must be a valid HTTPS URL.")
+    if not 0.25 <= settings.CONTEXTUAL_LLM_TIMEOUT_SECONDS <= 15:
+        errors.append(
+            "CONTEXTUAL_LLM_TIMEOUT_SECONDS must be between 0.25 and 15."
+        )
+    if settings.CONTEXTUAL_LLM_RETRY_COUNT not in {0, 1}:
+        errors.append("CONTEXTUAL_LLM_RETRY_COUNT must be 0 or 1.")
+    if settings.CONTEXTUAL_LLM_MAX_INPUT_TOKENS < 3000:
+        errors.append(
+            "CONTEXTUAL_LLM_MAX_INPUT_TOKENS must be at least 3000."
+        )
+    prompt_path = (
+        BACKEND_ROOT
+        / "app"
+        / "ai"
+        / "prompt_templates"
+        / f"{settings.CONTEXTUAL_LLM_PROMPT_VERSION}.json"
+    )
+    if not prompt_path.is_file():
+        errors.append(
+            "CONTEXTUAL_LLM_PROMPT_VERSION does not name an installed "
+            "prompt template."
+        )
+    return errors
+
+
+def validate_security_settings() -> None:
+    """Fail startup when required server-side security settings are invalid."""
+    jwt_secret = settings.AUTH_JWT_SECRET.strip()
+    if not jwt_secret:
+        raise RuntimeError(
+            "AUTH_JWT_SECRET is required. "
+            f"Set it in {BACKEND_ENV_FILE} or in the backend process environment."
+        )
+    if len(jwt_secret) < 32:
+        raise RuntimeError(
+            "AUTH_JWT_SECRET must be at least 32 characters long. "
+            f"Update it in {BACKEND_ENV_FILE} or in the backend process environment."
+        )
+    provider_errors = contextual_provider_configuration_errors()
+    if provider_errors:
+        raise RuntimeError(
+            "Invalid contextual LLM configuration: "
+            + " ".join(provider_errors)
+        )

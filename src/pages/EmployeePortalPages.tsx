@@ -7,8 +7,9 @@ import {
   ArrowRight, Briefcase,
   BookOpen,
   CalendarCheck, CalendarClock, CalendarPlus, CheckCircle2, ChevronDown, ClipboardCheck,
-  Clock3, Copy, Download, FileText, FolderKanban, LogIn, Pencil, Plus,
-  Grid2X2, List, MapPin, RefreshCw, Send, Trash2, Upload, UsersRound, WalletCards, X,
+  Clock3, Copy, Download, FileText, FolderKanban, Hourglass, LogIn, Pencil, Plus,
+  Grid2X2, GraduationCap, List, MapPin, RefreshCw, Search, Send, ShieldAlert, Sparkles,
+  Trash2, Upload, UsersRound, WalletCards, X,
 } from 'lucide-react';
 import { Badge, Button, Card, CardHeader } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
@@ -258,6 +259,15 @@ interface ActionInboxItem {
   related_entity_type?: string | null;
   related_entity_id?: string | null;
   created_at?: string | null;
+}
+
+interface DashboardDocument {
+  id: string;
+  name: string;
+  category: string;
+  folder: string;
+  status: string;
+  uploadedAt?: string | null;
 }
 
 interface TimesheetApprovalItem {
@@ -1601,14 +1611,14 @@ function EmployeeStatusTile({
 
 function DashboardQuickAction({ icon, label, onClick, disabled = false }: { icon: React.ReactNode; label: string; onClick: () => void; disabled?: boolean }) {
   return (
-    <button type="button" onClick={onClick} disabled={disabled} className="flex min-h-[58px] items-center gap-3 rounded-xl border border-[#ece5d8] bg-[#fffdf9] px-4 py-3 text-left text-[12px] font-bold text-[#1f2430] transition hover:border-[#d97a34]/40 hover:bg-[#fbf5ea] disabled:cursor-not-allowed disabled:opacity-50">
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#fbeee1] text-[#d97a34]">{icon}</span>
+    <button type="button" onClick={onClick} disabled={disabled} className="flex min-h-[74px] items-center gap-3 rounded-[14px] border border-[#ece5d8] bg-[#fffdf9] px-4 py-3 text-left text-[13px] font-bold text-[#1f2430] transition hover:-translate-y-0.5 hover:border-[#d97a34]/50 hover:bg-[#fbf5ea] disabled:cursor-not-allowed disabled:opacity-50">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] bg-[#fbeee1] text-[#d97a34]">{icon}</span>
       {label}
     </button>
   );
 }
 
-export function EmployeeDashboardPage() {
+function EmployeeDashboardPageLegacy() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { today, loading, actionLoading, error, checkIn, checkOut } = useAttendance();
@@ -1841,6 +1851,334 @@ export function EmployeeDashboardPage() {
     </div>
   );
 
+}
+
+export function EmployeeDashboardPage() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { today, loading, actionLoading, error, checkIn, checkOut } = useAttendance();
+  const [leaveSummary, setLeaveSummary] = useState<LeaveSummary | null>(null);
+  const [timesheetSummary, setTimesheetSummary] = useState<TimesheetSummary | null>(null);
+  const [timesheetHistory, setTimesheetHistory] = useState<TimesheetWeek[]>([]);
+  const [leaveApprovals, setLeaveApprovals] = useState<LeaveRequestItem[]>([]);
+  const [timesheetApprovals, setTimesheetApprovals] = useState<TimesheetApprovalItem[]>([]);
+  const [allocations, setAllocations] = useState<DashboardAllocation[]>([]);
+  const [inboxItems, setInboxItems] = useState<ActionInboxItem[]>([]);
+  const [employeeContext, setEmployeeContext] = useState<EmployeeDashboardContext | null>(null);
+  const [holidays, setHolidays] = useState<HolidayItem[]>([]);
+  const [documents, setDocuments] = useState<DashboardDocument[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const headers = useMemo(() => ({
+    'Content-Type': 'application/json',
+    'x-user-id': user?.id || '',
+    'x-user-email': user?.email || '',
+  }), [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const todayInput = toDateInput(new Date());
+    Promise.all([
+      fetch(`${API_BASE}/leaves/me/summary`, { headers }).then((response) => response.ok ? response.json() : null),
+      fetch(`${API_BASE}/timesheets/me/summary`, { headers }).then((response) => response.ok ? response.json() : null),
+      fetch(`${API_BASE}/timesheets/me/history`, { headers }).then((response) => response.ok ? response.json() : null),
+      fetch(`${API_BASE}/leaves/approvals`, { headers }).then((response) => response.ok ? response.json() : null),
+      fetch(`${API_BASE}/timesheets/approvals`, { headers }).then((response) => response.ok ? response.json() : null),
+      fetch(`${API_BASE}/inbox`, { headers }).then((response) => response.ok ? response.json() : null),
+      user.id ? fetch(`${API_BASE}/allocations/employee/${user.id}/active`, { headers }).then((response) => response.ok ? response.json() : null) : Promise.resolve(null),
+      fetch(`${API_BASE}/dashboard/employee-context`, { headers }).then((response) => response.ok ? response.json() : null),
+      fetch(`${API_BASE}/holidays?from_date=${todayInput}&to_date=${toDateInput(addDays(new Date(), 365))}`, { headers }).then((response) => response.ok ? response.json() : null),
+      fetch(`${API_BASE}/documents`, { headers }).then((response) => response.ok ? response.json() : null),
+    ]).then(([leaveData, timesheetData, historyData, leaveApprovalData, timesheetApprovalData, inboxData, allocationData, contextData, holidayData, documentData]) => {
+      if (cancelled) return;
+      setLeaveSummary(leaveData);
+      setTimesheetSummary(timesheetData);
+      setTimesheetHistory(Array.isArray(historyData) ? historyData : []);
+      setLeaveApprovals(leaveApprovalData?.approvals || []);
+      setTimesheetApprovals(timesheetApprovalData?.approvals || []);
+      setInboxItems(inboxData?.items || []);
+      setAllocations(Array.isArray(allocationData) ? allocationData : []);
+      setEmployeeContext(contextData);
+      setHolidays(holidayData?.holidays || []);
+      setDocuments(Array.isArray(documentData) ? documentData : []);
+    }).catch(() => {
+      // Individual cards retain their empty state when an optional source is unavailable.
+    });
+    return () => { cancelled = true; };
+  }, [headers, user]);
+
+  const employee = employeeContext?.employee;
+  const employeeName = employee?.name || user?.name || 'Employee';
+  const firstName = employeeName.split(/\s+/).filter(Boolean)[0] || 'there';
+  const managerName = employeeContext?.manager?.name || leaveSummary?.reporting_manager || 'your manager';
+  const greetingHour = new Date().getHours();
+  const greeting = greetingHour < 12 ? 'Good morning' : greetingHour < 17 ? 'Good afternoon' : 'Good evening';
+  const dateLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  const isCheckedIn = Boolean(today?.is_checked_in);
+  const isCheckedOut = Boolean(today?.check_out && !isCheckedIn);
+  const attendanceValue = isCheckedIn ? formatElapsed(today?.check_in) : isCheckedOut ? formatHours(today?.total_hours || 0) : '0h';
+  const workedHours = isCheckedIn
+    ? Math.max(0, (Date.now() - (parseApiDateTime(today?.check_in)?.getTime() || Date.now())) / 3_600_000)
+    : Number(today?.total_hours || 0);
+  const attendanceProgress = Math.min(100, Math.max(0, (workedHours / 8) * 100));
+  const totalAllocation = Math.min(100, allocations.reduce((sum, allocation) => sum + Number(allocation.allocation_percentage || 0), 0));
+  const leaveBalances = leaveSummary?.balances || [];
+  const leaveTotal = leaveBalances.reduce((sum, leave) => sum + (effectiveLeaveAvailable(leave) || 0), 0);
+  const featuredLeaveBalances = ['EL', 'SL', 'CL']
+    .map((code) => leaveBalances.find((leave) => leave.code?.toUpperCase() === code))
+    .filter((leave): leave is LeaveBalanceItem => Boolean(leave));
+
+  const weekStart = timesheetSummary?.week_start || toDateInput(startOfLocalWeek());
+  const openTimesheet = () => navigate(`/employee/timesheets?week_start=${encodeURIComponent(weekStart)}`);
+  const currentTimesheetWeek = timesheetHistory.find((week) => week.week_start === weekStart);
+  const targetHours = Number(currentTimesheetWeek?.weekly_limit_hours || 40);
+  const loggedHours = Number(timesheetSummary?.working_hours || 0);
+  const remainingHours = Math.max(0, targetHours - loggedHours);
+  const timesheetStatus = timesheetSummary?.status || 'not_submitted';
+  const timesheetNeedsAttention = !['submitted', 'approved'].includes(timesheetStatus);
+  const timesheetDueInput = timesheetSummary?.week_end || toDateInput(addDays(startOfLocalWeek(), 6));
+  const timesheetDueAt = new Date(`${timesheetDueInput}T23:59:59`).getTime();
+  const daysUntilTimesheetDue = Math.ceil((timesheetDueAt - Date.now()) / 86_400_000);
+  const timesheetDueChip = daysUntilTimesheetDue < 0
+    ? 'OVERDUE'
+    : daysUntilTimesheetDue === 0
+      ? 'DUE TODAY'
+      : daysUntilTimesheetDue === 1
+        ? 'DUE TOMORROW'
+        : `DUE ${formatDate(timesheetDueInput).toUpperCase()}`;
+
+  type BriefingItem = {
+    key: string;
+    chip: string;
+    severity: 'danger' | 'waiting';
+    title: string;
+    detail: string;
+    action: string;
+    onClick: () => void;
+  };
+  const briefingItems: BriefingItem[] = [];
+  if (timesheetNeedsAttention) {
+    briefingItems.push({
+      key: 'timesheet',
+      chip: timesheetDueChip,
+      severity: daysUntilTimesheetDue <= 1 ? 'danger' : 'waiting',
+      title: `Your timesheet is still ${timesheetStatus === 'draft' ? 'a draft' : 'not submitted'} — ${formatNumber(remainingHours)}h short of target.`,
+      detail: `Week ${weekLabel(weekStart)} · ${formatNumber(loggedHours)} of ${formatNumber(targetHours)} hours logged.`,
+      action: 'Review & submit',
+      onClick: openTimesheet,
+    });
+  }
+  const pendingLeave = (leaveSummary?.requests || []).find((request) => request.status === 'pending');
+  if (pendingLeave) {
+    briefingItems.push({
+      key: `leave-${pendingLeave.id}`,
+      chip: 'WAITING',
+      severity: 'waiting',
+      title: `${pendingLeave.leave_type} request is awaiting approval`,
+      detail: `With ${pendingLeave.pending_with || pendingLeave.reporting_manager || managerName} since ${formatDate(pendingLeave.created_at || pendingLeave.start_date)}.`,
+      action: 'Track',
+      onClick: () => navigate('/employee/apply-leave'),
+    });
+  }
+  const directReports = employeeContext?.direct_reports || [];
+  const managerApprovalCount = leaveApprovals.length + timesheetApprovals.length;
+  if (directReports.length > 0 && managerApprovalCount > 0) {
+    briefingItems.push({
+      key: 'manager-approvals',
+      chip: 'NEEDS YOU',
+      severity: 'danger',
+      title: `${managerApprovalCount} ${managerApprovalCount === 1 ? 'approval is' : 'approvals are'} waiting for your decision`,
+      detail: 'Your direct reports are waiting for leave or timesheet review.',
+      action: 'Review',
+      onClick: () => navigate('/employee/approvals'),
+    });
+  }
+  const openInboxItems = inboxItems.filter((item) => !['completed', 'dismissed', 'approved'].includes(item.status.toLowerCase()));
+  const trainingItem = openInboxItems.find((item) => /training|compliance/i.test(`${item.title} ${item.description || ''}`));
+  openInboxItems
+    .filter((item) => !trainingItem || item.id !== trainingItem.id)
+    .slice(0, Math.max(0, 3 - briefingItems.length))
+    .forEach((item) => briefingItems.push({
+      key: `inbox-${item.id}`,
+      chip: item.priority === 'high' ? 'NEEDS YOU' : 'OPEN',
+      severity: item.priority === 'high' ? 'danger' : 'waiting',
+      title: item.title,
+      detail: item.description || 'Open this item to review what is needed.',
+      action: 'Open',
+      onClick: () => navigate('/employee/requests'),
+    }));
+  const visibleBriefingItems = briefingItems.slice(0, 3);
+
+  const runDashboardSearch = () => {
+    const term = searchQuery.trim().toLowerCase();
+    if (!term) return;
+    if (/document|file|payslip|certificate/.test(term)) navigate('/employee/documents');
+    else if (/project|allocation/.test(term)) navigate('/projects');
+    else if (/people|person|manager|org/.test(term)) navigate('/profile?tab=organization');
+    else navigate('/ask-orbit-ai');
+  };
+
+  const nextHoliday = holidays[0];
+  const actionNeededDocument = documents.find((document) => document.status === 'action_needed');
+  type ComingUpItem = {
+    key: string;
+    icon: React.ReactNode;
+    iconClass: string;
+    title: string;
+    detail: string;
+    chip: string;
+    chipClass: string;
+    onClick: () => void;
+  };
+  const comingUpItems: ComingUpItem[] = [{
+    key: 'timesheet-deadline',
+    icon: <Hourglass size={16} />,
+    iconClass: 'bg-[#fbeee1] text-[#d97a34]',
+    title: 'Timesheet submission',
+    detail: `Week ${weekLabel(weekStart)}`,
+    chip: timesheetDueChip.replace('DUE ', ''),
+    chipClass: daysUntilTimesheetDue <= 1 ? 'bg-[#fcecec] text-[#d64545]' : 'bg-[#fff1d7] text-[#bd7800]',
+    onClick: openTimesheet,
+  }];
+  if (nextHoliday) {
+    comingUpItems.push({
+      key: `holiday-${nextHoliday.id}`,
+      icon: <CalendarCheck size={16} />,
+      iconClass: 'bg-[#e9f4ea] text-[#3f9b52]',
+      title: nextHoliday.name,
+      detail: `${statusLabel(nextHoliday.holiday_type)} holiday · ${nextHoliday.regions || 'All locations'}`,
+      chip: new Date(`${nextHoliday.holiday_date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      chipClass: 'bg-[#e9f4ea] text-[#3f9b52]',
+      onClick: () => navigate('/employee/holidays'),
+    });
+  }
+  if (trainingItem) {
+    comingUpItems.push({
+      key: `training-${trainingItem.id}`,
+      icon: <GraduationCap size={16} />,
+      iconClass: 'bg-[#fff1d7] text-[#bd7800]',
+      title: trainingItem.title,
+      detail: trainingItem.description || 'Training item requires your attention.',
+      chip: 'OPEN',
+      chipClass: 'bg-[#fff1d7] text-[#bd7800]',
+      onClick: () => navigate('/employee/requests'),
+    });
+  }
+  if (actionNeededDocument) {
+    comingUpItems.push({
+      key: `document-${actionNeededDocument.id}`,
+      icon: <ShieldAlert size={16} />,
+      iconClass: 'bg-[#fbe9e4] text-[#c0503a]',
+      title: actionNeededDocument.name,
+      detail: `Action needed in ${actionNeededDocument.folder || 'Documents'}`,
+      chip: 'ACTION',
+      chipClass: 'bg-[#fbe9e4] text-[#c0503a]',
+      onClick: () => navigate('/employee/documents'),
+    });
+  }
+
+  return (
+    <div className="animate-fade-up pb-[86px] text-[#1f2430]">
+      <header className="mb-6 flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+        <div>
+          <h1 className="text-[27px] font-bold tracking-[-.035em]">{greeting}, {firstName}</h1>
+          <p className="mt-1 text-sm text-[#8a8371]">
+            {dateLabel} · {employee?.designation || 'Employee'}, {employee?.department || 'Department not set'} · reports to {managerName}
+          </p>
+        </div>
+        <form onSubmit={(event) => { event.preventDefault(); runDashboardSearch(); }} className="relative w-full lg:w-[286px]">
+          <Search size={14} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#a99e8a]" />
+          <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search people, projects, docs..." className="h-12 w-full rounded-[13px] border border-[#e6dccb] bg-white pl-11 pr-4 text-sm outline-none transition placeholder:text-[#9d9584] focus:border-[#d97a34] focus:ring-2 focus:ring-[#d97a34]/10" />
+        </form>
+      </header>
+
+      {error && <div className="mb-5 rounded-xl border border-[#d64545]/20 bg-[#fcecec] px-4 py-3 text-sm text-[#d64545]">{error}</div>}
+
+      <section className="mb-6 overflow-hidden rounded-[18px] border border-[#e8dfd1] bg-white shadow-[0_4px_14px_rgba(60,40,10,.035)] lg:grid lg:grid-cols-[266px_minmax(0,1fr)]">
+        <div className="bg-[#12433f] px-7 py-6 text-white">
+          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[.05em] text-[#82e0d4]"><Sparkles size={14} className="animate-pulse" /> Orbit AI · Your day</div>
+          <div className="mt-3 text-[21px] font-bold leading-[1.35]">{visibleBriefingItems.length ? `${visibleBriefingItems.length} ${visibleBriefingItems.length === 1 ? 'thing' : 'things'} before you log off.` : 'You’re all caught up.'}</div>
+          <p className="mt-3 text-[12.5px] leading-relaxed text-[#c9e4df]">{visibleBriefingItems.length ? 'Here is what needs your attention today.' : 'Nothing else needs you today.'}</p>
+        </div>
+        <div className="px-7 py-4">
+          {visibleBriefingItems.length === 0 ? (
+            <div className="flex min-h-[116px] items-center justify-center text-sm text-[#8a8371]">No pending actions. Enjoy the clear runway.</div>
+          ) : visibleBriefingItems.map((item) => (
+            <div key={item.key} className="grid gap-3 border-b border-[#eee6d9] py-3 last:border-0 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center">
+              <span className={cn('w-fit rounded-md px-2.5 py-1 text-[10px] font-bold', item.severity === 'danger' ? 'bg-[#fce8e4] text-[#ca4d3b]' : 'bg-[#fff0d4] text-[#bd7800]')}>{item.chip}</span>
+              <div className="min-w-0"><div className="text-[13.5px] font-bold">{item.title}</div><div className="mt-0.5 truncate text-xs text-[#a09684]">{item.detail}</div></div>
+              <button type="button" onClick={item.onClick} className="whitespace-nowrap text-xs font-bold text-[#d96b20]">{item.action} →</button>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <div className="mb-6 grid gap-5 lg:grid-cols-[1.25fr_1fr_1fr]">
+        <section className="flex min-h-[264px] items-center gap-8 rounded-[18px] border border-[#efd8bd] bg-[#fff8f0] p-7">
+          <div className="flex h-[112px] w-[112px] shrink-0 items-center justify-center rounded-full" style={{ background: `conic-gradient(#d97a34 ${attendanceProgress}%, #f1e1c9 ${attendanceProgress}% 100%)` }}>
+            <div className="flex h-[84px] w-[84px] flex-col items-center justify-center rounded-full bg-[#fff8f0]"><strong className="text-[21px]">{loading ? '...' : attendanceValue}</strong><span className="text-[11px] text-[#9c927e]">of 8h</span></div>
+          </div>
+          <div>
+            <div className="text-[11px] font-bold uppercase tracking-[.07em] text-[#b08b62]">Today</div>
+            <div className="mt-2 text-[18px] font-bold">{isCheckedIn ? `Working since ${formatTime(today?.check_in)}` : isCheckedOut ? 'Workday complete' : 'Not checked in yet'}</div>
+            <button type="button" disabled={Boolean(actionLoading)} onClick={isCheckedOut ? () => navigate('/employee/check-in') : isCheckedIn ? checkOut : checkIn} className="mt-5 rounded-[11px] bg-[#dd762d] px-6 py-3 text-sm font-bold text-white shadow-[0_7px_16px_rgba(217,122,52,.24)] transition hover:bg-[#c9611f] disabled:opacity-60">
+              {actionLoading ? 'Updating...' : isCheckedIn ? '← Check out' : isCheckedOut ? 'View today →' : '→ Check in'}
+            </button>
+          </div>
+        </section>
+
+        <section className="min-h-[264px] rounded-[18px] border border-[#ece5d8] bg-white p-7">
+          <div className="flex items-center justify-between"><div className="text-[11px] font-bold uppercase tracking-[.07em] text-[#a99e8a]">Leave balance</div><button type="button" onClick={() => navigate('/employee/apply-leave')} className="text-xs font-bold text-[#d96b20]">Apply →</button></div>
+          <div className="mt-3"><strong className="text-[34px] leading-none">{formatNumber(leaveTotal)}</strong><span className="ml-2 text-sm text-[#8a8371]">days available</span></div>
+          <div className="mt-5 space-y-3">
+            {featuredLeaveBalances.length === 0 ? <div className="py-8 text-sm text-[#8a8371]">Leave balances are not available.</div> : featuredLeaveBalances.map((leave, index) => {
+              const available = effectiveLeaveAvailable(leave) || 0;
+              const total = Number(leave.total || 0);
+              const width = total > 0 ? Math.min(100, (available / total) * 100) : 0;
+              return <div key={leave.leave_type_id}><div className="mb-1 flex justify-between text-[12px]"><span className="text-[#736b5e]">{leave.type}</span><strong>{formatNumber(available)} of {formatNumber(total)}</strong></div><div className="h-1.5 overflow-hidden rounded-full bg-[#eee9df]"><div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: ['#3f9b52', '#5a6f9e', '#d97a34'][index] }} /></div></div>;
+            })}
+          </div>
+        </section>
+
+        <section className="min-h-[264px] rounded-[18px] border border-[#ece5d8] bg-white p-7">
+          <div className="flex items-center justify-between"><div className="text-[11px] font-bold uppercase tracking-[.07em] text-[#a99e8a]">My allocation</div><button type="button" onClick={() => navigate('/projects')} className="text-xs font-bold text-[#d96b20]">All →</button></div>
+          <div className="mt-3"><strong className="text-[34px] leading-none text-[#c78508]">{totalAllocation}%</strong><span className="ml-2 text-sm text-[#8a8371]">allocated</span></div>
+          {allocations.length === 0 ? (
+            <div className="mt-4 rounded-[12px] bg-[#fff1d7] px-4 py-4"><div className="text-[13px] font-bold text-[#9d6500]">You’re on the bench</div><div className="mt-1 text-xs leading-relaxed text-[#9a7440]">No active project yet. {managerName} is aware — meanwhile, log training hours.</div></div>
+          ) : (
+            <div className="mt-4 space-y-3">{allocations.slice(0, 3).map((allocation) => <div key={allocation.id}><div className="flex items-center justify-between gap-3 text-xs"><span className="truncate font-semibold">{allocation.project_name || 'Assigned project'}</span><strong>{allocation.allocation_percentage}%</strong></div><div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#eee9df]"><div className="h-full rounded-full bg-[#d97a34]" style={{ width: `${Math.min(100, allocation.allocation_percentage)}%` }} /></div></div>)}</div>
+          )}
+          <button type="button" onClick={() => navigate(allocations.length ? '/projects' : '/employee/career-profile')} className="mt-4 text-xs font-bold text-[#d96b20]">{allocations.length ? 'View my projects' : 'Update my skills'} →</button>
+        </section>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[1fr_1.25fr]">
+        <section className="rounded-[18px] border border-[#ece5d8] bg-white p-7 shadow-[0_3px_10px_rgba(60,40,10,.025)]">
+          <h2 className="mb-4 text-[16px] font-bold">Jump to</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <DashboardQuickAction icon={<Hourglass size={16} />} label="Fill timesheet" onClick={openTimesheet} />
+            <DashboardQuickAction icon={<CalendarCheck size={16} />} label="Apply leave" onClick={() => navigate('/employee/apply-leave')} />
+            <DashboardQuickAction icon={<Send size={16} />} label="Raise a request" onClick={() => navigate('/employee/requests')} />
+            <DashboardQuickAction icon={<FileText size={16} />} label="My documents" onClick={() => navigate('/employee/documents')} />
+          </div>
+        </section>
+
+        <section className="rounded-[18px] border border-[#ece5d8] bg-white px-7 py-6 shadow-[0_3px_10px_rgba(60,40,10,.025)]">
+          <div className="flex items-center justify-between"><h2 className="text-[16px] font-bold">Coming up</h2><button type="button" onClick={() => navigate('/employee/holidays')} className="text-xs font-bold text-[#d96b20]">Holidays →</button></div>
+          <div className="mt-3">
+            {comingUpItems.slice(0, 4).map((item) => (
+              <button type="button" key={item.key} onClick={item.onClick} className="flex w-full items-center gap-4 border-b border-[#eee7dc] py-3 text-left last:border-0">
+                <span className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl', item.iconClass)}>{item.icon}</span>
+                <span className="min-w-0 flex-1"><span className="block truncate text-[13.5px] font-bold">{item.title}</span><span className="mt-0.5 block truncate text-xs text-[#a09684]">{item.detail}</span></span>
+                <span className={cn('rounded-full px-3 py-1 text-[11px] font-bold', item.chipClass)}>{item.chip}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
 }
 
 export function ApplyLeavePage() {

@@ -16,11 +16,11 @@ export interface AuthUser {
 
 interface AuthContextType {
   user: AuthUser | null;
+  accessToken: string | null;
   isAuthenticated: boolean;
   loginWithApi: (email: string, password: string, totpCode: string) => Promise<{ success: boolean; message: string }>;
-  loginAdmin: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
-  setUserFromApi: (employee: any) => void;
+  setUserFromApi: (employee: any, token?: string) => void;
   updateUser: (updates: Partial<AuthUser>) => void;
 }
 
@@ -42,10 +42,21 @@ function readStoredUser(): AuthUser | null {
   }
 }
 
+function readStoredToken(): string | null {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    const parsed = stored ? JSON.parse(stored) : null;
+    return typeof parsed?.token === 'string' ? parsed.token : null;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Provider ───
 export function AuthProvider({ children }: { children: ReactNode }) {
   // Hydrate before the first protected-route render so bookmarks and refreshes keep their route.
   const [user, setUser] = useState<AuthUser | null>(readStoredUser);
+  const [accessToken, setAccessToken] = useState<string | null>(readStoredToken);
 
   // Login via backend API (email + password + TOTP)
   const loginWithApi = async (email: string, password: string, totpCode: string) => {
@@ -70,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           forcePasswordChange: Boolean(result.force_password_change),
         };
         setUser(authUser);
+        setAccessToken(result.token || null);
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: authUser, token: result.token }));
         return { success: true, message: result.message };
       }
@@ -80,56 +92,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Simple admin login (superadmin fallback — no TOTP required)
-  const loginAdmin = async (email: string, password: string): Promise<boolean> => {
-    const normalizedEmail = email.trim().toLowerCase();
-    // Try API first for admin without TOTP
-    try {
-      const checkRes = await fetch(`${API_BASE}/auth/check-email`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: normalizedEmail }),
-      });
-      const checkData = await checkRes.json();
-
-      if (checkData.exists && !checkData.is_first_login) {
-        // For super admin without TOTP, use a simplified login
-        const authUser: AuthUser = {
-          id: checkData.employee_id,
-          name: 'Super Admin',
-          email: normalizedEmail,
-          role: checkData.role || 'super_admin',
-          initials: 'SA',
-          profileImageUrl: checkData.profile_image_url || null,
-          forcePasswordChange: false,
-        };
-        setUser(authUser);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: authUser, token: 'admin-token' }));
-        return true;
-      }
-    } catch {
-      // Backend not available — use hardcoded fallback
-    }
-
-    // Hardcoded fallback for when backend is down
-    if (normalizedEmail === 'superadmin@reknew.ai' && password === 'test') {
-      const authUser: AuthUser = {
-        name: 'Super Admin',
-        email: 'superadmin@reknew.ai',
-        role: 'super_admin',
-        initials: 'SA',
-        profileImageUrl: null,
-        forcePasswordChange: false,
-      };
-      setUser(authUser);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: authUser, token: 'mock-token' }));
-      return true;
-    }
-    return false;
-  };
-
   // Set user from API response (used after first-time setup completes)
-  const setUserFromApi = (employee: any) => {
+  const setUserFromApi = (employee: any, token?: string) => {
     const authUser: AuthUser = {
       id: employee.id,
       name: employee.name || `${employee.first_name} ${employee.last_name}`,
@@ -140,11 +104,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       forcePasswordChange: Boolean(employee.force_password_change),
     };
     setUser(authUser);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: authUser, token: 'session-token' }));
+    setAccessToken(token || null);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: authUser, token: token || null }));
   };
 
   const logout = () => {
     setUser(null);
+    setAccessToken(null);
     localStorage.removeItem(STORAGE_KEY);
   };
 
@@ -161,7 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, isAuthenticated: user !== null, loginWithApi, loginAdmin, logout, setUserFromApi, updateUser }}
+      value={{ user, accessToken, isAuthenticated: user !== null, loginWithApi, logout, setUserFromApi, updateUser }}
     >
       {children}
     </AuthContext.Provider>

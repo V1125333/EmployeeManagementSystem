@@ -9,7 +9,7 @@ from datetime import date
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.core.config import settings
+from app.core.config import settings, validate_security_settings
 from app.core.database import (
     create_tables,
     ensure_audit_log_table,
@@ -49,6 +49,8 @@ from app.models import (
     EmployeeRequest, RequestAttachment, RequestComment, RequestStatusHistory,
     EmailOutbox, AccountActivationToken, SecurityRateLimit,
     EmployeeDocument,
+    AIContextualShadowEvaluation, AIConversation, AIConversationMessage,
+    AILeaveIntakeState, AILeaveRequestDraft,
 )
 from app.services.auth_service import hash_password
 from app.services.allocation_service import ensure_allocation_ending_notifications
@@ -75,6 +77,8 @@ from app.api.admin_security import router as admin_security_router
 from app.api.requests import router as requests_router
 from app.api.holidays import router as holidays_router
 from app.api.documents import router as documents_router
+from app.api.orbit_ai import router as orbit_ai_router
+from app.api.ai import router as ai_router
 
 _log_level = logging.DEBUG if os.getenv("APP_ENV", "development") == "development" else logging.INFO
 logging.basicConfig(
@@ -292,6 +296,8 @@ def seed_admin(db):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup: create all tables and seed data."""
+    validate_security_settings()
+    logger.info("Security configuration validated")
     create_tables()
     ensure_audit_log_table()
     ensure_employee_audit_columns()
@@ -366,6 +372,8 @@ app.include_router(admin_security_router, prefix="/api/v1")
 app.include_router(requests_router, prefix="/api/v1")
 app.include_router(holidays_router, prefix="/api/v1")
 app.include_router(documents_router, prefix="/api/v1")
+app.include_router(orbit_ai_router, prefix="/api/v1")
+app.include_router(ai_router, prefix="/api/v1")
 
 
 

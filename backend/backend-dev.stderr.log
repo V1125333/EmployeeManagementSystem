@@ -1,0 +1,818 @@
+INFO:     Will watch for changes in these directories: ['C:\\Users\\venum\\Documents\\Reknew_EMS\\reknew-orbit\\backend']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [69124] using StatReload
+INFO:     Started server process [53396]
+INFO:     Waiting for application startup.
+2026-07-24 16:17:18,722 | INFO | app.main | All database tables created
+2026-07-24 16:17:19,017 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+2026-07-24 16:18:54,804 | INFO | app.services.auth_service | [AUTH_DEBUG] verify_login_password called for email='tr***********@reknew.com' ip=127.0.0.1
+2026-07-24 16:18:54,847 | INFO | app.services.auth_service | [AUTH_DEBUG] employee found: id=73e7d4e0-1f74-45cb-908d-e87e0004d039 is_active=True is_first_login=False account_locked=False has_password_hash=True failed_login_attempts=0 force_password_change=False
+2026-07-24 16:18:55,404 | INFO | app.services.auth_service | [AUTH_DEBUG] password verification result: True (hash present: True)
+WARNING:  StatReload detected changes in 'app\main.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [53396]
+INFO:     Started server process [24056]
+INFO:     Waiting for application startup.
+2026-07-24 17:52:36,089 | INFO | app.main | All database tables created
+2026-07-24 17:52:36,428 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\core\config.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [24056]
+INFO:     Started server process [61520]
+INFO:     Waiting for application startup.
+2026-07-24 19:44:16,232 | INFO | app.main | All database tables created
+2026-07-24 19:44:16,533 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'tests\test_ai_leave_balance.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [61520]
+INFO:     Started server process [3088]
+INFO:     Waiting for application startup.
+2026-07-24 19:49:14,446 | INFO | app.main | All database tables created
+2026-07-24 19:49:14,679 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\ai\leave_balance_tool.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [3088]
+INFO:     Started server process [2212]
+INFO:     Waiting for application startup.
+2026-07-24 19:54:17,966 | INFO | app.main | All database tables created
+2026-07-24 19:54:18,281 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\core\authentication.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [2212]
+INFO:     Started server process [31960]
+INFO:     Waiting for application startup.
+2026-07-24 19:59:16,526 | INFO | app.main | All database tables created
+2026-07-24 19:59:16,736 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\api\ai.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [31960]
+INFO:     Started server process [69404]
+INFO:     Waiting for application startup.
+2026-07-24 19:59:53,315 | INFO | app.main | All database tables created
+2026-07-24 19:59:53,665 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'tests\test_ai_leave_balance.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for connections to close. (CTRL+C to force quit)
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [69404]
+INFO:     Started server process [70916]
+INFO:     Waiting for application startup.
+2026-07-24 20:03:06,288 | INFO | app.main | All database tables created
+2026-07-24 20:03:06,601 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+2026-07-24 20:11:19,149 | WARNING | app.core.authentication | AUTH_JWT_SECRET is not configured; using a process-local development secret. Tokens will be invalid after restart.
+2026-07-24 20:11:19,150 | WARNING | app.core.authentication | orbit_ai_auth_denied correlation_id=10607d4a-ac01-4ca3-8455-5d05ca28deca reason=Invalid or expired bearer credential.
+WARNING:  StatReload detected changes in 'app\main.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [70916]
+INFO:     Started server process [15372]
+INFO:     Waiting for application startup.
+2026-07-24 20:25:56,266 | INFO | app.main | Security configuration validated
+2026-07-24 20:25:57,089 | INFO | app.main | All database tables created
+2026-07-24 20:25:57,281 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+2026-07-24 20:27:49,042 | WARNING | app.core.authentication | orbit_ai_auth_denied correlation_id=14c0127c-85bb-49d5-aba8-1c94b8bbca4c reason=Invalid or expired bearer credential.
+WARNING:  StatReload detected changes in 'app\schemas\employee.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [15372]
+INFO:     Started server process [6680]
+INFO:     Waiting for application startup.
+2026-07-24 20:32:07,912 | INFO | app.main | Security configuration validated
+WARNING:  StatReload detected changes in 'tests\test_auth_configuration.py'. Reloading...
+2026-07-24 20:32:08,829 | INFO | app.main | All database tables created
+2026-07-24 20:32:08,997 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [6680]
+INFO:     Started server process [31136]
+INFO:     Waiting for application startup.
+2026-07-24 20:32:16,957 | INFO | app.main | Security configuration validated
+2026-07-24 20:32:18,015 | INFO | app.main | All database tables created
+2026-07-24 20:32:18,339 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+2026-07-24 20:42:27,009 | INFO | app.services.auth_service | [AUTH_DEBUG] verify_login_password called for email='su********@reknew.ai' ip=127.0.0.1
+2026-07-24 20:42:27,024 | INFO | app.services.auth_service | [AUTH_DEBUG] employee found: id=a4c5ce13-757c-4e1c-9043-39f2c9cc8ab1 is_active=True is_first_login=False account_locked=False has_password_hash=True failed_login_attempts=0 force_password_change=False
+2026-07-24 20:42:27,486 | INFO | app.services.auth_service | [AUTH_DEBUG] password verification result: False (hash present: True)
+2026-07-24 20:43:16,782 | INFO | app.services.auth_service | [AUTH_DEBUG] verify_login_password called for email='su********@reknew.ai' ip=127.0.0.1
+2026-07-24 20:43:16,787 | INFO | app.services.auth_service | [AUTH_DEBUG] employee found: id=a4c5ce13-757c-4e1c-9043-39f2c9cc8ab1 is_active=True is_first_login=False account_locked=False has_password_hash=True failed_login_attempts=1 force_password_change=False
+2026-07-24 20:43:17,253 | INFO | app.services.auth_service | [AUTH_DEBUG] password verification result: False (hash present: True)
+2026-07-24 20:45:14,466 | INFO | app.services.auth_service | [AUTH_DEBUG] verify_login_password called for email='su********@reknew.ai' ip=127.0.0.1
+2026-07-24 20:45:14,484 | INFO | app.services.auth_service | [AUTH_DEBUG] employee found: id=a4c5ce13-757c-4e1c-9043-39f2c9cc8ab1 is_active=True is_first_login=False account_locked=False has_password_hash=True failed_login_attempts=0 force_password_change=True
+2026-07-24 20:45:15,088 | INFO | app.services.auth_service | [AUTH_DEBUG] password verification result: True (hash present: True)
+2026-07-24 20:46:12,451 | INFO | app.api.ai | orbit_ai_request correlation_id=217db581-a08a-4881-bcdf-40a424cf4ae0 actor_id=a4c5ce13-757c-4e1c-9043-39f2c9cc8ab1 status=completed tool=get_my_leave_balance latency_ms=49
+2026-07-24 20:48:09,007 | INFO | app.api.ai | orbit_ai_request correlation_id=7e1bdc03-cfcb-42d1-9c92-939ec02b5a20 actor_id=a4c5ce13-757c-4e1c-9043-39f2c9cc8ab1 status=completed tool=get_my_leave_balance latency_ms=29
+2026-07-24 20:48:33,706 | INFO | app.api.ai | orbit_ai_request correlation_id=4c279c33-97a9-4002-abc1-db2ebd28d53f actor_id=a4c5ce13-757c-4e1c-9043-39f2c9cc8ab1 status=unsupported tool=None latency_ms=0
+2026-07-24 20:49:05,653 | INFO | app.api.ai | orbit_ai_request correlation_id=d924ba4b-745d-4231-a2a5-91f46857bc0b actor_id=a4c5ce13-757c-4e1c-9043-39f2c9cc8ab1 status=unsupported tool=None latency_ms=0
+WARNING:  StatReload detected changes in 'app\schemas\leave.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [31136]
+INFO:     Started server process [56108]
+INFO:     Waiting for application startup.
+2026-07-24 21:35:42,653 | INFO | app.main | Security configuration validated
+2026-07-24 21:35:43,614 | INFO | app.main | All database tables created
+2026-07-24 21:35:43,910 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\ai\leave_intent.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for connections to close. (CTRL+C to force quit)
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [56108]
+INFO:     Started server process [63264]
+INFO:     Waiting for application startup.
+2026-07-24 21:38:00,205 | INFO | app.main | Security configuration validated
+2026-07-24 21:38:01,383 | INFO | app.main | All database tables created
+2026-07-24 21:38:01,723 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\ai\orchestrator.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [63264]
+INFO:     Started server process [29512]
+INFO:     Waiting for application startup.
+2026-07-24 21:42:57,437 | INFO | app.main | Security configuration validated
+2026-07-24 21:42:58,067 | INFO | app.main | All database tables created
+2026-07-24 21:42:58,231 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\schemas\leave.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [29512]
+INFO:     Started server process [24144]
+INFO:     Waiting for application startup.
+2026-07-24 21:58:55,205 | INFO | app.main | Security configuration validated
+2026-07-24 21:58:55,800 | INFO | app.main | All database tables created
+2026-07-24 21:58:55,971 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\services\leave_eligibility_service.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [24144]
+INFO:     Started server process [62704]
+INFO:     Waiting for application startup.
+2026-07-24 22:03:09,112 | INFO | app.main | Security configuration validated
+2026-07-24 22:03:10,179 | INFO | app.main | All database tables created
+2026-07-24 22:03:10,464 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\services\leave_eligibility_service.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for connections to close. (CTRL+C to force quit)
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [62704]
+INFO:     Started server process [2308]
+INFO:     Waiting for application startup.
+2026-07-24 22:06:18,096 | INFO | app.main | Security configuration validated
+2026-07-24 22:06:19,166 | INFO | app.main | All database tables created
+2026-07-24 22:06:19,480 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\ai\leave_intent.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [2308]
+INFO:     Started server process [41776]
+INFO:     Waiting for application startup.
+2026-07-24 22:11:18,522 | INFO | app.main | Security configuration validated
+2026-07-24 22:11:19,538 | INFO | app.main | All database tables created
+2026-07-24 22:11:19,846 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\core\authentication.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [41776]
+WARNING:  StatReload detected changes in 'app\ai\leave_intent.py'. Reloading...
+INFO:     Started server process [44284]
+INFO:     Waiting for application startup.
+2026-07-24 22:44:05,807 | INFO | app.main | Security configuration validated
+2026-07-24 22:44:06,811 | INFO | app.main | All database tables created
+2026-07-24 22:44:07,083 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [44284]
+INFO:     Started server process [51080]
+INFO:     Waiting for application startup.
+2026-07-24 22:45:49,102 | INFO | app.main | Security configuration validated
+WARNING:  StatReload detected changes in 'app\ai\leave_intent.py'. Reloading...
+2026-07-24 22:45:49,693 | INFO | app.main | All database tables created
+2026-07-24 22:45:49,887 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [51080]
+INFO:     Started server process [10792]
+INFO:     Waiting for application startup.
+2026-07-24 22:46:25,343 | INFO | app.main | Security configuration validated
+2026-07-24 22:46:26,390 | INFO | app.main | All database tables created
+2026-07-24 22:46:26,747 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\api\ai.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [10792]
+INFO:     Started server process [46920]
+INFO:     Waiting for application startup.
+2026-07-24 22:51:23,933 | INFO | app.main | Security configuration validated
+2026-07-24 22:51:24,883 | INFO | app.main | All database tables created
+2026-07-24 22:51:25,210 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\services\leave_draft_service.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [46920]
+INFO:     Started server process [28600]
+INFO:     Waiting for application startup.
+2026-07-24 22:56:28,378 | INFO | app.main | Security configuration validated
+2026-07-24 22:56:29,779 | INFO | app.main | All database tables created
+2026-07-24 22:56:30,193 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\services\leave_draft_service.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [28600]
+INFO:     Started server process [5816]
+INFO:     Waiting for application startup.
+2026-07-24 23:01:29,731 | INFO | app.main | Security configuration validated
+2026-07-24 23:01:30,808 | INFO | app.main | All database tables created
+2026-07-24 23:01:31,194 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+2026-07-25 11:58:48,583 | WARNING | app.core.authentication | orbit_ai_auth_denied correlation_id=378018a8-9041-45f3-bb65-670fbe9fb871 reason=Invalid or expired bearer credential.
+2026-07-25 11:59:10,594 | INFO | app.services.auth_service | [AUTH_DEBUG] verify_login_password called for email='su********@reknew.ai' ip=127.0.0.1
+2026-07-25 11:59:10,609 | INFO | app.services.auth_service | [AUTH_DEBUG] employee found: id=a4c5ce13-757c-4e1c-9043-39f2c9cc8ab1 is_active=True is_first_login=False account_locked=False has_password_hash=True failed_login_attempts=0 force_password_change=False
+2026-07-25 11:59:11,123 | INFO | app.services.auth_service | [AUTH_DEBUG] password verification result: True (hash present: True)
+2026-07-25 11:59:19,393 | INFO | app.api.ai | orbit_ai_request correlation_id=ccd4fabb-276b-440a-9bff-e0b7a86b9692 actor_id=a4c5ce13-757c-4e1c-9043-39f2c9cc8ab1 status=completed tool=prepare_my_leave_request latency_ms=196
+2026-07-25 12:00:15,055 | INFO | app.api.ai | orbit_ai_request correlation_id=759e0286-25d7-40d0-80c4-36442f8f1583 actor_id=a4c5ce13-757c-4e1c-9043-39f2c9cc8ab1 status=completed tool=update_my_leave_request_draft latency_ms=76
+2026-07-25 12:00:53,008 | INFO | app.api.ai | orbit_ai_request correlation_id=84012864-a768-4189-8d05-4e437ddd758b actor_id=a4c5ce13-757c-4e1c-9043-39f2c9cc8ab1 status=unsupported tool=None latency_ms=21
+2026-07-25 12:01:19,795 | INFO | app.api.ai | orbit_ai_request correlation_id=82b66768-8d28-422d-bf6f-53c9ecf18e4c actor_id=a4c5ce13-757c-4e1c-9043-39f2c9cc8ab1 status=unsupported tool=None latency_ms=13
+2026-07-25 12:02:38,106 | INFO | app.api.ai | orbit_ai_request correlation_id=bc02595c-3111-4f00-830d-cfaf5a85e0b0 actor_id=a4c5ce13-757c-4e1c-9043-39f2c9cc8ab1 status=completed tool=prepare_my_leave_request latency_ms=76
+2026-07-25 12:02:50,246 | INFO | app.api.ai | orbit_ai_request correlation_id=d987c799-5bf7-46a3-a1e0-503dc1bf278a actor_id=a4c5ce13-757c-4e1c-9043-39f2c9cc8ab1 status=completed tool=update_my_leave_request_draft latency_ms=58
+2026-07-25 12:03:09,021 | INFO | app.api.ai | orbit_ai_request correlation_id=de6597d0-c309-4fba-96d7-081c11131911 actor_id=a4c5ce13-757c-4e1c-9043-39f2c9cc8ab1 status=completed tool=update_my_leave_request_draft latency_ms=128
+2026-07-25 12:03:33,856 | INFO | app.api.ai | orbit_ai_request correlation_id=c9cdda7c-0187-446a-afa4-eaba89d5c839 actor_id=a4c5ce13-757c-4e1c-9043-39f2c9cc8ab1 status=completed tool=update_my_leave_request_draft latency_ms=140
+2026-07-25 12:03:44,839 | INFO | app.api.ai | orbit_ai_request correlation_id=ed3c6616-09f2-49d7-9501-6a4c921eff0f actor_id=a4c5ce13-757c-4e1c-9043-39f2c9cc8ab1 status=completed tool=get_my_leave_request_draft latency_ms=22
+2026-07-25 12:04:02,840 | INFO | app.api.ai | orbit_ai_request correlation_id=86a49e92-d36a-4b1e-9741-7a49ef3db25a actor_id=a4c5ce13-757c-4e1c-9043-39f2c9cc8ab1 status=unsupported tool=None latency_ms=12
+WARNING:  StatReload detected changes in 'app\ai\orchestrator.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [5816]
+INFO:     Started server process [69156]
+INFO:     Waiting for application startup.
+2026-07-25 12:24:50,599 | INFO | app.main | Security configuration validated
+2026-07-25 12:24:51,355 | INFO | app.main | All database tables created
+2026-07-25 12:24:51,588 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+2026-07-25 12:33:05,216 | INFO | app.services.auth_service | [AUTH_DEBUG] verify_login_password called for email='tr***********@reknew.com' ip=127.0.0.1
+2026-07-25 12:33:05,221 | INFO | app.services.auth_service | [AUTH_DEBUG] employee found: id=73e7d4e0-1f74-45cb-908d-e87e0004d039 is_active=True is_first_login=False account_locked=False has_password_hash=True failed_login_attempts=0 force_password_change=False
+2026-07-25 12:33:05,719 | INFO | app.services.auth_service | [AUTH_DEBUG] password verification result: True (hash present: True)
+2026-07-25 12:34:15,658 | INFO | app.api.ai | orbit_ai_request correlation_id=131265cc-6f77-4fca-849c-75e1ac2ed21f actor_id=73e7d4e0-1f74-45cb-908d-e87e0004d039 status=completed tool=prepare_my_leave_request latency_ms=173
+2026-07-25 12:34:34,120 | INFO | app.api.ai | orbit_ai_request correlation_id=a0c6893c-f89b-4e38-b64d-7dbc268405f0 actor_id=73e7d4e0-1f74-45cb-908d-e87e0004d039 status=completed tool=update_my_leave_request_draft latency_ms=107
+2026-07-25 12:34:48,606 | INFO | app.api.ai | orbit_ai_request correlation_id=7b68b083-c3e5-45e3-b7bd-6072305a831a actor_id=73e7d4e0-1f74-45cb-908d-e87e0004d039 status=completed tool=get_my_leave_request_draft latency_ms=19
+2026-07-25 12:35:36,618 | INFO | app.api.ai | orbit_ai_request correlation_id=42808da7-2c3b-4d3b-8051-7dde54bc3ebe actor_id=73e7d4e0-1f74-45cb-908d-e87e0004d039 status=completed tool=update_my_leave_request_draft latency_ms=68
+WARNING:  StatReload detected changes in 'app\main.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [69156]
+INFO:     Started server process [35576]
+INFO:     Waiting for application startup.
+2026-07-25 12:45:24,556 | INFO | app.main | Security configuration validated
+2026-07-25 12:45:25,787 | INFO | app.main | All database tables created
+2026-07-25 12:45:26,071 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'tests\test_ai_leave_agent_phase1.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [35576]
+INFO:     Started server process [56140]
+INFO:     Waiting for application startup.
+2026-07-25 12:50:24,378 | INFO | app.main | Security configuration validated
+2026-07-25 12:50:25,556 | INFO | app.main | All database tables created
+2026-07-25 12:50:25,898 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\ai\leave_intake.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [56140]
+INFO:     Started server process [32504]
+INFO:     Waiting for application startup.
+2026-07-25 12:51:41,419 | INFO | app.main | Security configuration validated
+2026-07-25 12:51:42,593 | INFO | app.main | All database tables created
+2026-07-25 12:51:42,991 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'tests\test_ai_leave_agent_phase3_5.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [32504]
+INFO:     Started server process [22360]
+INFO:     Waiting for application startup.
+2026-07-25 12:56:39,429 | INFO | app.main | Security configuration validated
+2026-07-25 12:56:40,256 | INFO | app.main | All database tables created
+2026-07-25 12:56:40,485 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+2026-07-25 13:23:42,160 | WARNING | app.core.authentication | orbit_ai_auth_denied correlation_id=12e84411-abc2-4d75-ae45-589a11da39d3 reason=Invalid or expired bearer credential.
+2026-07-25 13:26:52,195 | WARNING | app.core.authentication | orbit_ai_auth_denied correlation_id=b55240f8-efb4-48b1-af81-d11eafa5de3f reason=Invalid or expired bearer credential.
+2026-07-25 13:27:15,852 | INFO | app.services.auth_service | [AUTH_DEBUG] verify_login_password called for email='tr***********@reknew.com' ip=127.0.0.1
+2026-07-25 13:27:15,900 | INFO | app.services.auth_service | [AUTH_DEBUG] employee found: id=73e7d4e0-1f74-45cb-908d-e87e0004d039 is_active=True is_first_login=False account_locked=False has_password_hash=True failed_login_attempts=0 force_password_change=False
+2026-07-25 13:27:16,430 | INFO | app.services.auth_service | [AUTH_DEBUG] password verification result: True (hash present: True)
+2026-07-25 13:27:58,036 | INFO | app.api.ai | orbit_ai_request correlation_id=b308a149-327d-42ce-b7b8-0f3f97210e00 actor_id=73e7d4e0-1f74-45cb-908d-e87e0004d039 status=needs_clarification tool=None latency_ms=197
+2026-07-25 13:28:11,241 | INFO | app.api.ai | orbit_ai_request correlation_id=b62ccbdf-e24f-4e78-8d4b-c74ae11f986e actor_id=73e7d4e0-1f74-45cb-908d-e87e0004d039 status=needs_clarification tool=None latency_ms=36
+2026-07-25 13:28:24,106 | INFO | app.api.ai | orbit_ai_request correlation_id=48ffa6d2-cee0-4adb-a70a-cd709ccc241e actor_id=73e7d4e0-1f74-45cb-908d-e87e0004d039 status=needs_clarification tool=None latency_ms=57
+2026-07-25 13:28:38,106 | INFO | app.api.ai | orbit_ai_request correlation_id=7149ebc1-d489-42e0-bb35-77a56394edd4 actor_id=73e7d4e0-1f74-45cb-908d-e87e0004d039 status=completed tool=prepare_my_leave_request latency_ms=185
+2026-07-25 13:28:49,420 | INFO | app.api.ai | orbit_ai_request correlation_id=5324b5ec-5631-459d-87fa-ec6174dd73ed actor_id=73e7d4e0-1f74-45cb-908d-e87e0004d039 status=completed tool=get_my_leave_request_draft latency_ms=35
+2026-07-25 13:29:02,461 | INFO | app.api.ai | orbit_ai_request correlation_id=73179b65-cb59-4a99-b7b3-628ae6977b02 actor_id=73e7d4e0-1f74-45cb-908d-e87e0004d039 status=unsupported tool=None latency_ms=13
+2026-07-25 13:41:31,087 | WARNING | app.core.authentication | orbit_ai_auth_denied correlation_id=f122f35f-e8ed-4586-8276-9abc8fe12615 reason=Invalid or expired bearer credential.
+2026-07-25 13:41:31,774 | WARNING | app.core.authentication | orbit_ai_auth_denied correlation_id=7503485e-18d0-49d8-883b-09381db76511 reason=Invalid or expired bearer credential.
+2026-07-25 13:41:32,493 | WARNING | app.core.authentication | orbit_ai_auth_denied correlation_id=4aee360d-fd6d-4bda-a9c7-7fc3331a9acb reason=Invalid or expired bearer credential.
+2026-07-25 13:41:33,224 | WARNING | app.core.authentication | orbit_ai_auth_denied correlation_id=fd5b588e-ed41-452f-b2d5-388a66aaf4a2 reason=Invalid or expired bearer credential.
+2026-07-25 13:41:33,941 | WARNING | app.core.authentication | orbit_ai_auth_denied correlation_id=63f0190c-3e71-4364-8b9d-856ec6c1fedf reason=Invalid or expired bearer credential.
+2026-07-25 13:41:34,675 | WARNING | app.core.authentication | orbit_ai_auth_denied correlation_id=3b042a5b-2645-4832-9f9a-1d8a7a979074 reason=Invalid or expired bearer credential.
+2026-07-25 13:41:35,394 | WARNING | app.core.authentication | orbit_ai_auth_denied correlation_id=6149f130-2a34-4e5a-bdde-cfc2c47ffb93 reason=Invalid or expired bearer credential.
+2026-07-25 13:41:36,091 | WARNING | app.core.authentication | orbit_ai_auth_denied correlation_id=9f52167b-af6e-457b-918a-0da6e78cd916 reason=Invalid or expired bearer credential.
+2026-07-25 13:42:27,559 | WARNING | app.core.authentication | orbit_ai_auth_denied correlation_id=40208cd3-4fd4-4bac-9960-7bbd2f8badf3 reason=Invalid or expired bearer credential.
+WARNING:  StatReload detected changes in 'app\core\config.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [22360]
+INFO:     Started server process [28256]
+INFO:     Waiting for application startup.
+2026-07-25 14:06:23,236 | INFO | app.main | Security configuration validated
+2026-07-25 14:06:24,418 | INFO | app.main | All database tables created
+2026-07-25 14:06:24,777 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'tests\test_ai_leave_agent_phase1.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [28256]
+INFO:     Started server process [32416]
+INFO:     Waiting for application startup.
+2026-07-25 14:14:35,560 | INFO | app.main | Security configuration validated
+2026-07-25 14:14:36,718 | INFO | app.main | All database tables created
+2026-07-25 14:14:37,073 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+2026-07-25 14:18:09,038 | WARNING | app.core.authentication | orbit_ai_auth_denied correlation_id=889dfba2-4d61-459e-bf3e-d49ab87ec7eb reason=Invalid or expired bearer credential.
+2026-07-25 14:24:31,207 | WARNING | app.core.authentication | orbit_ai_auth_denied correlation_id=e6ea4820-3d91-4127-bb95-68aaa4fcf1ce reason=Invalid or expired bearer credential.
+2026-07-25 14:24:54,314 | INFO | app.services.auth_service | [AUTH_DEBUG] verify_login_password called for email='tr***********@reknew.com' ip=127.0.0.1
+2026-07-25 14:24:54,357 | INFO | app.services.auth_service | [AUTH_DEBUG] employee found: id=73e7d4e0-1f74-45cb-908d-e87e0004d039 is_active=True is_first_login=False account_locked=False has_password_hash=True failed_login_attempts=0 force_password_change=False
+2026-07-25 14:24:54,853 | INFO | app.services.auth_service | [AUTH_DEBUG] password verification result: True (hash present: True)
+2026-07-25 14:28:49,248 | INFO | app.api.ai | orbit_ai_request correlation_id=33e38523-48d9-4028-a833-9e33bd9cfb10 actor_id=73e7d4e0-1f74-45cb-908d-e87e0004d039 status=needs_clarification tool=None latency_ms=157
+2026-07-25 14:29:29,687 | INFO | app.api.ai | orbit_ai_request correlation_id=699dbe88-91ff-4e2c-bef2-fd32bc4a8d02 actor_id=73e7d4e0-1f74-45cb-908d-e87e0004d039 status=completed tool=check_my_leave_eligibility latency_ms=135
+WARNING:  StatReload detected changes in 'app\core\config.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [32416]
+INFO:     Started server process [15572]
+INFO:     Waiting for application startup.
+2026-07-25 15:09:12,556 | INFO | app.main | Security configuration validated
+2026-07-25 15:09:13,658 | INFO | app.main | All database tables created
+2026-07-25 15:09:13,903 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\models\ai_workflow.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [15572]
+INFO:     Started server process [48104]
+INFO:     Waiting for application startup.
+2026-07-25 15:11:03,695 | INFO | app.main | Security configuration validated
+2026-07-25 15:11:04,439 | INFO | app.main | All database tables created
+2026-07-25 15:11:04,686 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\api\ai.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [48104]
+INFO:     Started server process [41596]
+INFO:     Waiting for application startup.
+2026-07-25 15:14:01,333 | INFO | app.main | Security configuration validated
+2026-07-25 15:14:02,378 | INFO | app.main | All database tables created
+2026-07-25 15:14:02,693 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'tests\test_contextual_llm_shadow.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [41596]
+INFO:     Started server process [18672]
+INFO:     Waiting for application startup.
+2026-07-25 15:17:20,055 | INFO | app.main | Security configuration validated
+2026-07-25 15:17:21,261 | INFO | app.main | All database tables created
+2026-07-25 15:17:23,080 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'tests\test_contextual_llm_shadow.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [18672]
+INFO:     Started server process [38760]
+INFO:     Waiting for application startup.
+2026-07-25 15:17:58,557 | INFO | app.main | Security configuration validated
+2026-07-25 15:17:59,666 | INFO | app.main | All database tables created
+2026-07-25 15:18:00,005 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'tests\test_contextual_llm_shadow.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [38760]
+INFO:     Started server process [11172]
+INFO:     Waiting for application startup.
+2026-07-25 15:24:45,119 | INFO | app.main | Security configuration validated
+2026-07-25 15:24:46,175 | INFO | app.main | All database tables created
+2026-07-25 15:24:46,502 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+2026-07-25 15:31:38,327 | WARNING | app.core.authentication | orbit_ai_auth_denied correlation_id=7621ad18-ea9d-466d-9005-1b869e006510 reason=Invalid or expired bearer credential.
+2026-07-25 15:31:38,382 | WARNING | app.core.authentication | orbit_ai_auth_denied correlation_id=a45f9836-e1bd-4adb-89ab-75f1879a04f2 reason=Invalid or expired bearer credential.
+2026-07-25 15:31:40,934 | WARNING | app.core.authentication | orbit_ai_auth_denied correlation_id=992eb481-f3b4-4ff5-a65d-44a3bd52a869 reason=Invalid or expired bearer credential.
+2026-07-25 15:32:05,806 | INFO | app.services.auth_service | [AUTH_DEBUG] verify_login_password called for email='tr***********@reknew.com' ip=127.0.0.1
+2026-07-25 15:32:05,809 | INFO | app.services.auth_service | [AUTH_DEBUG] employee found: id=73e7d4e0-1f74-45cb-908d-e87e0004d039 is_active=True is_first_login=False account_locked=False has_password_hash=True failed_login_attempts=0 force_password_change=False
+2026-07-25 15:32:06,263 | INFO | app.services.auth_service | [AUTH_DEBUG] password verification result: True (hash present: True)
+2026-07-25 15:32:42,167 | INFO | app.api.ai | orbit_ai_request correlation_id=637c08ea-7a29-4f1b-9d68-bc31fa619bfe actor_id=73e7d4e0-1f74-45cb-908d-e87e0004d039 status=needs_clarification tool=None latency_ms=81
+2026-07-25 15:32:53,911 | INFO | app.api.ai | orbit_ai_request correlation_id=0b139ba8-bc13-4f5a-8156-5530e46f9b23 actor_id=73e7d4e0-1f74-45cb-908d-e87e0004d039 status=needs_clarification tool=None latency_ms=49
+2026-07-25 15:33:19,462 | INFO | app.api.ai | orbit_ai_request correlation_id=ea7534b3-094b-4cf3-87c7-0ad936ebec89 actor_id=73e7d4e0-1f74-45cb-908d-e87e0004d039 status=completed tool=check_my_leave_eligibility latency_ms=92
+WARNING:  StatReload detected changes in 'app\ai\contextual_schemas.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [11172]
+INFO:     Started server process [34868]
+INFO:     Waiting for application startup.
+2026-07-25 15:49:09,932 | INFO | app.main | Security configuration validated
+2026-07-25 15:49:12,715 | INFO | app.main | All database tables created
+2026-07-25 15:49:13,089 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\ai\contextual_schemas.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [34868]
+INFO:     Started server process [10280]
+INFO:     Waiting for application startup.
+2026-07-25 15:49:25,987 | INFO | app.main | Security configuration validated
+2026-07-25 15:49:27,046 | INFO | app.main | All database tables created
+2026-07-25 15:49:27,409 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\ai\prompt_templates.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [10280]
+INFO:     Started server process [65940]
+INFO:     Waiting for application startup.
+2026-07-25 15:51:08,186 | INFO | app.main | Security configuration validated
+2026-07-25 15:51:08,847 | INFO | app.main | All database tables created
+2026-07-25 15:51:09,034 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\core\config.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [65940]
+INFO:     Started server process [57444]
+INFO:     Waiting for application startup.
+2026-07-25 15:51:34,259 | INFO | app.main | Security configuration validated
+2026-07-25 15:51:35,415 | INFO | app.main | All database tables created
+WARNING:  StatReload detected changes in 'app\ai\context_builder.py'. Reloading...
+2026-07-25 15:51:37,328 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [57444]
+INFO:     Started server process [40912]
+INFO:     Waiting for application startup.
+2026-07-25 15:51:47,635 | INFO | app.main | Security configuration validated
+2026-07-25 15:51:50,343 | INFO | app.main | All database tables created
+2026-07-25 15:51:50,644 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\ai\contextual_schemas.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [40912]
+INFO:     Started server process [66236]
+INFO:     Waiting for application startup.
+2026-07-25 15:52:04,482 | INFO | app.main | Security configuration validated
+2026-07-25 15:52:05,652 | INFO | app.main | All database tables created
+2026-07-25 15:52:05,996 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\ai\providers\base.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [66236]
+INFO:     Started server process [47544]
+INFO:     Waiting for application startup.
+2026-07-25 15:52:28,227 | INFO | app.main | Security configuration validated
+2026-07-25 15:52:29,315 | INFO | app.main | All database tables created
+2026-07-25 15:52:29,664 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\ai\providers\__init__.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [47544]
+INFO:     Started server process [45152]
+INFO:     Waiting for application startup.
+2026-07-25 15:52:54,464 | INFO | app.main | Security configuration validated
+2026-07-25 15:52:55,637 | INFO | app.main | All database tables created
+2026-07-25 15:52:55,967 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\core\config.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [45152]
+WARNING:  StatReload detected changes in 'app\services\contextual_shadow_service.py'. Reloading...
+INFO:     Started server process [14564]
+INFO:     Waiting for application startup.
+2026-07-25 15:53:21,052 | INFO | app.main | Security configuration validated
+2026-07-25 15:53:21,701 | INFO | app.main | All database tables created
+2026-07-25 15:53:21,930 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [14564]
+WARNING:  StatReload detected changes in 'app\api\ai.py'. Reloading...
+INFO:     Started server process [8232]
+INFO:     Waiting for application startup.
+2026-07-25 15:53:39,358 | INFO | app.main | Security configuration validated
+2026-07-25 15:53:40,325 | INFO | app.main | All database tables created
+2026-07-25 15:53:40,657 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+ERROR:    Traceback (most recent call last):
+  File "C:\Python313\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Python313\Lib\asyncio\base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Python313\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Python313\Lib\asyncio\runners.py", line 123, in run
+    raise KeyboardInterrupt()
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\venum\Documents\Reknew_EMS\reknew-orbit\backend\venv\Lib\site-packages\starlette\routing.py", line 700, in lifespan
+    await receive()
+  File "C:\Users\venum\Documents\Reknew_EMS\reknew-orbit\backend\venv\Lib\site-packages\uvicorn\lifespan\on.py", line 137, in receive
+    return await self.receive_queue.get()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python313\Lib\asyncio\queues.py", line 186, in get
+    await getter
+asyncio.exceptions.CancelledError
+
+INFO:     Started server process [69464]
+INFO:     Waiting for application startup.
+2026-07-25 15:53:56,768 | INFO | app.main | Security configuration validated
+2026-07-25 15:53:57,895 | INFO | app.main | All database tables created
+2026-07-25 15:53:58,259 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'tests\test_contextual_llm_shadow.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [69464]
+INFO:     Started server process [50628]
+INFO:     Waiting for application startup.
+2026-07-25 15:56:18,654 | INFO | app.main | Security configuration validated
+2026-07-25 15:56:19,790 | INFO | app.main | All database tables created
+2026-07-25 15:56:20,143 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'tests\test_contextual_llm_shadow.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [50628]
+WARNING:  StatReload detected changes in 'tests\test_contextual_llm_shadow.py'. Reloading...
+INFO:     Started server process [57056]
+INFO:     Waiting for application startup.
+2026-07-25 15:57:08,097 | INFO | app.main | Security configuration validated
+2026-07-25 15:57:09,156 | INFO | app.main | All database tables created
+2026-07-25 15:57:09,531 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+ERROR:    Traceback (most recent call last):
+  File "C:\Python313\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Python313\Lib\asyncio\base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Python313\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Python313\Lib\asyncio\runners.py", line 123, in run
+    raise KeyboardInterrupt()
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\venum\Documents\Reknew_EMS\reknew-orbit\backend\venv\Lib\site-packages\starlette\routing.py", line 700, in lifespan
+    await receive()
+  File "C:\Users\venum\Documents\Reknew_EMS\reknew-orbit\backend\venv\Lib\site-packages\uvicorn\lifespan\on.py", line 137, in receive
+    return await self.receive_queue.get()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python313\Lib\asyncio\queues.py", line 186, in get
+    await getter
+asyncio.exceptions.CancelledError
+
+WARNING:  StatReload detected changes in 'tests\test_contextual_llm_shadow.py'. Reloading...
+INFO:     Started server process [40260]
+INFO:     Waiting for application startup.
+2026-07-25 15:57:25,701 | INFO | app.main | Security configuration validated
+2026-07-25 15:57:26,856 | INFO | app.main | All database tables created
+2026-07-25 15:57:27,213 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+ERROR:    Traceback (most recent call last):
+  File "C:\Python313\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Python313\Lib\asyncio\base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Python313\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Python313\Lib\asyncio\runners.py", line 123, in run
+    raise KeyboardInterrupt()
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\venum\Documents\Reknew_EMS\reknew-orbit\backend\venv\Lib\site-packages\starlette\routing.py", line 700, in lifespan
+    await receive()
+  File "C:\Users\venum\Documents\Reknew_EMS\reknew-orbit\backend\venv\Lib\site-packages\uvicorn\lifespan\on.py", line 137, in receive
+    return await self.receive_queue.get()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python313\Lib\asyncio\queues.py", line 186, in get
+    await getter
+asyncio.exceptions.CancelledError
+
+INFO:     Started server process [44624]
+INFO:     Waiting for application startup.
+2026-07-25 15:57:41,211 | INFO | app.main | Security configuration validated
+2026-07-25 15:57:42,235 | INFO | app.main | All database tables created
+2026-07-25 15:57:44,128 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'tests\test_contextual_llm_shadow.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [44624]
+INFO:     Started server process [32104]
+INFO:     Waiting for application startup.
+2026-07-25 15:58:30,559 | INFO | app.main | Security configuration validated
+2026-07-25 15:58:31,626 | INFO | app.main | All database tables created
+2026-07-25 15:58:31,941 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'scripts\evaluate_contextual_shadow.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [32104]
+INFO:     Started server process [71568]
+INFO:     Waiting for application startup.
+2026-07-25 15:59:05,476 | INFO | app.main | Security configuration validated
+2026-07-25 15:59:07,001 | INFO | app.main | All database tables created
+2026-07-25 15:59:07,364 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\core\config.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [71568]
+INFO:     Started server process [56440]
+INFO:     Waiting for application startup.
+2026-07-25 15:59:43,514 | INFO | app.main | Security configuration validated
+2026-07-25 15:59:44,616 | INFO | app.main | All database tables created
+2026-07-25 15:59:44,949 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app\services\contextual_shadow_service.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [56440]
+WARNING:  StatReload detected changes in 'tests\test_contextual_llm_shadow.py'. Reloading...
+INFO:     Started server process [65620]
+INFO:     Waiting for application startup.
+2026-07-25 16:00:33,650 | INFO | app.main | Security configuration validated
+2026-07-25 16:00:34,680 | INFO | app.main | All database tables created
+2026-07-25 16:00:35,875 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+ERROR:    Traceback (most recent call last):
+  File "C:\Python313\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Python313\Lib\asyncio\base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Python313\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Python313\Lib\asyncio\runners.py", line 123, in run
+    raise KeyboardInterrupt()
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\venum\Documents\Reknew_EMS\reknew-orbit\backend\venv\Lib\site-packages\starlette\routing.py", line 700, in lifespan
+    await receive()
+  File "C:\Users\venum\Documents\Reknew_EMS\reknew-orbit\backend\venv\Lib\site-packages\uvicorn\lifespan\on.py", line 137, in receive
+    return await self.receive_queue.get()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python313\Lib\asyncio\queues.py", line 186, in get
+    await getter
+asyncio.exceptions.CancelledError
+
+INFO:     Started server process [55764]
+INFO:     Waiting for application startup.
+2026-07-25 16:00:50,647 | INFO | app.main | Security configuration validated
+2026-07-25 16:00:51,782 | INFO | app.main | All database tables created
+2026-07-25 16:00:52,194 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+2026-07-25 22:38:11,500 | WARNING | app.core.authentication | orbit_ai_auth_denied correlation_id=3b791cd3-6453-4608-8894-05786787a574 reason=Invalid or expired bearer credential.
+2026-07-25 22:38:11,543 | WARNING | app.core.authentication | orbit_ai_auth_denied correlation_id=4942d457-caff-4feb-8ea5-f3a5b473a2d0 reason=Invalid or expired bearer credential.
+2026-07-25 22:38:14,683 | WARNING | app.core.authentication | orbit_ai_auth_denied correlation_id=15907409-0be7-435f-b94d-f200df8f23ff reason=Invalid or expired bearer credential.
+2026-07-25 22:38:38,039 | INFO | app.services.auth_service | [AUTH_DEBUG] verify_login_password called for email='tr***********@reknew.com' ip=127.0.0.1
+2026-07-25 22:38:38,044 | INFO | app.services.auth_service | [AUTH_DEBUG] employee found: id=73e7d4e0-1f74-45cb-908d-e87e0004d039 is_active=True is_first_login=False account_locked=False has_password_hash=True failed_login_attempts=0 force_password_change=False
+2026-07-25 22:38:38,529 | INFO | app.services.auth_service | [AUTH_DEBUG] password verification result: True (hash present: True)
+2026-07-25 23:04:30,928 | INFO | app.services.auth_service | [AUTH_DEBUG] verify_login_password called for email='tr***********@reknew.com' ip=127.0.0.1
+2026-07-25 23:04:30,940 | INFO | app.services.auth_service | [AUTH_DEBUG] employee found: id=73e7d4e0-1f74-45cb-908d-e87e0004d039 is_active=True is_first_login=False account_locked=False has_password_hash=True failed_login_attempts=0 force_password_change=False
+2026-07-25 23:04:31,391 | INFO | app.services.auth_service | [AUTH_DEBUG] password verification result: True (hash present: True)
+2026-07-25 23:09:08,404 | WARNING | app.core.authentication | orbit_ai_auth_denied correlation_id=4213beaa-4cff-48cb-aeb4-c6ab5975fae4 reason=Invalid or expired bearer credential.
+2026-07-25 23:52:52,985 | INFO | app.services.auth_service | [AUTH_DEBUG] verify_login_password called for email='tr***********@reknew.com' ip=127.0.0.1
+2026-07-25 23:52:52,997 | INFO | app.services.auth_service | [AUTH_DEBUG] employee found: id=73e7d4e0-1f74-45cb-908d-e87e0004d039 is_active=True is_first_login=False account_locked=False has_password_hash=True failed_login_attempts=0 force_password_change=False
+2026-07-25 23:52:53,463 | INFO | app.services.auth_service | [AUTH_DEBUG] password verification result: True (hash present: True)
+2026-07-25 23:53:42,440 | INFO | app.api.ai | orbit_ai_request correlation_id=e79e06f9-6212-4cbd-8818-deab2a18bfe5 actor_id=73e7d4e0-1f74-45cb-908d-e87e0004d039 status=completed tool=check_my_leave_eligibility latency_ms=106

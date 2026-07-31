@@ -15,9 +15,12 @@ from app.schemas.leave import (
     ExcludedLeaveDate,
     LeaveAssessmentInput,
     LeaveBalanceResponse,
+    LeaveBalancesSnapshot,
     LeaveBlockingReason,
     LeaveContextResponse,
     LeaveEligibilityResponse,
+    MyLeaveRequestList,
+    MyLeaveRequestQuery,
     LeaveRequestInput,
     LeaveRequestResponse,
     LeaveWarning,
@@ -34,6 +37,7 @@ from app.services.work_calendar_service import (
     employee_region,
     region_visible,
 )
+from app.services.leave_approver_service import resolve_leave_approver
 
 
 DEFAULT_LEAVE_DATE_POLICIES = {
@@ -60,6 +64,25 @@ class LeaveServiceError(Exception):
 
     def __str__(self) -> str:
         return self.message
+
+
+def normalize_leave_reason(reason: str | None, *, required: bool) -> str | None:
+    """Canonical reason validation shared by normal and AI draft workflows."""
+    if reason is None or not reason.strip():
+        if required:
+            raise LeaveServiceError(
+                "INVALID_REASON", "A leave reason is required.", 400, "reason"
+            )
+        return None
+    normalized = reason.strip()
+    if len(normalized) > 200 or any(ord(character) < 32 for character in normalized):
+        raise LeaveServiceError(
+            "INVALID_REASON",
+            "The leave reason must be 200 valid characters or fewer.",
+            400,
+            "reason",
+        )
+    return normalized
 
 
 def decimal_to_float(value: Any) -> float:
@@ -225,7 +248,12 @@ def serialize_leave_request(
         if request.reviewed_by
         else None
     )
-    manager_name = employee.reporting_manager if employee else None
+    manager = (
+        db.query(Employee).filter(Employee.id == employee.manager_id).first()
+        if employee and employee.manager_id
+        else None
+    )
+    manager_name = employee_name(manager) if manager else employee.reporting_manager if employee else None
     pending_with = manager_name or "Super Admin"
     return LeaveRequestResponse(
         id=request.id,
@@ -249,13 +277,13 @@ def serialize_leave_request(
     )
 
 
-def get_my_leave_context(
+def get_my_leave_balances(
     db: Session,
     employee: Employee,
     *,
     as_of: datetime | None = None,
-) -> LeaveContextResponse:
-    """Return employee leave context without flushing, committing, or mutating state."""
+) -> LeaveBalancesSnapshot:
+    """Return canonical effective balances without flushing, committing, or mutating state."""
     observed_at = as_of or datetime.utcnow()
     year = observed_at.year
     leave_types = db.query(LeaveType).filter(LeaveType.is_active == True).order_by(
@@ -290,19 +318,117 @@ def get_my_leave_context(
                     else f"Expires Dec 31, {year}"
                 ),
                 initialized=balance is not None,
+                source=(
+                    "on_request"
+                    if on_request
+                    else "stored_balance"
+                    if balance is not None
+                    else "policy_default"
+                ),
             )
         )
+    return LeaveBalancesSnapshot(as_of=observed_at, year=year, balances=balances)
+
+
+def get_my_leave_context(
+    db: Session,
+    employee: Employee,
+    *,
+    as_of: datetime | None = None,
+) -> LeaveContextResponse:
+    """Return employee leave context without flushing, committing, or mutating state."""
+    snapshot = get_my_leave_balances(db, employee, as_of=as_of)
 
     requests = db.query(LeaveRequest).filter(
         LeaveRequest.employee_id == employee.id
     ).order_by(LeaveRequest.created_at.desc()).limit(12).all()
     return LeaveContextResponse(
-        as_of=observed_at,
+        as_of=snapshot.as_of,
         reporting_manager=employee.reporting_manager or None,
         joining_date=employee_joining_date(employee),
-        min_request_date=min_request_date(employee, today=observed_at.date()),
-        balances=balances,
+        min_request_date=min_request_date(employee, today=snapshot.as_of.date()),
+        balances=snapshot.balances,
         requests=[serialize_leave_request(db, item, employee=employee) for item in requests],
+    )
+
+
+def resolve_leave_type_reference(db: Session, reference: str) -> LeaveType | None:
+    normalized = " ".join(
+        reference.strip().lower().replace("_", " ").replace("-", " ").split()
+    )
+    aliases = {
+        "casual": "casual leave",
+        "sick": "sick leave",
+        "earned": "earned leave",
+        "comp off": "compensatory off",
+        "compensatory": "compensatory off",
+        "lop": "loss of pay",
+        "optional": "optional holiday",
+        "floating": "floating holiday",
+    }
+    normalized = aliases.get(normalized, normalized)
+    leave_types = db.query(LeaveType).filter(LeaveType.is_active == True).all()
+    for leave_type in leave_types:
+        name = " ".join((leave_type.name or "").strip().lower().split())
+        code = (leave_type.code or "").strip().lower()
+        if normalized in {name, code, name.removesuffix(" leave")}:
+            return leave_type
+    return None
+
+
+def list_my_leave_requests(
+    db: Session,
+    employee: Employee,
+    query: MyLeaveRequestQuery,
+    *,
+    as_of: datetime | None = None,
+) -> MyLeaveRequestList:
+    """Return an authoritative, owner-scoped leave-request snapshot without writes."""
+    observed_at = as_of or datetime.utcnow()
+    request_query = db.query(LeaveRequest).filter(
+        LeaveRequest.employee_id == employee.id
+    )
+    if query.statuses:
+        request_query = request_query.filter(
+            LeaveRequest.status.in_([status.lower() for status in query.statuses])
+        )
+    if query.leave_type:
+        leave_type = resolve_leave_type_reference(db, query.leave_type)
+        if not leave_type:
+            raise LeaveServiceError(
+                "LEAVE_TYPE_NOT_FOUND",
+                f"'{query.leave_type}' is not a supported leave type.",
+                404,
+                "leave_type",
+            )
+        request_query = request_query.filter(
+            LeaveRequest.leave_type_id == leave_type.id
+        )
+    if query.on_date:
+        request_query = request_query.filter(
+            LeaveRequest.start_date <= query.on_date,
+            LeaveRequest.end_date >= query.on_date,
+        )
+    if query.created_from:
+        request_query = request_query.filter(
+            LeaveRequest.created_at >= datetime.combine(query.created_from, datetime.min.time())
+        )
+    if query.created_to:
+        request_query = request_query.filter(
+            LeaveRequest.created_at
+            < datetime.combine(query.created_to + timedelta(days=1), datetime.min.time())
+        )
+    total_matches = request_query.count()
+    requests = request_query.order_by(
+        LeaveRequest.created_at.desc(), LeaveRequest.id.desc()
+    ).limit(query.limit).all()
+    return MyLeaveRequestList(
+        as_of=observed_at,
+        requests=[
+            serialize_leave_request(db, item, employee=employee)
+            for item in requests
+        ],
+        total_matches=total_matches,
     )
 
 
@@ -397,6 +523,29 @@ def _exclusions(
     return excluded_weekends, excluded_holidays, payable
 
 
+def find_overlapping_leave_requests(
+    db: Session,
+    employee_id: str,
+    start_date: date,
+    end_date: date,
+    *,
+    exclude_request_id: str | None = None,
+) -> list[LeaveRequest]:
+    if end_date < start_date:
+        return []
+    query = db.query(LeaveRequest).filter(
+        LeaveRequest.employee_id == employee_id,
+        LeaveRequest.status.in_(["pending", "approved"]),
+        LeaveRequest.start_date <= end_date,
+        LeaveRequest.end_date >= start_date,
+    )
+    if exclude_request_id:
+        query = query.filter(LeaveRequest.id != exclude_request_id)
+    return query.order_by(
+        LeaveRequest.start_date.asc(), LeaveRequest.created_at.asc()
+    ).all()
+
+
 def assess_my_leave_request(
     db: Session,
     employee: Employee,
@@ -479,16 +628,14 @@ def assess_my_leave_request(
         blockers.append(holiday_error)
 
     if payload.end_date >= payload.start_date:
-        overlap_query = db.query(LeaveRequest).filter(
-            LeaveRequest.employee_id == employee.id,
-            LeaveRequest.status.in_(["pending", "approved"]),
-            LeaveRequest.start_date <= payload.end_date,
-            LeaveRequest.end_date >= payload.start_date,
+        overlaps = find_overlapping_leave_requests(
+            db,
+            employee.id,
+            payload.start_date,
+            payload.end_date,
+            exclude_request_id=exclude_request_id,
         )
-        if exclude_request_id:
-            overlap_query = overlap_query.filter(LeaveRequest.id != exclude_request_id)
-        overlap = overlap_query.first()
-        if overlap:
+        if overlaps:
             blockers.append(LeaveBlockingReason(
                 code="LEAVE_OVERLAP",
                 message="You already have a leave request for this period.",
@@ -560,14 +707,11 @@ def _raise_first_blocker(assessment: LeaveEligibilityResponse) -> None:
 
 
 def _queue_leave_approval_email(db: Session, employee: Employee, request: LeaveRequest, leave_type: LeaveType) -> None:
-    manager = db.query(Employee).filter(Employee.id == employee.manager_id).first() if employee.manager_id else None
-    if not manager and employee.reporting_manager:
-        ref = employee.reporting_manager.strip().lower()
-        for candidate in db.query(Employee).filter(Employee.id != employee.id).all():
-            full_name = f"{candidate.first_name} {candidate.last_name}".strip().lower()
-            if ref in {full_name, candidate.work_email.lower()}:
-                manager = candidate
-                break
+    resolved = resolve_leave_approver(db, employee)
+    manager = (
+        db.query(Employee).filter(Employee.id == resolved.employee_id).first()
+        if resolved else None
+    )
     if not manager:
         return
     enqueue_email(
@@ -635,7 +779,7 @@ def create_my_leave_request(
         end_date=payload.end_date,
         total_days=assessment.payable_working_days,
         holiday_id=payload.holiday_id,
-        reason=payload.reason.strip(),
+        reason=normalize_leave_reason(payload.reason, required=True),
         status="draft" if payload.action == "draft" else "pending",
         created_at=now,
         updated_at=now,
@@ -657,7 +801,7 @@ def create_my_leave_request(
             "holiday_id": payload.holiday_id,
             "status": request.status,
         },
-        reason=payload.reason.strip(),
+        reason=normalize_leave_reason(payload.reason, required=True),
         metadata={"correlation_id": correlation_id} if correlation_id else None,
     )
     if payload.action == "submit":
@@ -731,7 +875,7 @@ def update_my_leave_request(
     request.end_date = payload.end_date
     request.total_days = assessment.payable_working_days
     request.holiday_id = payload.holiday_id
-    request.reason = payload.reason.strip()
+    request.reason = normalize_leave_reason(payload.reason, required=True)
     request.status = "draft" if payload.action == "draft" else "pending"
     request.updated_at = datetime.utcnow()
     log_audit(
@@ -742,7 +886,7 @@ def update_my_leave_request(
         entity_id=request.id,
         old_values=old_values,
         new_values=serialize_leave_request(db, request, employee=employee).model_dump(mode="json"),
-        reason=payload.reason.strip(),
+        reason=normalize_leave_reason(payload.reason, required=True),
     )
     if payload.action == "submit":
         _queue_leave_approval_email(db, employee, request, leave_type)

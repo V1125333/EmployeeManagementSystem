@@ -1,18 +1,24 @@
 import type React from 'react';
-import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Bot, CalendarPlus, CheckCircle2, Clock3, Eraser, Send,
 } from 'lucide-react';
+import { OrbitAIGlyph } from '@/components/ai/OrbitAIGlyph';
 import { Button } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/utils/cn';
+import { AIChatResponseContent } from '@/components/ai/AIChatResponseContent';
+import { AIAPIError, sendAIChat, type AIChatResponse } from '@/services/aiApi';
 
-type ChatMessage = {
+export type ChatMessage = {
   id: string;
   role: 'agent' | 'user';
   text: string;
   actions?: { label: string; path: string; icon?: React.ReactNode }[];
+  result?: AIChatResponse['result'];
+  correlationId?: string;
+  status?: AIChatResponse['status'];
 };
 
 type LeaveBalanceItem = {
@@ -29,10 +35,9 @@ type LeaveBalanceItem = {
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
 const prompts = [
-  'Apply casual leave for tomorrow',
-  'What is my leave balance?',
-  'Help me submit this week timesheet',
-  'Show pending requests',
+  'What is my casual leave balance?',
+  'Show all my leave balances',
+  'How many sick leave days do I have?',
 ];
 
 function isAdminRole(role?: string) {
@@ -248,12 +253,23 @@ async function getLeaveBalanceReply(
   }
 }
 
-async function getAgentReply(message: string, user?: { id?: string; email?: string; role?: string }): Promise<ChatMessage> {
-  const text = message.toLowerCase();
+export async function getAgentReply(message: string, user?: { id?: string; email?: string; role?: string }): Promise<ChatMessage> {
+  const text = message.toLowerCase().trim();
   const admin = isAdminRole(user?.role);
   const leavePath = admin ? '/time-off' : '/employee/apply-leave';
   const timesheetPath = admin ? '/time-off' : '/employee/timesheets';
   const requestsPath = admin ? '/staffing-requests' : '/employee/requests';
+
+  if (/^(hi|hello|hey|good morning|good afternoon|good evening)[!. ]*$/.test(text)) {
+    const firstName = user && 'name' in user
+      ? String((user as { name?: string }).name || '').split(' ')[0]
+      : '';
+    return {
+      id: crypto.randomUUID(),
+      role: 'agent',
+      text: `Hello${firstName ? `, ${firstName}` : ''}! How can I help you today? You can ask me about leave, timesheets, attendance, requests, projects, or your documents.`,
+    };
+  }
 
   if (isLeaveBalanceQuestion(text)) {
     return getLeaveBalanceReply(message, user);
@@ -281,6 +297,28 @@ async function getAgentReply(message: string, user?: { id?: string; email?: stri
     };
   }
 
+  if (text.includes('payslip') || text.includes('document') || text.includes('certificate')) {
+    return {
+      id: crypto.randomUUID(),
+      role: 'agent',
+      text: 'I can take you to Documents, where your latest payslips, personal files, policies, and certificates are grouped into folders.',
+      actions: [
+        { label: 'Open Documents', path: admin ? '/hr-documents' : '/employee/documents', icon: <CheckCircle2 size={15} /> },
+      ],
+    };
+  }
+
+  if (text.includes('needs me today') || text.includes('what needs me')) {
+    return {
+      id: crypto.randomUUID(),
+      role: 'agent',
+      text: 'Your dashboard briefing collects the items that need attention today, including timesheet deadlines, pending requests, manager approvals, training, and document actions.',
+      actions: [
+        { label: 'Open Dashboard', path: admin ? '/' : '/employee', icon: <CheckCircle2 size={15} /> },
+      ],
+    };
+  }
+
   if (text.includes('pending') || text.includes('request') || text.includes('status')) {
     return {
       id: crypto.randomUUID(),
@@ -299,21 +337,34 @@ async function getAgentReply(message: string, user?: { id?: string; email?: stri
   };
 }
 
-export function AskOrbitAIPage() {
+export function AskOrbitAIPage({
+  embedded = false,
+  contextualPrompts = [],
+}: {
+  embedded?: boolean;
+  contextualPrompts?: string[];
+} = {}) {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const [input, setInput] = useState('');
+  const { user, accessToken } = useAuth();
+  const [searchParams] = useSearchParams();
+  const initialPromptRef = useRef(searchParams.get('prompt') || '');
+  const [input, setInput] = useState(() => searchParams.get('prompt') || '');
   const [sending, setSending] = useState(false);
+  const [conversationId, setConversationId] = useState<string>();
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome',
       role: 'agent',
-      text: 'Hi, I am Ask Orbit AI. Ask me about leave, timesheets, requests, attendance, projects, or HR policies. I can answer and guide you to the right action.',
+      text: 'Hi, I am Ask Orbit AI. In this first secure version, I can check your own leave balance.',
     },
   ]);
 
   const displayName = useMemo(() => user?.name?.split(' ')[0] || 'there', [user?.name]);
   const hasOnlyWelcome = messages.length === 1 && messages[0]?.id === 'welcome';
+  const visiblePrompts = useMemo(
+    () => [...new Set([...contextualPrompts, ...prompts])].slice(0, embedded ? 4 : 6),
+    [contextualPrompts, embedded],
+  );
 
   const sendMessage = async () => {
     const trimmed = input.trim();
@@ -327,10 +378,35 @@ export function AskOrbitAIPage() {
     setMessages((current) => [...current, userMessage]);
     setInput('');
     setSending(true);
-    const reply = await getAgentReply(trimmed, user ?? undefined);
-    setMessages((current) => [...current, reply]);
-    setSending(false);
+    try {
+      const response = await sendAIChat(trimmed, accessToken, conversationId);
+      setConversationId(response.conversation_id);
+      setMessages((current) => [...current, {
+        id: crypto.randomUUID(),
+        role: 'agent',
+        text: response.message.content,
+        result: response.result,
+        correlationId: response.correlation_id,
+        status: response.status,
+      }]);
+    } catch (error) {
+      const apiError = error instanceof AIAPIError ? error : null;
+      setMessages((current) => [...current, {
+        id: crypto.randomUUID(),
+        role: 'agent',
+        text: apiError?.message || 'Orbit AI could not answer right now.',
+        correlationId: apiError?.correlationId,
+      }]);
+    } finally {
+      setSending(false);
+    }
   };
+
+  useEffect(() => {
+    if (!initialPromptRef.current) return;
+    initialPromptRef.current = '';
+    void sendMessage();
+  }, []);
 
   const clearChat = () => {
     setMessages([
@@ -340,16 +416,22 @@ export function AskOrbitAIPage() {
         text: 'Chat cleared. What would you like Ask Orbit AI to help with next?',
       },
     ]);
+    setConversationId(undefined);
   };
 
   return (
-    <div className="-mx-[var(--layout-main-padding-x)] -my-[var(--layout-main-padding-y)] flex h-[calc(100vh-3.5rem)] min-h-0 flex-col overflow-hidden">
+    <div className={cn(
+      'flex min-h-0 flex-col overflow-hidden',
+      embedded
+        ? 'h-full pb-[72px]'
+        : '-mx-[var(--layout-main-padding-x)] -my-[var(--layout-main-padding-y)] h-[calc(100vh-3.5rem)]',
+    )}>
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
         <div className="border-b border-[var(--color-border)] px-5 py-3">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-brand-navy)] text-accent">
-                <Bot size={21} />
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-[#199a8e] to-[#12433f] shadow-[0_4px_12px_rgba(18,67,63,.22)]">
+                <OrbitAIGlyph className="orbit-ai-glyph" />
               </div>
               <div>
                 <div className="text-sm font-bold text-[var(--color-brand-navy)]">Ask Orbit AI</div>
@@ -387,7 +469,12 @@ export function AskOrbitAIPage() {
                     Ask Orbit AI
                   </div>
                 )}
-                <div>{message.text}</div>
+                <AIChatResponseContent
+                  text={message.text}
+                  status={message.status}
+                  result={message.result}
+                  correlationId={message.correlationId}
+                />
                 {message.actions && (
                   <div className="mt-3 flex flex-wrap gap-2">
                     {message.actions.map((action) => (
@@ -404,7 +491,7 @@ export function AskOrbitAIPage() {
           {sending && (
             <div className="flex justify-start">
               <div className="rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm font-medium text-gray-500 shadow-sm">
-                Ask Orbit AI is checking...
+                <AIChatResponseContent loading />
               </div>
             </div>
           )}
@@ -418,7 +505,7 @@ export function AskOrbitAIPage() {
         <div className="border-t border-[var(--color-border)] bg-white p-4">
           {hasOnlyWelcome && (
             <div className="mb-3 flex flex-wrap gap-2">
-              {prompts.map((prompt) => (
+              {visiblePrompts.map((prompt) => (
                 <button
                   key={prompt}
                   type="button"
@@ -440,7 +527,7 @@ export function AskOrbitAIPage() {
                   sendMessage();
                 }
               }}
-              placeholder="Ask Orbit AI to apply leave, check balance, submit timesheet..."
+              placeholder="Ask Orbit AI to check your leave balance..."
               className="min-h-12 flex-1 rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-hover)] px-4 text-sm font-medium text-[var(--color-brand-navy)] outline-none transition focus:border-accent-mid focus:ring-2 focus:ring-accent-light"
             />
             <Button icon={<Send size={16} />} onClick={sendMessage} disabled={sending}>

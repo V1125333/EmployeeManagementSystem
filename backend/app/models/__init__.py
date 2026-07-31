@@ -82,3 +82,12 @@ from app.models.transactional_email import EmailOutbox, AccountActivationToken, 
 
 # Employee and shared company file browser
 from app.models.documents import EmployeeDocument
+
+# AI workflow state; never an official leave request.
+from app.models.ai_workflow import (
+    AIContextualShadowEvaluation,
+    AIConversation,
+    AIConversationMessage,
+    AILeaveIntakeState,
+    AILeaveRequestDraft,
+)

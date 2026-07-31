@@ -27,7 +27,7 @@ type Step =
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const { isAuthenticated, loginAdmin, setUserFromApi } = useAuth();
+  const { isAuthenticated, setUserFromApi } = useAuth();
 
   const [step, setStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
@@ -242,20 +242,9 @@ export function LoginPage() {
     setError('');
     const normalizedEmail = email.trim().toLowerCase();
 
-    // Check if this is super admin without TOTP
-    if (normalizedEmail === 'superadmin@reknew.ai') {
-      setLoading(true);
-      const success = await loginAdmin(normalizedEmail, password);
-      setLoading(false);
-      if (success) {
-        navigate('/');
-      } else {
-        setError('Invalid password');
-      }
-      return;
-    }
-
-    // Regular employee — proceed to TOTP step
+    // Verify the password server-side for every role. Accounts with MFA
+    // continue to the authenticator step; approved no-MFA system accounts
+    // receive a signed token directly from the backend.
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/auth/login/verify-password`, {
@@ -276,8 +265,13 @@ export function LoginPage() {
         return;
       }
       if (data.force_password_change && data.employee) {
-        setUserFromApi({ ...data.employee, force_password_change: true });
+        setUserFromApi({ ...data.employee, force_password_change: true }, data.token);
         navigate('/force-change-password', { replace: true });
+        return;
+      }
+      if (data.token && data.employee) {
+        setUserFromApi(data.employee, data.token);
+        navigate('/', { replace: true });
         return;
       }
       setLoginChallengeToken(data.login_challenge_token || '');
@@ -308,7 +302,7 @@ export function LoginPage() {
         setError(data.message || data.detail || 'Invalid authenticator code.');
         return;
       }
-      setUserFromApi({ ...data.employee, force_password_change: data.force_password_change });
+      setUserFromApi({ ...data.employee, force_password_change: data.force_password_change }, data.token);
       navigate('/');
     } catch {
       setError('Cannot connect to server. Please try again.');

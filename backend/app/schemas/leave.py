@@ -68,6 +68,13 @@ class LeaveBalanceResponse(StrictModel):
     max_carry_forward_days: float
     expiry_label: str
     initialized: bool
+    source: Literal["stored_balance", "policy_default", "on_request"]
+
+
+class LeaveBalancesSnapshot(StrictModel):
+    as_of: datetime
+    year: int
+    balances: list[LeaveBalanceResponse]
 
 
 class LeaveRequestResponse(StrictModel):
@@ -135,6 +142,49 @@ class LeaveEligibilityResponse(StrictModel):
     policy: ConfiguredLeavePolicy
 
 
+class LeaveOverlapSummary(StrictModel):
+    request_id: str
+    leave_type: str
+    start_date: date
+    end_date: date
+    status: str
+
+
+class LeavePolicyCheck(StrictModel):
+    code: str
+    passed: bool
+
+
+class MyLeaveEligibilityResult(StrictModel):
+    leave_type: str
+    leave_type_code: str
+    start_date: date
+    end_date: date
+    calendar_day_count: int
+    working_day_count: float
+    weekend_dates_excluded: list[ExcludedLeaveDate]
+    company_holidays_excluded: list[ExcludedLeaveDate]
+    optional_holiday_treatment: Literal[
+        "not_applicable", "selected_automatically", "selection_required"
+    ]
+    required_leave_units: float
+    available_leave_balance: float | Literal["On request"]
+    balance_source: Literal["stored_balance", "policy_default", "on_request"]
+    existing_overlaps: list[LeaveOverlapSummary]
+    policy_checks_performed: list[LeavePolicyCheck]
+    blocking_reasons: list[LeaveBlockingReason]
+    warnings: list[LeaveWarning]
+    eligibility_status: Literal[
+        "eligible",
+        "eligible_with_warnings",
+        "not_eligible",
+        "requires_information",
+    ]
+    current_approver: str | None
+    evaluated_at: datetime
+    timezone: str
+
+
 class SubmittedLeaveResult(StrictModel):
     request_id: str
     request: LeaveRequestResponse
@@ -149,6 +199,32 @@ class OwnerScopedLeaveRequestStatus(StrictModel):
     status: str
     request: LeaveRequestResponse
     as_of: datetime
+
+
+class MyLeaveRequestQuery(StrictModel):
+    statuses: list[
+        Literal[
+            "draft",
+            "submitted",
+            "pending",
+            "approved",
+            "rejected",
+            "cancelled",
+            "withdrawn",
+            "expired",
+        ]
+    ] = Field(default_factory=list, max_length=8)
+    leave_type: str | None = Field(default=None, min_length=1, max_length=50)
+    on_date: date | None = None
+    created_from: date | None = None
+    created_to: date | None = None
+    limit: int = Field(default=12, ge=1, le=25)
+
+
+class MyLeaveRequestList(StrictModel):
+    as_of: datetime
+    requests: list[LeaveRequestResponse]
+    total_matches: int
 
 
 class StructuredErrorDetail(StrictModel):

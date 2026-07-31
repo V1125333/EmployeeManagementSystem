@@ -421,7 +421,7 @@ export function TopNav() {
   );
 
   return (
-    <header className="h-14 flex items-center justify-between px-7 bg-warm-card border-b border-[var(--color-border)] sticky top-0 z-40">
+    <header className="h-14 flex items-center justify-between px-7 bg-warm-card border-b border-[var(--color-border)] sticky top-0 z-30">
       <div ref={searchRef} className="relative flex items-center">
         <div className={cn('flex items-center gap-2 bg-warm-bg border rounded-btn px-3.5 py-[7px] w-[340px] transition-colors', searchOpen ? 'border-olive shadow-sm' : 'border-[var(--color-border)]')}>
           <Search size={16} className="text-gray-400 shrink-0" />

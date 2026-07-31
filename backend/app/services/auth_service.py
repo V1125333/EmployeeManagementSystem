@@ -17,6 +17,7 @@ from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.core.config import settings
+from app.core.authentication import create_access_token
 from app.models.employee import Employee
 from app.models.login_challenge import LoginChallengeSession
 from app.models.operations import Notification
@@ -157,7 +158,7 @@ def _login_response(employee: Employee) -> dict:
     return {
         "success": True,
         "message": "Login successful",
-        "token": "mock-jwt-token",
+        "token": create_access_token(employee),
         "force_password_change": bool(employee.force_password_change),
         "employee": {
             "id": employee.id,
@@ -464,6 +465,18 @@ def verify_login_password(db: Session, email: str, password: str, ip_address: st
         result = _login_response(employee)
         result["message"] = "Temporary password verified. Create a new password."
         return result
+    if _normalize_role(employee.role) in _admin_roles() and not employee.totp_secret:
+        employee.last_login_at = datetime.utcnow()
+        db.commit()
+        get_or_create_preferences(db, employee.id)
+        _audit(
+            db,
+            employee,
+            "login_password_success",
+            employee.id,
+            metadata={"ip_address": ip_address, "mfa": False},
+        )
+        return _login_response(employee)
     db.query(LoginChallengeSession).filter(
         LoginChallengeSession.employee_id == employee.id,
         LoginChallengeSession.used_at.is_(None),
