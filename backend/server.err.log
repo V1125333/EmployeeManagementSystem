@@ -1,0 +1,43 @@
+INFO:     Started server process [37036]
+INFO:     Waiting for application startup.
+2026-08-16 16:37:25,155 | INFO | app.main | Security configuration validated
+2026-08-16 16:37:25,871 | INFO | app.main | All database tables created
+2026-08-16 16:37:26,070 | INFO | app.main | Database seeding complete
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+2026-08-16 16:41:11,356 | WARNING | app.core.authentication | authentication_denied correlation_id=92111bac-3fe3-4f84-9d1a-1eb385f060d4 reason=Invalid or expired bearer credential.
+2026-08-16 16:41:11,356 | WARNING | app.core.authentication | authentication_denied correlation_id=8cbec868-d6ec-4720-8d87-83c059edec7b reason=Invalid or expired bearer credential.
+2026-08-16 16:41:11,356 | WARNING | app.core.authentication | authentication_denied correlation_id=2f83686b-a517-4bda-bfa5-099abe102c66 reason=Invalid or expired bearer credential.
+2026-08-16 16:41:11,362 | WARNING | app.core.authentication | authentication_denied correlation_id=8cd9ccf1-26de-45f3-89d2-98fe8e94833f reason=Invalid or expired bearer credential.
+2026-08-16 16:41:11,364 | WARNING | app.core.authentication | authentication_denied correlation_id=09e13fa8-3fa3-484b-83e4-ec3a4ae24a42 reason=Invalid or expired bearer credential.
+2026-08-16 16:41:11,365 | WARNING | app.core.authentication | authentication_denied correlation_id=532755aa-2cda-4db2-a599-2da8a5347cec reason=Invalid or expired bearer credential.
+2026-08-16 16:41:11,381 | WARNING | app.core.authentication | authentication_denied correlation_id=b55ef5be-ed11-4d93-9067-e68ab49a3fe9 reason=Invalid or expired bearer credential.
+2026-08-16 16:41:11,386 | WARNING | app.core.authentication | authentication_denied correlation_id=cc91a967-88bc-4d6e-90d5-409a7eab15fa reason=Invalid or expired bearer credential.
+2026-08-16 16:41:11,401 | WARNING | app.core.authentication | authentication_denied correlation_id=6e55a86e-5ab0-4ed8-9663-2fe276002b28 reason=Invalid or expired bearer credential.
+2026-08-16 16:41:11,405 | WARNING | app.core.authentication | authentication_denied correlation_id=ba735c24-4449-403c-afa7-8ebec8de780c reason=Invalid or expired bearer credential.
+2026-08-16 16:41:11,419 | WARNING | app.core.authentication | authentication_denied correlation_id=b48e2acc-3294-4aeb-b87d-466062ef8693 reason=Invalid or expired bearer credential.
+2026-08-16 16:41:11,435 | WARNING | app.core.authentication | authentication_denied correlation_id=f3aa0fe0-cf49-4ea8-bc97-14187dd330cf reason=Invalid or expired bearer credential.
+2026-08-16 16:41:11,469 | WARNING | app.core.authentication | authentication_denied correlation_id=82f9957f-1aa4-47cf-8137-8575e0ed60e9 reason=Invalid or expired bearer credential.
+2026-08-16 16:41:11,476 | WARNING | app.core.authentication | authentication_denied correlation_id=7a09874f-697c-4af6-ad74-f20028755674 reason=Invalid or expired bearer credential.
+2026-08-16 16:41:11,490 | WARNING | app.core.authentication | authentication_denied correlation_id=84b74d6a-72ef-4911-b737-9c726ec324ff reason=Invalid or expired bearer credential.
+2026-08-16 16:41:11,497 | WARNING | app.core.authentication | authentication_denied correlation_id=c39f9c6c-9adb-4e9b-acd4-ab1dd1dafcee reason=Invalid or expired bearer credential.
+2026-08-16 16:41:33,804 | INFO | app.services.auth_service | [AUTH_DEBUG] verify_login_password called for email='vp********@reknew.ai' ip=127.0.0.1
+2026-08-16 16:41:33,819 | INFO | app.services.auth_service | [AUTH_DEBUG] employee found: id=896dd284-2bf0-4f19-8420-bdf3af9cd90f is_active=True is_first_login=False account_locked=False has_password_hash=True failed_login_attempts=0 force_password_change=False
+2026-08-16 16:41:34,270 | INFO | app.services.auth_service | [AUTH_DEBUG] password verification result: True (hash present: True)
+2026-08-16 16:42:18,837 | INFO | app.services.auth_service | [AUTH_DEBUG] verify_login_password called for email='vp********@reknew.ai' ip=127.0.0.1
+2026-08-16 16:42:18,841 | INFO | app.services.auth_service | [AUTH_DEBUG] employee found: id=896dd284-2bf0-4f19-8420-bdf3af9cd90f is_active=True is_first_login=False account_locked=False has_password_hash=True failed_login_attempts=0 force_password_change=False
+2026-08-16 16:42:19,295 | INFO | app.services.auth_service | [AUTH_DEBUG] password verification result: True (hash present: True)
+2026-08-16 17:23:42,608 | WARNING | app.core.authentication | authentication_denied correlation_id=a100ed9c-cc28-49da-92b6-e74b57aec6fc reason=Invalid or expired bearer credential.
+2026-08-16 17:23:42,609 | WARNING | app.core.authentication | authentication_denied correlation_id=53d18092-b379-4a7a-9188-55a382705246 reason=Invalid or expired bearer credential.
+2026-08-16 17:23:42,609 | WARNING | app.core.authentication | authentication_denied correlation_id=f4852a98-766c-4cdb-82a1-3e368f05173f reason=Invalid or expired bearer credential.
+2026-08-16 17:23:42,610 | WARNING | app.core.authentication | authentication_denied correlation_id=132a2af9-78aa-4500-8797-aef2f7b93635 reason=Invalid or expired bearer credential.
+2026-08-16 17:23:42,610 | WARNING | app.core.authentication | authentication_denied correlation_id=c47fe714-b0de-4332-84c8-0c5b3c6d3883 reason=Invalid or expired bearer credential.
+2026-08-16 17:23:42,613 | WARNING | app.core.authentication | authentication_denied correlation_id=2acbabc0-476a-4165-87b4-ed46b0f2e2c1 reason=Invalid or expired bearer credential.
+2026-08-16 17:23:42,647 | WARNING | app.core.authentication | authentication_denied correlation_id=ee2132a5-eb4b-4e51-b28d-ad0656c0362a reason=Invalid or expired bearer credential.
+2026-08-16 17:23:42,660 | WARNING | app.core.authentication | authentication_denied correlation_id=7ee1bd4a-cfe7-4d0e-b7b3-92a706d65d79 reason=Invalid or expired bearer credential.
+2026-08-16 17:23:42,673 | WARNING | app.core.authentication | authentication_denied correlation_id=d9896aaf-bd5d-4efe-bf19-37836de5830f reason=Invalid or expired bearer credential.
+2026-08-16 17:23:42,677 | WARNING | app.core.authentication | authentication_denied correlation_id=2f8cbc69-3b28-46b6-9f4c-1630de0b3395 reason=Invalid or expired bearer credential.
+2026-08-16 17:23:42,697 | WARNING | app.core.authentication | authentication_denied correlation_id=a0aa5c7a-6456-4cc3-ade7-3dca84680656 reason=Invalid or expired bearer credential.
+2026-08-16 17:23:42,711 | WARNING | app.core.authentication | authentication_denied correlation_id=6ecf2ff5-b214-42a5-a7f9-3478a7280901 reason=Invalid or expired bearer credential.
+2026-08-16 17:23:42,711 | WARNING | app.core.authentication | authentication_denied correlation_id=f3de7ec5-180f-4300-bd44-0ef708cb605c reason=Invalid or expired bearer credential.
+2026-08-16 17:23:42,741 | WARNING | app.core.authentication | authentication_denied correlation_id=72b36589-f070-4e75-a2f6-b313b109a1fb reason=Invalid or expired bearer credential.

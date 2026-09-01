@@ -9,6 +9,26 @@ from app.core.config import settings
 engine = create_engine(settings.DATABASE_URL, echo=False)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
+REQUIRED_MIGRATION_HEAD = "20260816_0003"
+TASK8B_REQUIRED_TABLES = {
+    "timesheet_weeks",
+    "timesheet_idempotency_records",
+    "timesheet_migration_anomalies",
+    "organization_security_policy",
+}
+TASK8B_REQUIRED_ENTRY_COLUMNS = {"timesheet_week_id"}
+TASK8B_REQUIRED_NOTIFICATION_COLUMNS = {
+    "actor_employee_id",
+    "origin_domain",
+    "event_type",
+    "deduplication_key",
+    "priority",
+    "read_at",
+    "dismissed_at",
+    "expires_at",
+    "updated_at",
+}
+
 
 class Base(DeclarativeBase):
     pass
@@ -21,6 +41,48 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def validate_required_migration_head() -> None:
+    """Fail closed before startup mutation when the managed schema is stale.
+
+    Development and tests may opt out for legacy fixture convenience. Production
+    enables this check by default and never runs migrations automatically.
+    """
+    if not settings.MIGRATION_CHECK_ENABLED:
+        return
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+    if "alembic_version" not in tables:
+        raise RuntimeError(
+            "Database migration state is missing. Back up the database, stamp the "
+            "approved legacy baseline when applicable, and run `alembic upgrade head`."
+        )
+    with engine.connect() as connection:
+        revisions = set(connection.execute(text("SELECT version_num FROM alembic_version")).scalars())
+    if revisions != {REQUIRED_MIGRATION_HEAD}:
+        safe_revisions = ", ".join(sorted(revisions)) if revisions else "none"
+        raise RuntimeError(
+            f"Database migration head is {safe_revisions}; required head is {REQUIRED_MIGRATION_HEAD}. "
+            "Run migrations through the approved deployment procedure."
+        )
+    missing_tables = sorted(TASK8B_REQUIRED_TABLES - tables)
+    entry_columns = (
+        {column["name"] for column in inspector.get_columns("timesheet_entries")}
+        if "timesheet_entries" in tables else set()
+    )
+    notification_columns = (
+        {column["name"] for column in inspector.get_columns("notifications")}
+        if "notifications" in tables else set()
+    )
+    missing_entry_columns = sorted(TASK8B_REQUIRED_ENTRY_COLUMNS - entry_columns)
+    missing_notification_columns = sorted(TASK8B_REQUIRED_NOTIFICATION_COLUMNS - notification_columns)
+    if missing_tables or missing_entry_columns or missing_notification_columns:
+        raise RuntimeError(
+            "Database reports the required migration head but the Task 8B schema is incomplete. "
+            f"Missing tables={missing_tables}, entry_columns={missing_entry_columns}, "
+            f"notification_columns={missing_notification_columns}. Restore or repair from a verified backup."
+        )
 
 
 def create_tables():
@@ -575,6 +637,47 @@ def ensure_staffing_fulfillment_columns():
                 if dialect != "postgresql" and ("CONSTRAINT" in statement or "INDEX" in statement):
                     continue
                 raise
+
+
+def ensure_ai_conversation_columns():
+    """Safely add owner-scope routing metadata for Orbit conversation continuity."""
+    inspector = inspect(engine)
+    if "ai_conversations" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("ai_conversations")}
+    dialect = engine.dialect.name
+    column_definitions = {
+        "organization_scope": "VARCHAR(80) DEFAULT 'reknew'",
+        "last_resolved_intent": "VARCHAR(80)",
+    }
+
+    statements = []
+    for column_name, definition in column_definitions.items():
+        if column_name in existing_columns:
+            continue
+        if dialect == "postgresql":
+            statements.append(
+                f"ALTER TABLE ai_conversations ADD COLUMN IF NOT EXISTS {column_name} {definition}"
+            )
+        else:
+            statements.append(
+                f"ALTER TABLE ai_conversations ADD COLUMN {column_name} {definition}"
+            )
+
+    statements.extend(
+        [
+            "UPDATE ai_conversations SET organization_scope = 'reknew' WHERE organization_scope IS NULL",
+        ]
+    )
+    if dialect == "postgresql":
+        statements.append(
+            "CREATE INDEX IF NOT EXISTS ix_ai_conversations_owner_scope_updated ON ai_conversations (owner_employee_id, organization_scope, updated_at)"
+        )
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
 
 
 def ensure_employee_request_tables():

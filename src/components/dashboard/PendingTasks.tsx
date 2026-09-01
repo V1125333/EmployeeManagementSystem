@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader } from '@/components/ui';
@@ -24,7 +25,7 @@ export function PendingTasks() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetch(`${API_BASE}/dashboard/pending-tasks`)
+    authenticatedFetch(`${API_BASE}/dashboard/pending-tasks`)
       .then((res) => res.json())
       .then((data) => setTasks(data.tasks || []))
       .catch(() => setTasks([]));

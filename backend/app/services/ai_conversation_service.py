@@ -53,6 +53,7 @@ def _retention_expiry() -> datetime:
 def _owner_query(db: Session, principal: AuthenticatedPrincipal):
     return db.query(AIConversation).filter(
         AIConversation.owner_employee_id == principal.employee_id,
+        AIConversation.organization_scope == principal.organization_scope,
         AIConversation.deleted_at.is_(None),
         AIConversation.retention_expires_at > _now(),
     )
@@ -80,12 +81,17 @@ def expire_retained_conversations(
 
 
 def create_conversation(
-    db: Session, principal: AuthenticatedPrincipal
+    db: Session,
+    principal: AuthenticatedPrincipal,
+    *,
+    title: str = "New Orbit AI conversation",
+    domain: str = "leave",
 ) -> AIConversation:
     row = AIConversation(
         owner_employee_id=principal.employee_id,
-        title="New Orbit AI conversation",
-        domain="leave",
+        organization_scope=principal.organization_scope,
+        title=title,
+        domain=domain,
         status="active",
         retention_expires_at=_retention_expiry(),
     )
@@ -117,12 +123,48 @@ def ensure_active_conversation(
     db: Session,
     principal: AuthenticatedPrincipal,
     conversation_id: str | None,
+    *,
+    title: str = "New Orbit AI conversation",
+    domain: str = "leave",
 ) -> AIConversation:
     if not conversation_id:
-        return create_conversation(db, principal)
+        return create_conversation(db, principal, title=title, domain=domain)
     return get_owned_conversation(
         db, principal, conversation_id, require_active=True
     )
+
+
+def list_recent_messages(
+    db: Session,
+    principal: AuthenticatedPrincipal,
+    conversation: AIConversation,
+    *,
+    limit: int,
+) -> list[AIConversationMessage]:
+    bounded = max(1, min(limit, 20))
+    rows = (
+        db.query(AIConversationMessage)
+        .filter(
+            AIConversationMessage.conversation_id == conversation.id,
+            AIConversationMessage.owner_employee_id == principal.employee_id,
+        )
+        .order_by(AIConversationMessage.created_at.desc())
+        .limit(bounded)
+        .all()
+    )
+    rows.reverse()
+    return rows
+
+
+def update_last_resolved_intent(
+    db: Session,
+    conversation: AIConversation,
+    intent: str | None,
+) -> None:
+    conversation.last_resolved_intent = intent
+    conversation.updated_at = _now()
+    conversation.retention_expires_at = _retention_expiry()
+    db.commit()
 
 
 def list_conversations(

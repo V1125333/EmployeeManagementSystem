@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Award, Briefcase, FileText, Search, Sparkles, UserRound } from 'lucide-react';
@@ -82,13 +83,7 @@ export function TalentProfilesPage() {
       setLoading(true);
       setError('');
       try {
-        const response = await fetch(`${API_BASE}/employees?limit=200`, {
-          headers: {
-            'x-user-id': user?.id || '',
-            'x-user-email': user?.email || '',
-            'x-user-role': user?.role || '',
-          },
-        });
+        const response = await authenticatedFetch(`${API_BASE}/employees?limit=200`);
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
           throw new Error(data.detail || data.message || 'Could not load employees.');

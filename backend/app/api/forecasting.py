@@ -1,16 +1,17 @@
 from io import StringIO
 import csv
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.authentication import AuthenticatedActor, get_authenticated_actor
 from app.models.employee import Employee
 from app.schemas.forecasting import ForecastResponse
 from app.services.audit_service import log_audit, log_authorization_failure
 from app.services.forecasting_service import SUPPORTED_FORECAST_WINDOWS, get_workforce_forecast
-from app.services.settings_service import get_current_employee, normalize_role
+from app.services.settings_service import normalize_role
 
 
 router = APIRouter(prefix="/forecasting", tags=["Workforce Forecasting"])
@@ -51,10 +52,9 @@ def _load_forecast(db: Session, actor: Employee, window_days: int) -> ForecastRe
 async def workforce_forecast(
     window_days: int = Query(30),
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
+    actor = authenticated_actor.employee
     report = _load_forecast(db, actor, window_days)
     log_audit(
         db,
@@ -77,10 +77,9 @@ async def workforce_forecast(
 async def export_workforce_forecast(
     window_days: int = Query(30),
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
+    actor = authenticated_actor.employee
     report = _load_forecast(db, actor, window_days)
 
     output = StringIO()

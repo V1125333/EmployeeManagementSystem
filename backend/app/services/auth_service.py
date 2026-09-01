@@ -8,6 +8,7 @@ import logging
 import hashlib
 import secrets
 import string
+import uuid
 from urllib.parse import urlencode
 from datetime import datetime, timedelta
 import bcrypt
@@ -24,7 +25,9 @@ from app.models.operations import Notification
 from app.models.password_reset import PasswordResetSession
 from app.models.unlock_request import AccountUnlockRequest
 from app.models.transactional_email import AccountActivationToken
+from app.models.settings import UserSettings
 from app.services.audit_service import log_audit, mask_email
+from app.services.mfa_policy_service import is_mfa_required, policy_values
 from app.services.preferences_service import get_or_create_preferences
 from app.services.transactional_email_service import enqueue_email, verify_activation_token
 
@@ -293,7 +296,15 @@ def _audit(
     entity_id: str | None = None,
     reason: str | None = None,
     metadata: dict | None = None,
+    request=None,
 ) -> None:
+    safe_metadata = dict(metadata or {})
+    if request is not None:
+        correlation_id = getattr(request.state, "correlation_id", None)
+        if not correlation_id:
+            correlation_id = str(uuid.uuid4())
+            request.state.correlation_id = correlation_id
+        safe_metadata["correlation_id"] = str(correlation_id)[:120]
     log_audit(
         db=db,
         actor=actor,
@@ -301,8 +312,9 @@ def _audit(
         entity_type="auth",
         entity_id=entity_id or (actor.id if actor else None),
         reason=reason,
-        metadata=metadata or {},
+        metadata=safe_metadata,
         source="api",
+        request=request,
     )
     db.commit()
 
@@ -365,9 +377,30 @@ def set_password_and_get_qr(db: Session, email: str, setup_code: str, password: 
     employee.password_changed_at = datetime.utcnow()
     employee.force_password_change = False
 
+    globally_enabled, _ = policy_values(db)
+    if not globally_enabled:
+        employee.totp_secret = None
+        employee.mfa_enabled = False
+        employee.is_first_login = False
+        employee.setup_code = None
+        activation.used_at = datetime.utcnow()
+        user_settings = db.query(UserSettings).filter(UserSettings.user_id == employee.id).first()
+        if not user_settings:
+            user_settings = UserSettings(user_id=employee.id, created_by=employee.id, updated_by=employee.id)
+            db.add(user_settings)
+        user_settings.mfa_enabled = False
+        db.commit()
+        logger.info(f"Password set without MFA because organization MFA is disabled for {mask_email(employee.work_email)}")
+        return {
+            "success": True,
+            "message": "Password set. Your account is ready to sign in.",
+            "mfa_setup_required": False,
+        }
+
     # Generate TOTP secret
     totp_secret = generate_totp_secret()
     employee.totp_secret = totp_secret
+    employee.mfa_enabled = False
     activation.used_at = datetime.utcnow()
 
     db.commit()
@@ -380,6 +413,7 @@ def set_password_and_get_qr(db: Session, email: str, setup_code: str, password: 
     return {
         "success": True,
         "message": "Password set. Scan the QR code with Microsoft Authenticator.",
+        "mfa_setup_required": True,
         "totp_qr_base64": qr_base64,
         "totp_secret": totp_secret,  # fallback for manual entry
     }
@@ -394,7 +428,13 @@ def confirm_totp_setup(db: Session, email: str, totp_code: str) -> bool:
 
     if verify_totp(employee.totp_secret, totp_code):
         employee.is_first_login = False
+        employee.mfa_enabled = True
         employee.setup_code = None  # invalidate setup code after use
+        user_settings = db.query(UserSettings).filter(UserSettings.user_id == employee.id).first()
+        if not user_settings:
+            user_settings = UserSettings(user_id=employee.id, created_by=employee.id, updated_by=employee.id)
+            db.add(user_settings)
+        user_settings.mfa_enabled = True
         db.commit()
         logger.info(f"TOTP confirmed and setup completed for {mask_email(employee.work_email)}")
         return True
@@ -465,7 +505,7 @@ def verify_login_password(db: Session, email: str, password: str, ip_address: st
         result = _login_response(employee)
         result["message"] = "Temporary password verified. Create a new password."
         return result
-    if _normalize_role(employee.role) in _admin_roles() and not employee.totp_secret:
+    if not is_mfa_required(db, employee):
         employee.last_login_at = datetime.utcnow()
         db.commit()
         get_or_create_preferences(db, employee.id)
@@ -511,6 +551,13 @@ def complete_login_mfa(db: Session, login_challenge_token: str, totp_code: str) 
         return {"success": False, "message": "Account is not available."}
     if employee.account_locked:
         return {"success": False, "message": "Your account is locked.", "account_locked": True}
+    if not is_mfa_required(db, employee):
+        session.used_at = datetime.utcnow()
+        employee.last_login_at = datetime.utcnow()
+        db.commit()
+        get_or_create_preferences(db, employee.id)
+        _audit(db, employee, "login_password_success", employee.id, metadata={"mfa": False, "policy_bypass": True})
+        return _login_response(employee)
     if not employee.totp_secret or not verify_totp(employee.totp_secret, totp_code):
         _audit(db, employee, "login_mfa_failed", employee.id, reason="Invalid authenticator code")
         return {"success": False, "message": "Invalid authenticator code."}
@@ -556,7 +603,9 @@ def login(db: Session, email: str, password: str, totp_code: str) -> dict:
         increment_login_attempts(db, employee)
         return {"success": False, "message": "Invalid password", "account_locked": bool(employee.account_locked)}
 
-    if not employee.totp_secret or not verify_totp(employee.totp_secret, totp_code):
+    if is_mfa_required(db, employee) and (
+        not employee.totp_secret or not verify_totp(employee.totp_secret, totp_code)
+    ):
         return {"success": False, "message": "Invalid authenticator code"}
 
     employee.failed_login_attempts = 0
@@ -572,10 +621,12 @@ def reset_password(db: Session, email: str, totp_code: str, new_password: str) -
     """Reset password using TOTP verification."""
     employee = find_employee_by_email(db, email)
 
-    if not employee or not employee.totp_secret:
+    if not employee:
         return False
 
-    if not verify_totp(employee.totp_secret, totp_code):
+    if is_mfa_required(db, employee) and (
+        not employee.totp_secret or not verify_totp(employee.totp_secret, totp_code)
+    ):
         return False
 
     employee.password_hash = hash_password(new_password)
@@ -614,7 +665,7 @@ def initiate_reset(db: Session, email: str) -> dict:
         reset_token_hash=token_hash,
         expires_at=expires_at,
     ))
-    query = urlencode({"email": normalized_email, "reset_token": token, "has_mfa": "1" if employee.totp_secret else "0"})
+    query = urlencode({"email": normalized_email, "reset_token": token, "has_mfa": "1" if is_mfa_required(db, employee) else "0"})
     outbox_row = enqueue_email(
         db,
         recipient=employee.work_email,
@@ -655,8 +706,10 @@ def verify_reset_mfa(db: Session, reset_token: str, totp_code: str) -> dict:
         return {"success": False, "message": "Reset session is invalid or expired."}
     if is_reset_locked(employee):
         return {"success": False, "message": "Too many failed attempts. Please try again later."}
-    if not employee.totp_secret:
-        return {"success": False, "message": "Authenticator is not configured for this account."}
+    if not is_mfa_required(db, employee):
+        session.mfa_verified = True
+        db.commit()
+        return {"success": True, "message": "Authenticator verification is not required for this account."}
 
     if not verify_totp(employee.totp_secret, totp_code):
         increment_failed_reset(db, employee)
@@ -683,7 +736,7 @@ def complete_reset(db: Session, reset_token: str, new_password: str, confirm_pas
     session, employee = _active_reset_session(db, reset_token)
     if not session or not employee or session.expires_at <= datetime.utcnow():
         return {"success": False, "message": "Reset session is invalid or expired."}
-    if employee.totp_secret and not session.mfa_verified:
+    if is_mfa_required(db, employee) and not session.mfa_verified:
         return {"success": False, "message": "Authenticator verification is required."}
 
     employee.password_hash = hash_password(new_password)
@@ -708,16 +761,34 @@ def complete_reset(db: Session, reset_token: str, new_password: str, confirm_pas
     return {"success": True, "message": "Password reset successfully. You can now log in."}
 
 
-def admin_reset_password(db: Session, actor: Employee, employee_id: str, reason: str) -> dict:
+def admin_reset_password(
+    db: Session,
+    actor: Employee,
+    employee_id: str,
+    reason: str,
+    *,
+    request=None,
+) -> dict:
     """Admin-triggered temporary password reset with forced change on next login."""
-    if actor.role not in {"super_admin", "hr_admin", "admin"}:
-        _audit(db, actor, "admin_password_reset_denied", employee_id, reason="Insufficient role")
+    if _normalize_role(actor.role) not in {"super_admin", "hr_admin", "admin"}:
+        _audit(
+            db, actor, "admin_password_reset_denied", employee_id,
+            reason="Insufficient role", request=request,
+        )
         raise HTTPException(status_code=403, detail="You are not allowed to reset employee passwords.")
 
     employee = db.query(Employee).filter(Employee.id == employee_id).first()
     if not employee:
+        _audit(
+            db, actor, "admin_password_reset_failed", employee_id,
+            reason="Target employee was not found", request=request,
+        )
         raise HTTPException(status_code=404, detail="Employee not found.")
     if actor.id == employee.id:
+        _audit(
+            db, actor, "admin_password_reset_denied", employee_id,
+            reason="Administrator reset cannot target the actor", request=request,
+        )
         raise HTTPException(status_code=400, detail="Use the password change flow for your own account.")
 
     temporary_password = generate_temporary_password()
@@ -741,6 +812,7 @@ def admin_reset_password(db: Session, actor: Employee, employee_id: str, reason:
         employee.id,
         reason=reason,
         metadata={"employee": _employee_name(employee), "email": mask_email(employee.work_email)},
+        request=request,
     )
     return {
         "success": True,
@@ -749,27 +821,100 @@ def admin_reset_password(db: Session, actor: Employee, employee_id: str, reason:
     }
 
 
-def force_change_password(db: Session, employee: Employee, current_password: str | None, new_password: str, confirm_password: str) -> dict:
+def force_change_password(
+    db: Session,
+    employee: Employee,
+    current_password: str | None,
+    new_password: str,
+    confirm_password: str,
+    *,
+    request=None,
+) -> dict:
     """Change a temporary/admin-reset password after login."""
     if not employee.force_password_change:
+        _audit(
+            db, employee, "forced_password_change_failed", employee.id,
+            reason="Password change was not required", request=request,
+        )
         return {"success": False, "message": "Password change is not required for this account."}
     if current_password:
         if not employee.password_hash or not verify_password(current_password, employee.password_hash):
-            _audit(db, employee, "forced_password_change_failed", employee.id, reason="Invalid current password")
+            _audit(
+                db, employee, "forced_password_change_failed", employee.id,
+                reason="Invalid current password", request=request,
+            )
             return {"success": False, "message": "Current password is incorrect."}
         if current_password == new_password:
+            _audit(
+                db, employee, "forced_password_change_failed", employee.id,
+                reason="New password matched the temporary password", request=request,
+            )
             return {"success": False, "message": "New password must be different from the temporary password."}
     if new_password != confirm_password:
+        _audit(
+            db, employee, "forced_password_change_failed", employee.id,
+            reason="Password confirmation did not match", request=request,
+        )
         return {"success": False, "message": "Passwords do not match."}
     valid, message = validate_password_strength(new_password)
     if not valid:
+        _audit(
+            db, employee, "forced_password_change_failed", employee.id,
+            reason="New password did not satisfy password policy", request=request,
+        )
         return {"success": False, "message": message}
 
     employee.password_hash = hash_password(new_password)
     employee.password_changed_at = datetime.utcnow()
     employee.force_password_change = False
     db.commit()
-    _audit(db, employee, "forced_password_changed", employee.id)
+    _audit(db, employee, "forced_password_changed", employee.id, request=request)
+    return {"success": True, "message": "Password changed successfully."}
+
+
+def change_password(
+    db: Session,
+    employee: Employee,
+    current_password: str,
+    new_password: str,
+    confirm_password: str,
+    *,
+    request=None,
+) -> dict:
+    """Self-service password change for an authenticated user."""
+    if not current_password:
+        return {"success": False, "message": "Current password is required."}
+    if not employee.password_hash or not verify_password(current_password, employee.password_hash):
+        _audit(
+            db, employee, "password_change_failed", employee.id,
+            reason="Invalid current password", request=request,
+        )
+        return {"success": False, "message": "Current password is incorrect."}
+    if current_password == new_password:
+        _audit(
+            db, employee, "password_change_failed", employee.id,
+            reason="New password matched the current password", request=request,
+        )
+        return {"success": False, "message": "New password must be different from your current password."}
+    if new_password != confirm_password:
+        _audit(
+            db, employee, "password_change_failed", employee.id,
+            reason="Password confirmation did not match", request=request,
+        )
+        return {"success": False, "message": "Passwords do not match."}
+    valid, message = validate_password_strength(new_password)
+    if not valid:
+        _audit(
+            db, employee, "password_change_failed", employee.id,
+            reason="New password did not satisfy password policy", request=request,
+        )
+        return {"success": False, "message": message}
+
+    employee.password_hash = hash_password(new_password)
+    employee.password_changed_at = datetime.utcnow()
+    employee.force_password_change = False
+    db.commit()
+    _audit(db, employee, "password_changed", employee.id, request=request)
     return {"success": True, "message": "Password changed successfully."}
 
 
@@ -804,11 +949,26 @@ def create_unlock_request_anonymous(db: Session, email: str, reason: str) -> dic
     return {"success": True, "message": "If this account is locked, an unlock request has been sent for admin review."}
 
 
-def create_unlock_request_authenticated(db: Session, requester: Employee, target_employee_id: str, reason: str) -> dict:
+def create_unlock_request_authenticated(
+    db: Session,
+    requester: Employee,
+    target_employee_id: str,
+    reason: str,
+    *,
+    request=None,
+) -> dict:
     target = db.query(Employee).filter(Employee.id == target_employee_id).first()
     if not target:
+        _audit(
+            db, requester, "account_unlock_request_denied", target_employee_id,
+            reason="Target employee was not found", request=request,
+        )
         raise HTTPException(status_code=404, detail="Employee not found.")
     if not target.account_locked:
+        _audit(
+            db, requester, "account_unlock_request_denied", target.id,
+            reason="Target account was not locked", request=request,
+        )
         raise HTTPException(status_code=400, detail="This employee account is not locked.")
     existing = db.query(AccountUnlockRequest).filter(
         AccountUnlockRequest.locked_user_id == target.id,
@@ -827,7 +987,14 @@ def create_unlock_request_authenticated(db: Session, requester: Employee, target
     db.flush()
     notify_admins_unlock_requested(db, row, target)
     db.commit()
-    _audit(db, requester, "account_unlock_requested", target.id, metadata={"request_id": row.id, "requested_by": requester.id})
+    _audit(
+        db,
+        requester,
+        "account_unlock_requested",
+        target.id,
+        metadata={"request_id": row.id, "requested_by": requester.id},
+        request=request,
+    )
     return {"success": True, "message": "Unlock request submitted."}
 
 

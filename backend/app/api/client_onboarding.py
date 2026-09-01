@@ -6,12 +6,13 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.authentication import AuthenticatedActor, get_authenticated_actor
 from app.models.client_onboarding import (
     Client,
     ClientActivityLog,
@@ -24,7 +25,7 @@ from app.models.client_onboarding import (
 )
 from app.models.employee import Employee
 from app.services.audit_service import log_audit
-from app.services.settings_service import get_current_employee, is_admin_role
+from app.services.settings_service import is_admin_role
 
 router = APIRouter(prefix="/admin/client-onboarding", tags=["Client Onboarding"])
 
@@ -53,8 +54,10 @@ CHECKLIST_DEFAULTS = [
 MILESTONE_DEFAULTS = ["Kickoff", "Requirements Finalized", "UAT", "Go Live", "Hypercare Complete"]
 
 
-def require_admin(db: Session, user_id: str | None, user_email: str | None) -> Employee:
-    user = get_current_employee(db, user_id, user_email)
+def authenticated_admin(
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
+) -> Employee:
+    user = authenticated_actor.employee
     if not is_admin_role(user.role):
         raise HTTPException(status_code=403, detail="Only Super Admin and HR/Admin roles can access Client Onboarding.")
     return user
@@ -334,10 +337,8 @@ async def list_clients(
     stage: str | None = Query(None),
     owner: str | None = Query(None),
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(None, alias="x-user-id"),
-    x_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(authenticated_admin),
 ):
-    require_admin(db, x_user_id, x_user_email)
     status_counts = dict(
         db.query(Client.status, func.count(Client.id))
         .group_by(Client.status)
@@ -392,10 +393,8 @@ async def list_clients(
 async def create_client(
     payload: ClientPayload,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(None, alias="x-user-id"),
-    x_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(authenticated_admin),
 ):
-    actor = require_admin(db, x_user_id, x_user_email)
     validate_client_payload(payload)
     status = normalize_status(payload.status)
     client = Client(
@@ -434,10 +433,8 @@ async def create_client(
 async def get_client(
     client_id: str,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(None, alias="x-user-id"),
-    x_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(authenticated_admin),
 ):
-    actor = require_admin(db, x_user_id, x_user_email)
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
@@ -447,8 +444,7 @@ async def get_client(
 
 
 @router.put("/{client_id}")
-async def update_client(client_id: str, payload: ClientPayload, db: Session = Depends(get_db), x_user_id: str | None = Header(None, alias="x-user-id"), x_user_email: str | None = Header(None, alias="x-user-email")):
-    actor = require_admin(db, x_user_id, x_user_email)
+async def update_client(client_id: str, payload: ClientPayload, db: Session = Depends(get_db), actor: Employee = Depends(authenticated_admin)):
     validate_client_payload(payload)
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
@@ -483,8 +479,7 @@ async def update_client(client_id: str, payload: ClientPayload, db: Session = De
 
 
 @router.delete("/{client_id}")
-async def delete_client(client_id: str, db: Session = Depends(get_db), x_user_id: str | None = Header(None, alias="x-user-id"), x_user_email: str | None = Header(None, alias="x-user-email")):
-    require_admin(db, x_user_id, x_user_email)
+async def delete_client(client_id: str, db: Session = Depends(get_db), actor: Employee = Depends(authenticated_admin)):
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
@@ -496,8 +491,7 @@ async def delete_client(client_id: str, db: Session = Depends(get_db), x_user_id
 
 
 @router.put("/{client_id}/checklist/{item_id}")
-async def update_checklist(client_id: str, item_id: str, payload: ChecklistPayload, db: Session = Depends(get_db), x_user_id: str | None = Header(None, alias="x-user-id"), x_user_email: str | None = Header(None, alias="x-user-email")):
-    actor = require_admin(db, x_user_id, x_user_email)
+async def update_checklist(client_id: str, item_id: str, payload: ChecklistPayload, db: Session = Depends(get_db), actor: Employee = Depends(authenticated_admin)):
     row = db.query(ClientChecklistItem).filter(ClientChecklistItem.id == item_id, ClientChecklistItem.client_id == client_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Checklist item not found")
@@ -514,8 +508,7 @@ async def update_checklist(client_id: str, item_id: str, payload: ChecklistPaylo
 
 
 @router.post("/{client_id}/tasks")
-async def create_task(client_id: str, payload: TaskPayload, db: Session = Depends(get_db), x_user_id: str | None = Header(None, alias="x-user-id"), x_user_email: str | None = Header(None, alias="x-user-email")):
-    actor = require_admin(db, x_user_id, x_user_email)
+async def create_task(client_id: str, payload: TaskPayload, db: Session = Depends(get_db), actor: Employee = Depends(authenticated_admin)):
     row = ClientTask(client_id=client_id, title=payload.title, description=payload.description, assigned_to_id=payload.assigned_to_id, priority=payload.priority, status=payload.status, due_date=payload.due_date, created_by=actor.id, updated_by=actor.id)
     db.add(row)
     log_activity(db, client_id, actor, "Added task", payload.title)
@@ -524,8 +517,7 @@ async def create_task(client_id: str, payload: TaskPayload, db: Session = Depend
 
 
 @router.put("/{client_id}/tasks/{task_id}")
-async def update_task(client_id: str, task_id: str, payload: TaskPayload, db: Session = Depends(get_db), x_user_id: str | None = Header(None, alias="x-user-id"), x_user_email: str | None = Header(None, alias="x-user-email")):
-    actor = require_admin(db, x_user_id, x_user_email)
+async def update_task(client_id: str, task_id: str, payload: TaskPayload, db: Session = Depends(get_db), actor: Employee = Depends(authenticated_admin)):
     row = db.query(ClientTask).filter(ClientTask.id == task_id, ClientTask.client_id == client_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -538,8 +530,7 @@ async def update_task(client_id: str, task_id: str, payload: TaskPayload, db: Se
 
 
 @router.delete("/{client_id}/tasks/{task_id}")
-async def delete_task(client_id: str, task_id: str, db: Session = Depends(get_db), x_user_id: str | None = Header(None, alias="x-user-id"), x_user_email: str | None = Header(None, alias="x-user-email")):
-    actor = require_admin(db, x_user_id, x_user_email)
+async def delete_task(client_id: str, task_id: str, db: Session = Depends(get_db), actor: Employee = Depends(authenticated_admin)):
     row = db.query(ClientTask).filter(ClientTask.id == task_id, ClientTask.client_id == client_id).first()
     if row:
         log_activity(db, client_id, actor, "Deleted task", row.title)
@@ -549,8 +540,7 @@ async def delete_task(client_id: str, task_id: str, db: Session = Depends(get_db
 
 
 @router.post("/{client_id}/team")
-async def create_team_member(client_id: str, payload: TeamPayload, db: Session = Depends(get_db), x_user_id: str | None = Header(None, alias="x-user-id"), x_user_email: str | None = Header(None, alias="x-user-email")):
-    actor = require_admin(db, x_user_id, x_user_email)
+async def create_team_member(client_id: str, payload: TeamPayload, db: Session = Depends(get_db), actor: Employee = Depends(authenticated_admin)):
     row = ClientTeamMember(client_id=client_id, employee_id=payload.employee_id, role=payload.role, notes=payload.notes, created_by=actor.id, updated_by=actor.id)
     db.add(row)
     log_activity(db, client_id, actor, "Added team member", payload.role)
@@ -559,8 +549,7 @@ async def create_team_member(client_id: str, payload: TeamPayload, db: Session =
 
 
 @router.delete("/{client_id}/team/{member_id}")
-async def delete_team_member(client_id: str, member_id: str, db: Session = Depends(get_db), x_user_id: str | None = Header(None, alias="x-user-id"), x_user_email: str | None = Header(None, alias="x-user-email")):
-    actor = require_admin(db, x_user_id, x_user_email)
+async def delete_team_member(client_id: str, member_id: str, db: Session = Depends(get_db), actor: Employee = Depends(authenticated_admin)):
     row = db.query(ClientTeamMember).filter(ClientTeamMember.id == member_id, ClientTeamMember.client_id == client_id).first()
     if row:
         log_activity(db, client_id, actor, "Removed team member", row.role)
@@ -570,8 +559,7 @@ async def delete_team_member(client_id: str, member_id: str, db: Session = Depen
 
 
 @router.post("/{client_id}/documents")
-async def create_document(client_id: str, payload: DocumentPayload, db: Session = Depends(get_db), x_user_id: str | None = Header(None, alias="x-user-id"), x_user_email: str | None = Header(None, alias="x-user-email")):
-    actor = require_admin(db, x_user_id, x_user_email)
+async def create_document(client_id: str, payload: DocumentPayload, db: Session = Depends(get_db), actor: Employee = Depends(authenticated_admin)):
     row = ClientDocument(client_id=client_id, document_type=payload.document_type, file_name=payload.file_name, file_url=payload.file_url, notes=payload.notes, uploaded_by=actor.id, created_by=actor.id, updated_by=actor.id)
     db.add(row)
     log_activity(db, client_id, actor, "Uploaded document", payload.file_name)
@@ -580,8 +568,7 @@ async def create_document(client_id: str, payload: DocumentPayload, db: Session 
 
 
 @router.delete("/{client_id}/documents/{document_id}")
-async def delete_document(client_id: str, document_id: str, db: Session = Depends(get_db), x_user_id: str | None = Header(None, alias="x-user-id"), x_user_email: str | None = Header(None, alias="x-user-email")):
-    actor = require_admin(db, x_user_id, x_user_email)
+async def delete_document(client_id: str, document_id: str, db: Session = Depends(get_db), actor: Employee = Depends(authenticated_admin)):
     row = db.query(ClientDocument).filter(ClientDocument.id == document_id, ClientDocument.client_id == client_id).first()
     if row:
         log_activity(db, client_id, actor, "Removed document", row.file_name)
@@ -591,8 +578,7 @@ async def delete_document(client_id: str, document_id: str, db: Session = Depend
 
 
 @router.post("/{client_id}/milestones")
-async def create_milestone(client_id: str, payload: MilestonePayload, db: Session = Depends(get_db), x_user_id: str | None = Header(None, alias="x-user-id"), x_user_email: str | None = Header(None, alias="x-user-email")):
-    actor = require_admin(db, x_user_id, x_user_email)
+async def create_milestone(client_id: str, payload: MilestonePayload, db: Session = Depends(get_db), actor: Employee = Depends(authenticated_admin)):
     row = ClientMilestone(client_id=client_id, milestone_name=payload.milestone_name, target_date=payload.target_date, actual_date=payload.actual_date, status=payload.status, created_by=actor.id, updated_by=actor.id)
     db.add(row)
     log_activity(db, client_id, actor, "Added milestone", payload.milestone_name)
@@ -601,8 +587,7 @@ async def create_milestone(client_id: str, payload: MilestonePayload, db: Sessio
 
 
 @router.put("/{client_id}/milestones/{milestone_id}")
-async def update_milestone(client_id: str, milestone_id: str, payload: MilestonePayload, db: Session = Depends(get_db), x_user_id: str | None = Header(None, alias="x-user-id"), x_user_email: str | None = Header(None, alias="x-user-email")):
-    actor = require_admin(db, x_user_id, x_user_email)
+async def update_milestone(client_id: str, milestone_id: str, payload: MilestonePayload, db: Session = Depends(get_db), actor: Employee = Depends(authenticated_admin)):
     row = db.query(ClientMilestone).filter(ClientMilestone.id == milestone_id, ClientMilestone.client_id == client_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Milestone not found")
@@ -615,8 +600,7 @@ async def update_milestone(client_id: str, milestone_id: str, payload: Milestone
 
 
 @router.delete("/{client_id}/milestones/{milestone_id}")
-async def delete_milestone(client_id: str, milestone_id: str, db: Session = Depends(get_db), x_user_id: str | None = Header(None, alias="x-user-id"), x_user_email: str | None = Header(None, alias="x-user-email")):
-    actor = require_admin(db, x_user_id, x_user_email)
+async def delete_milestone(client_id: str, milestone_id: str, db: Session = Depends(get_db), actor: Employee = Depends(authenticated_admin)):
     row = db.query(ClientMilestone).filter(ClientMilestone.id == milestone_id, ClientMilestone.client_id == client_id).first()
     if row:
         log_activity(db, client_id, actor, "Deleted milestone", row.milestone_name)

@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
@@ -33,11 +34,16 @@ import type { OutlookEvent, OutlookMessage } from '@/hooks/useOutlook';
 import { cn } from '@/utils/cn';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 type SettingsTab = 'profile' | 'general' | 'security' | 'notifications' | 'integrations' | 'appearance' | 'privacy' | 'support';
 
 interface LegacySettings {
   mfa_enabled: boolean;
+  mfa_globally_enabled: boolean;
+  mfa_user_opt_out_allowed: boolean;
+  mfa_effective: boolean;
+  mfa_configured: boolean;
   notification_company_announcements: boolean;
   notification_attendance_reminders: boolean;
   notification_task_assignments: boolean;
@@ -46,6 +52,11 @@ interface LegacySettings {
   profile_visibility: string;
   phone_visibility: string;
   birthday_visibility: string;
+}
+
+interface OrganizationSecurityPolicy {
+  mfa_enabled: boolean;
+  allow_user_mfa_opt_out: boolean;
 }
 
 interface SettingsProfile {
@@ -107,6 +118,10 @@ const privacyOptions = ['Everyone', 'Managers Only', 'HR Only', 'Private'];
 
 const defaultLegacy: LegacySettings = {
   mfa_enabled: false,
+  mfa_globally_enabled: true,
+  mfa_user_opt_out_allowed: true,
+  mfa_effective: false,
+  mfa_configured: false,
   notification_company_announcements: true,
   notification_attendance_reminders: true,
   notification_task_assignments: true,
@@ -116,16 +131,6 @@ const defaultLegacy: LegacySettings = {
   phone_visibility: 'Managers Only',
   birthday_visibility: 'Everyone',
 };
-
-function headersFor(user: ReturnType<typeof useAuth>['user']) {
-  return {
-    'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-    'x-user-role': user?.role || '',
-    'x-user-name': user?.name || '',
-  };
-}
 
 function isAdminRole(role?: string) {
   return ['super_admin', 'admin', 'hr_admin', 'global_access'].includes((role || '').toLowerCase().replace(/\s+/g, '_'));
@@ -435,6 +440,7 @@ export function SettingsPage() {
   const theme = useTheme();
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
   const [legacy, setLegacy] = useState<LegacySettings>(defaultLegacy);
+  const [securityPolicy, setSecurityPolicy] = useState<OrganizationSecurityPolicy>({ mfa_enabled: true, allow_user_mfa_opt_out: true });
   const [profile, setProfile] = useState<SettingsProfile | null>(null);
   const [generalDraft, setGeneralDraft] = useState<Partial<UserPreferences>>({});
   const [notificationDraft, setNotificationDraft] = useState<Partial<UserPreferences>>({});
@@ -449,7 +455,6 @@ export function SettingsPage() {
   const [ticketForm, setTicketForm] = useState({ category: 'HR', subject: '', description: '' });
   const profileUploadInputRef = useRef<HTMLInputElement | null>(null);
 
-  const headers = useMemo(() => headersFor(user), [user]);
   const preferences = theme.preferences;
   const landingPages = isAdminRole(user?.role)
     ? ['Dashboard', 'Employees', 'Team Allocation', 'Time Off & Attendance', 'Assets & Access', 'Staffing Requests']
@@ -462,13 +467,15 @@ export function SettingsPage() {
       setLoading(true);
       setError('');
       try {
-        const [legacyRes, profileRes] = await Promise.all([
-          fetch(`${API_BASE}/settings/me`, { headers }),
-          fetch(`${API_BASE}/settings/profile`, { headers }),
+        const [legacyRes, profileRes, securityPolicyRes] = await Promise.all([
+          authenticatedFetch(`${API_BASE}/settings/me`),
+          authenticatedFetch(`${API_BASE}/settings/profile`),
+          authenticatedFetch(`${API_BASE}/settings/security-policy`),
         ]);
-        if (!legacyRes.ok || !profileRes.ok) throw new Error('Could not load settings.');
+        if (!legacyRes.ok || !profileRes.ok || !securityPolicyRes.ok) throw new Error('Could not load settings.');
         setLegacy({ ...defaultLegacy, ...(await legacyRes.json()) });
         setProfile(await profileRes.json());
+        setSecurityPolicy(await securityPolicyRes.json());
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Could not load settings.');
       } finally {
@@ -476,7 +483,7 @@ export function SettingsPage() {
       }
     }
     if (user?.id || user?.email) loadSettings();
-  }, [headers, user?.email, user?.id]);
+  }, [user?.email, user?.id]);
 
   useEffect(() => {
     const handler = (event: BeforeUnloadEvent) => {
@@ -492,7 +499,7 @@ export function SettingsPage() {
     setSavingSection(section);
     setError('');
     try {
-      const res = await fetch(`${API_BASE}/settings/me/${section}`, { method: 'PATCH', headers, body: JSON.stringify(payload) });
+      const res = await authenticatedFetch(`${API_BASE}/settings/me/${section}`, { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify(payload) });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         throw new Error(data?.detail || `Could not save ${section} settings.`);
@@ -509,9 +516,9 @@ export function SettingsPage() {
   async function saveGeneral() {
     setSavingSection('general');
     try {
-      const res = await fetch(`${API_BASE}/settings/preferences/general`, {
+      const res = await authenticatedFetch(`${API_BASE}/settings/preferences/general`, {
         method: 'PATCH',
-        headers,
+        headers: JSON_HEADERS,
         body: JSON.stringify(generalDraft),
       });
       if (!res.ok) throw new Error('Could not save general preferences.');
@@ -529,14 +536,14 @@ export function SettingsPage() {
     setSavingSection('notifications');
     try {
       const [preferenceRes, legacyRes] = await Promise.all([
-        fetch(`${API_BASE}/settings/preferences/notifications`, {
+        authenticatedFetch(`${API_BASE}/settings/preferences/notifications`, {
           method: 'PATCH',
-          headers,
+          headers: JSON_HEADERS,
           body: JSON.stringify(notificationDraft),
         }),
-        fetch(`${API_BASE}/settings/me/notifications`, {
+        authenticatedFetch(`${API_BASE}/settings/me/notifications`, {
           method: 'PATCH',
-          headers,
+          headers: JSON_HEADERS,
           body: JSON.stringify({
             notification_company_announcements: legacy.notification_company_announcements,
             notification_leave_updates: currentNotifications.email_notif_leave_approved || currentNotifications.email_notif_leave_rejected,
@@ -559,6 +566,36 @@ export function SettingsPage() {
     }
   }
 
+  async function saveSecurity() {
+    await patchLegacy('security', { mfa_enabled: legacy.mfa_enabled });
+  }
+
+  async function saveOrganizationSecurityPolicy() {
+    setSavingSection('organization-security');
+    setError('');
+    try {
+      const res = await authenticatedFetch(`${API_BASE}/settings/security-policy`, {
+        method: 'PATCH',
+        headers: JSON_HEADERS,
+        body: JSON.stringify(securityPolicy),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.detail || 'Could not save the organization security policy.');
+      setSecurityPolicy(data);
+      setLegacy((current) => ({
+        ...current,
+        mfa_globally_enabled: data.mfa_enabled,
+        mfa_user_opt_out_allowed: data.allow_user_mfa_opt_out,
+        mfa_effective: data.mfa_enabled && (!data.allow_user_mfa_opt_out || current.mfa_enabled) && current.mfa_configured,
+      }));
+      showToast({ message: 'Organization MFA policy saved' });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the organization security policy.');
+    } finally {
+      setSavingSection(null);
+    }
+  }
+
   async function saveAppearance() {
     setSavingSection('appearance');
     setError('');
@@ -576,9 +613,9 @@ export function SettingsPage() {
     if (!profile) return;
     setSavingSection('profile');
     try {
-      const employeeRes = await fetch(`${API_BASE}/employees/${profile.id}`, {
+      const employeeRes = await authenticatedFetch(`${API_BASE}/employees/${profile.id}`, {
         method: 'PUT',
-        headers,
+        headers: JSON_HEADERS,
         body: JSON.stringify({
           first_name: profile.first_name,
           last_name: profile.last_name,
@@ -586,9 +623,9 @@ export function SettingsPage() {
         }),
       });
       if (!employeeRes.ok) throw new Error('Could not save profile.');
-      const prefRes = await fetch(`${API_BASE}/settings/preferences/general`, {
+      const prefRes = await authenticatedFetch(`${API_BASE}/settings/preferences/general`, {
         method: 'PATCH',
-        headers,
+        headers: JSON_HEADERS,
         body: JSON.stringify({ timezone: profile.timezone, date_format: profile.date_format }),
       });
       if (!prefRes.ok) throw new Error('Could not save profile preferences.');
@@ -612,14 +649,8 @@ export function SettingsPage() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch(`${API_BASE}/employees/${profile.id}/upload-profile-picture`, {
+      const res = await authenticatedFetch(`${API_BASE}/employees/${profile.id}/upload-profile-picture`, {
         method: 'POST',
-        headers: {
-          'x-user-id': user?.id || '',
-          'x-user-email': user?.email || '',
-          'x-user-role': user?.role || '',
-          'x-user-name': user?.name || '',
-        },
         body: formData,
       });
       if (!res.ok) {
@@ -644,7 +675,7 @@ export function SettingsPage() {
     }
     setSavingSection('support');
     try {
-      const res = await fetch(`${API_BASE}/support-tickets`, { method: 'POST', headers, body: JSON.stringify(ticketForm) });
+      const res = await authenticatedFetch(`${API_BASE}/support-tickets`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(ticketForm) });
       if (!res.ok) throw new Error('Could not submit support ticket.');
       setTicketModal(false);
       setTicketForm({ category: 'HR', subject: '', description: '' });
@@ -656,14 +687,43 @@ export function SettingsPage() {
     }
   }
 
-  function submitPasswordChange() {
-    if (!passwordForm.current || !passwordForm.next || !passwordForm.confirm) setPasswordError('All password fields are required.');
-    else if (passwordForm.next.length < 8) setPasswordError('New password must be at least 8 characters.');
-    else if (passwordForm.next !== passwordForm.confirm) setPasswordError('New password and confirmation must match.');
-    else {
-      setPasswordError('');
-      showToast({ message: 'Change password is coming soon.' });
+  async function submitPasswordChange() {
+    if (!passwordForm.current || !passwordForm.next || !passwordForm.confirm) {
+      setPasswordError('All password fields are required.');
+      return;
+    }
+    if (passwordForm.next.length < 8) {
+      setPasswordError('New password must be at least 8 characters.');
+      return;
+    }
+    if (passwordForm.next !== passwordForm.confirm) {
+      setPasswordError('New password and confirmation must match.');
+      return;
+    }
+
+    setPasswordError('');
+    setSavingSection('security');
+    try {
+      const res = await authenticatedFetch(`${API_BASE}/auth/change-password`, {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        body: JSON.stringify({
+          current_password: passwordForm.current,
+          new_password: passwordForm.next,
+          confirm_password: passwordForm.confirm,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.detail || data?.message || 'Could not change password.');
+      }
+      showToast({ message: 'Password changed successfully.' });
+      setPasswordForm({ current: '', next: '', confirm: '' });
       setPasswordModal(false);
+    } catch (err) {
+      setPasswordError(err instanceof Error ? err.message : 'Could not change password.');
+    } finally {
+      setSavingSection(null);
     }
   }
 
@@ -767,17 +827,23 @@ export function SettingsPage() {
 
           {activeTab === 'security' && (
             <Card>
-              <CardHeader title="Security" icon={<ShieldCheck size={17} />} />
+              <CardHeader title="Security" icon={<ShieldCheck size={17} />} action={<Button icon={<Save size={16} />} disabled={savingSection === 'security'} onClick={saveSecurity}>{savingSection === 'security' ? 'Saving' : 'Save'}</Button>} />
               <div className="divide-y divide-[var(--color-border)] p-5">
                 <div className="flex flex-col gap-3 pb-4 md:flex-row md:items-center md:justify-between">
-                  <div><div className="text-sm font-bold text-[var(--color-brand-navy)]">Password</div><div className="mt-1 text-sm text-gray-500">Password changes are coming soon.</div></div>
+                  <div><div className="text-sm font-bold text-[var(--color-brand-navy)]">Password</div><div className="mt-1 text-sm text-gray-500">Update your password and keep your account secure.</div></div>
                   <Button variant="ghost" icon={<KeyRound size={16} />} onClick={() => setPasswordModal(true)}>Change Password</Button>
                 </div>
                 <div className="py-4 text-sm text-gray-500">Last login: <span className="font-semibold text-[var(--color-brand-navy)]">{profile?.last_login_at ? new Date(profile.last_login_at).toLocaleString() : 'Not recorded'}</span></div>
                 <div className="flex flex-col gap-3 py-4 md:flex-row md:items-center md:justify-between">
-                  <div><div className="text-sm font-bold text-[var(--color-brand-navy)]">Multi-Factor Authentication</div><div className="mt-1 text-sm text-gray-500">Add an extra verification step for sign in.</div></div>
-                  <label className="flex items-center gap-2 text-sm font-semibold text-[var(--color-brand-navy)]"><input type="checkbox" checked={legacy.mfa_enabled} onChange={(e) => setLegacy({ ...legacy, mfa_enabled: e.target.checked })} className="h-4 w-4 accent-[var(--color-accent)]" />MFA Enabled</label>
+                  <div><div className="text-sm font-bold text-[var(--color-brand-navy)]">Microsoft Authenticator</div><div className="mt-1 text-sm text-gray-500">{!legacy.mfa_globally_enabled ? 'Disabled by your organization.' : legacy.mfa_effective ? 'A six-digit authenticator code is required when you sign in.' : 'Authenticator verification is currently optional for your account.'}</div>{!legacy.mfa_configured && legacy.mfa_enabled && <div className="mt-1 text-xs text-status-warning">Authenticator setup is not configured for this account.</div>}</div>
+                  <label className="flex items-center gap-2 text-sm font-semibold text-[var(--color-brand-navy)]"><input type="checkbox" checked={legacy.mfa_enabled} disabled={legacy.mfa_globally_enabled && !legacy.mfa_user_opt_out_allowed} onChange={(e) => setLegacy({ ...legacy, mfa_enabled: e.target.checked })} className="h-4 w-4 accent-[var(--color-accent)] disabled:opacity-50" />Require MFA for my account</label>
                 </div>
+                {isAdminRole(user?.role) && <div className="space-y-4 py-4">
+                  <div><div className="text-sm font-bold text-[var(--color-brand-navy)]">Organization MFA policy</div><div className="mt-1 text-sm text-gray-500">Controls the six-digit authenticator challenge for every user.</div></div>
+                  <label className="flex items-start gap-3 rounded-xl border border-[var(--color-border)] p-3 text-sm"><input type="checkbox" checked={securityPolicy.mfa_enabled} onChange={(event) => setSecurityPolicy({ ...securityPolicy, mfa_enabled: event.target.checked })} className="mt-0.5 h-4 w-4 accent-[var(--color-accent)]" /><span><strong className="block text-[var(--color-brand-navy)]">Enable MFA organization-wide</strong><span className="text-gray-500">When disabled, users sign in with their password without a six-digit code.</span></span></label>
+                  <label className="flex items-start gap-3 rounded-xl border border-[var(--color-border)] p-3 text-sm"><input type="checkbox" checked={securityPolicy.allow_user_mfa_opt_out} disabled={!securityPolicy.mfa_enabled} onChange={(event) => setSecurityPolicy({ ...securityPolicy, allow_user_mfa_opt_out: event.target.checked })} className="mt-0.5 h-4 w-4 accent-[var(--color-accent)] disabled:opacity-50" /><span><strong className="block text-[var(--color-brand-navy)]">Allow users to opt out</strong><span className="text-gray-500">Users can disable the authenticator requirement from their own Security settings.</span></span></label>
+                  <Button variant="ghost" icon={<ShieldCheck size={16} />} disabled={savingSection === 'organization-security'} onClick={saveOrganizationSecurityPolicy}>{savingSection === 'organization-security' ? 'Saving policy' : 'Save organization policy'}</Button>
+                </div>}
                 <div className="pt-4"><Button disabled variant="ghost">Sign Out All Devices</Button><span className="ml-3 text-xs text-gray-400">Session management coming soon</span></div>
               </div>
             </Card>
@@ -829,7 +895,7 @@ export function SettingsPage() {
         </div>
       </div>
 
-      {passwordModal && <Modal title="Change Password" onClose={() => setPasswordModal(false)}><div className="space-y-4">{passwordError && <div className="rounded-lg bg-status-error/10 px-3 py-2 text-sm text-status-error">{passwordError}</div>}<Field label="Current Password"><input type="password" value={passwordForm.current} onChange={(e) => setPasswordForm({ ...passwordForm, current: e.target.value })} className={inputClass()} /></Field><Field label="New Password"><input type="password" value={passwordForm.next} onChange={(e) => setPasswordForm({ ...passwordForm, next: e.target.value })} className={inputClass()} /></Field><Field label="Confirm Password"><input type="password" value={passwordForm.confirm} onChange={(e) => setPasswordForm({ ...passwordForm, confirm: e.target.value })} className={inputClass()} /></Field><div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => setPasswordModal(false)}>Cancel</Button><Button icon={<LockKeyhole size={16} />} onClick={submitPasswordChange}>Validate</Button></div></div></Modal>}
+      {passwordModal && <Modal title="Change Password" onClose={() => setPasswordModal(false)}><div className="space-y-4">{passwordError && <div className="rounded-lg bg-status-error/10 px-3 py-2 text-sm text-status-error">{passwordError}</div>}<Field label="Current Password"><input type="password" value={passwordForm.current} onChange={(e) => setPasswordForm({ ...passwordForm, current: e.target.value })} className={inputClass()} /></Field><Field label="New Password"><input type="password" value={passwordForm.next} onChange={(e) => setPasswordForm({ ...passwordForm, next: e.target.value })} className={inputClass()} /></Field><Field label="Confirm Password"><input type="password" value={passwordForm.confirm} onChange={(e) => setPasswordForm({ ...passwordForm, confirm: e.target.value })} className={inputClass()} /></Field><div className="rounded-lg bg-hover-bg px-3 py-2 text-xs text-gray-500">Use at least 8 characters with uppercase, lowercase, number, and special character.</div><div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => setPasswordModal(false)}>Cancel</Button><Button icon={<LockKeyhole size={16} />} onClick={submitPasswordChange} disabled={savingSection === 'security'}>{savingSection === 'security' ? 'Changing...' : 'Change Password'}</Button></div></div></Modal>}
       {ticketModal && <Modal title="Raise Support Ticket" onClose={() => setTicketModal(false)}><div className="space-y-4"><Field label="Category"><SelectField value={ticketForm.category} options={['HR', 'IT', 'Payroll', 'Access', 'Other']} onChange={(category) => setTicketForm({ ...ticketForm, category })} /></Field><Field label="Subject"><input value={ticketForm.subject} onChange={(e) => setTicketForm({ ...ticketForm, subject: e.target.value })} className={inputClass()} /></Field><Field label="Description"><textarea value={ticketForm.description} onChange={(e) => setTicketForm({ ...ticketForm, description: e.target.value })} rows={5} className={`${inputClass()} resize-none`} /></Field><div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => setTicketModal(false)}>Cancel</Button><Button onClick={submitSupportTicket} disabled={savingSection === 'support'}>Submit Ticket</Button></div></div></Modal>}
       {guideModal && <Modal title="User Guide" onClose={() => setGuideModal(false)}><div className="rounded-lg border border-dashed border-[var(--color-border)] bg-hover-bg px-4 py-10 text-center text-sm font-semibold text-gray-500">User Guide Coming Soon</div></Modal>}
     </div>

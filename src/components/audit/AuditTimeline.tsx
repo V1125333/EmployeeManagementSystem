@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Clock3 } from 'lucide-react';
 import { Card } from '@/components/ui';
@@ -121,20 +122,12 @@ export function AuditTimeline({ entityType, entityId, maxItems = 10 }: AuditTime
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<AuditLogRow | null>(null);
 
-  const headers = useMemo(() => ({
-    'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-    'x-user-role': user?.role || '',
-    'x-user-name': user?.name || '',
-  }), [user]);
-
   const loadTimeline = useCallback(async () => {
     if (!user || !entityId) return;
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${API_BASE}/audit-logs/entity/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}?per_page=${maxItems}`, { headers });
+      const res = await authenticatedFetch(`${API_BASE}/audit-logs/entity/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}?per_page=${maxItems}`);
       const body: AuditLogPage | null = await res.json().catch(() => null);
       if (!res.ok) throw new Error((body as { detail?: string } | null)?.detail || 'Could not load activity.');
       setRows(body?.items || []);
@@ -143,7 +136,7 @@ export function AuditTimeline({ entityType, entityId, maxItems = 10 }: AuditTime
     } finally {
       setLoading(false);
     }
-  }, [entityId, entityType, headers, maxItems, user]);
+  }, [entityId, entityType, maxItems, user]);
 
   useEffect(() => {
     loadTimeline();

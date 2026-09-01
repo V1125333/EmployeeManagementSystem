@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -726,7 +727,7 @@ function DetailDrawer({ request, userRole, employees, onClose, onRefresh, onActi
 
   const postComment = async () => {
     if (!comment.trim()) return;
-    const res = await fetch(`${API_BASE}/requests/${request.id}/comments`, {
+    const res = await authenticatedFetch(`${API_BASE}/requests/${request.id}/comments`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ body: comment.trim(), is_internal: internal }),
@@ -751,8 +752,7 @@ function DetailDrawer({ request, userRole, employees, onClose, onRefresh, onActi
       const formData = new FormData();
       formData.append('file', file);
       formData.append('document_type', 'EXPENSE_RECEIPT');
-      const uploadHeaders = { 'x-user-id': headers['x-user-id'], 'x-user-email': headers['x-user-email'] };
-      const res = await fetch(`${API_BASE}/requests/${request.id}/attachments`, { method: 'POST', headers: uploadHeaders, body: formData });
+      const res = await authenticatedFetch(`${API_BASE}/requests/${request.id}/attachments`, { method: 'POST', body: formData });
       const body = await res.json().catch(() => null);
       if (!res.ok) {
         showToast({ message: body?.detail || 'Could not upload receipt.' });
@@ -766,7 +766,7 @@ function DetailDrawer({ request, userRole, employees, onClose, onRefresh, onActi
   };
 
   const downloadAttachment = async (attachmentId: string, fileName: string) => {
-    const res = await fetch(`${API_BASE}/requests/${request.id}/attachments/${attachmentId}/download`, { headers });
+    const res = await authenticatedFetch(`${API_BASE}/requests/${request.id}/attachments/${attachmentId}/download`, { headers });
     if (!res.ok) {
       const body = await res.json().catch(() => null);
       showToast({ message: body?.detail || 'Download failed.' });
@@ -784,7 +784,7 @@ function DetailDrawer({ request, userRole, employees, onClose, onRefresh, onActi
   };
 
   const deleteAttachment = async (attachmentId: string) => {
-    const res = await fetch(`${API_BASE}/requests/${request.id}/attachments/${attachmentId}`, { method: 'DELETE', headers });
+    const res = await authenticatedFetch(`${API_BASE}/requests/${request.id}/attachments/${attachmentId}`, { method: 'DELETE', headers });
     const body = await res.json().catch(() => null);
     if (!res.ok) {
       showToast({ message: body?.detail || 'Could not delete attachment.' });
@@ -1009,9 +1009,7 @@ export function RequestsPage() {
   const canReassign = isPrivilegedAdmin(user?.role);
   const headers = useMemo(() => ({
     'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-  }), [user]);
+  }), []);
 
   useEffect(() => {
     const newType = searchParams.get('new');
@@ -1035,8 +1033,8 @@ export function RequestsPage() {
       if (dateFrom) params.set('date_from', dateFrom);
       if (dateTo) params.set('date_to', dateTo);
       const [myRes, queueRes] = await Promise.all([
-        fetch(`${API_BASE}/requests/my?${params.toString()}`, { headers }),
-        canReview ? fetch(`${API_BASE}/requests/queue?${params.toString()}`, { headers }) : Promise.resolve(null),
+        authenticatedFetch(`${API_BASE}/requests/my?${params.toString()}`, { headers }),
+        canReview ? authenticatedFetch(`${API_BASE}/requests/queue?${params.toString()}`, { headers }) : Promise.resolve(null),
       ]);
       const myBody = await myRes.json().catch(() => null);
       if (!myRes.ok) throw new Error(myBody?.detail || 'Could not load requests.');
@@ -1058,7 +1056,7 @@ export function RequestsPage() {
     if (!user) return;
     const controller = new AbortController();
     const loadPolicies = async () => {
-      const res = await fetch(`${API_BASE}/requests/policies`, { headers, signal: controller.signal });
+      const res = await authenticatedFetch(`${API_BASE}/requests/policies`, { headers, signal: controller.signal });
       const body = await res.json().catch(() => null);
       if (res.ok) setPolicies(body?.policies || {});
     };
@@ -1070,7 +1068,7 @@ export function RequestsPage() {
     if (!user || !canReassign) return;
     const controller = new AbortController();
     const loadEmployees = async () => {
-      const res = await fetch(`${API_BASE}/employees/?per_page=100`, { headers, signal: controller.signal });
+      const res = await authenticatedFetch(`${API_BASE}/employees/?per_page=100`, { headers, signal: controller.signal });
       const body = await res.json().catch(() => null);
       if (!res.ok) return;
       const rows = Array.isArray(body) ? body : body?.employees || body?.items || [];
@@ -1086,7 +1084,7 @@ export function RequestsPage() {
   }, [canReassign, headers, user]);
 
   const refreshDetail = async (id: string) => {
-    const res = await fetch(`${API_BASE}/requests/${id}`, { headers });
+    const res = await authenticatedFetch(`${API_BASE}/requests/${id}`, { headers });
     const body = await res.json().catch(() => null);
     if (res.ok) setDetail(body);
   };
@@ -1135,7 +1133,7 @@ export function RequestsPage() {
         description: form.reason,
       };
     }
-    const res = await fetch(`${API_BASE}/requests`, { method: 'POST', headers, body: JSON.stringify(payload) });
+    const res = await authenticatedFetch(`${API_BASE}/requests`, { method: 'POST', headers, body: JSON.stringify(payload) });
     const body = await res.json().catch(() => null);
     if (!res.ok) {
       throw new Error(body?.detail || 'Could not save request.');
@@ -1145,10 +1143,8 @@ export function RequestsPage() {
       const uploadData = new FormData();
       uploadData.append('file', form.attachment);
       uploadData.append('document_type', 'EXPENSE_RECEIPT');
-      const uploadHeaders = { 'x-user-id': headers['x-user-id'], 'x-user-email': headers['x-user-email'] };
-      const uploadRes = await fetch(`${API_BASE}/requests/${body.id}/attachments`, {
+      const uploadRes = await authenticatedFetch(`${API_BASE}/requests/${body.id}/attachments`, {
         method: 'POST',
-        headers: uploadHeaders,
         body: uploadData,
       });
       const uploadBody = await uploadRes.json().catch(() => null);
@@ -1157,7 +1153,7 @@ export function RequestsPage() {
         throw new Error(uploadBody?.detail || 'Request saved, but receipt upload failed.');
       }
       if (shouldSubmit) {
-        const submitRes = await fetch(`${API_BASE}/requests/${body.id}/submit`, {
+        const submitRes = await authenticatedFetch(`${API_BASE}/requests/${body.id}/submit`, {
           method: 'POST',
           headers,
           body: JSON.stringify({ reason: null }),
@@ -1190,7 +1186,7 @@ export function RequestsPage() {
     const payload = action === 'approve'
       ? { notes: null }
       : { reason: null };
-    const res = await fetch(`${API_BASE}/requests/${row.id}/${action}`, {
+    const res = await authenticatedFetch(`${API_BASE}/requests/${row.id}/${action}`, {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
@@ -1214,7 +1210,7 @@ export function RequestsPage() {
       ? { reason: reason.trim() }
       : { reason: reason.trim() || null };
     try {
-      const res = await fetch(`${API_BASE}/requests/${actionIntent.row.id}/${actionIntent.action}`, {
+      const res = await authenticatedFetch(`${API_BASE}/requests/${actionIntent.row.id}/${actionIntent.action}`, {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
@@ -1240,7 +1236,7 @@ export function RequestsPage() {
   const markPaid = async (row: EmployeeRequest) => {
     const confirmed = window.confirm('Mark this approved expense as paid?');
     if (!confirmed) return;
-    const res = await fetch(`${API_BASE}/requests/${row.id}/mark-paid`, {
+    const res = await authenticatedFetch(`${API_BASE}/requests/${row.id}/mark-paid`, {
       method: 'POST',
       headers,
       body: JSON.stringify({}),
@@ -1256,7 +1252,7 @@ export function RequestsPage() {
   };
 
   const reassign = async (row: EmployeeRequest, ownerId: string, reason: string) => {
-    const res = await fetch(`${API_BASE}/requests/${row.id}/reassign`, {
+    const res = await authenticatedFetch(`${API_BASE}/requests/${row.id}/reassign`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ new_owner_id: ownerId, reason }),

@@ -97,3 +97,70 @@ class BenchEmployeeOut(BaseModel):
     allocation_status: str
     active_project_names: list[str]
     next_available_date: date | None = None
+
+
+class BenchAllocationSliceOut(BaseModel):
+    allocation_id: str
+    project_id: str | None = None
+    project_name: str
+    allocation_percentage: int
+    allocation_role: str
+    billing_type: str
+    end_date: date | None = None
+    status: str
+
+
+class BenchSummaryCountsOut(BaseModel):
+    ending_soon_count: int
+    multiple_allocations_count: int
+    on_bench_count: int
+    in_projects_count: int
+
+
+class BenchEndingSoonOut(BaseModel):
+    employee_id: str
+    employee_name: str
+    designation: str | None = None
+    profile_image_url: str | None = None
+    current_project_name: str
+    allocation_end_date: date
+    days_until_end: int
+    available_capacity_percentage: int
+
+
+class BenchMultipleAllocationOut(BaseModel):
+    employee_id: str
+    employee_name: str
+    designation: str | None = None
+    profile_image_url: str | None = None
+    allocations: list[BenchAllocationSliceOut]
+    total_active_allocation_percentage: int
+    available_capacity_percentage: int
+
+
+class BenchNowAvailableOut(BaseModel):
+    employee_id: str
+    employee_name: str
+    department: str | None = None
+    designation: str | None = None
+    profile_image_url: str | None = None
+    available_capacity_percentage: int
+
+
+class BenchInProjectOut(BaseModel):
+    employee_id: str
+    employee_name: str
+    designation: str | None = None
+    profile_image_url: str | None = None
+    current_project_name: str
+    allocation_percentage: int
+    allocation_end_date: date | None = None
+    available_capacity_percentage: int
+
+
+class BenchOverviewOut(BaseModel):
+    summary: BenchSummaryCountsOut
+    ending_soon: list[BenchEndingSoonOut]
+    multiple_allocations: list[BenchMultipleAllocationOut]
+    on_bench: list[BenchNowAvailableOut]
+    in_projects: list[BenchInProjectOut]

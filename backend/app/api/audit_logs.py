@@ -8,15 +8,17 @@ import csv
 from datetime import date, datetime
 from io import StringIO
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import cast, or_, String
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.authentication import AuthenticatedActor, get_authenticated_actor
+from app.models.employee import Employee
 from app.models.audit import AuditLog
 from app.services.audit_service import log_audit, log_authorization_failure
-from app.services.settings_service import get_current_employee, normalize_role
+from app.services.settings_service import normalize_role
 
 router = APIRouter(prefix="/audit-logs", tags=["Audit Logs"])
 
@@ -90,8 +92,7 @@ def filtered_audit_query(
     return query
 
 
-def ensure_audit_viewer(db: Session, x_user_id: str | None, x_user_email: str | None):
-    requester = get_current_employee(db, x_user_id, x_user_email)
+def ensure_audit_viewer(db: Session, requester: Employee):
     if not can_view_audit(requester.role):
         log_authorization_failure(
             db,
@@ -119,10 +120,9 @@ async def list_audit_logs(
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=25, ge=1, le=100),
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    ensure_audit_viewer(db, x_user_id, x_user_email)
+    ensure_audit_viewer(db, authenticated_actor.employee)
     query = filtered_audit_query(
         db,
         date_from=date_from,
@@ -159,10 +159,9 @@ async def export_audit_logs(
     sensitive_only: bool = Query(default=False),
     search: str | None = Query(default=None),
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    requester = get_current_employee(db, x_user_id, x_user_email)
+    requester = authenticated_actor.employee
     if normalize_role(requester.role) != "super_admin":
         log_authorization_failure(
             db,
@@ -239,10 +238,9 @@ async def list_entity_audit_logs(
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=10, ge=1, le=100),
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    ensure_audit_viewer(db, x_user_id, x_user_email)
+    ensure_audit_viewer(db, authenticated_actor.employee)
     query = db.query(AuditLog).filter(AuditLog.entity_type == entity_type, AuditLog.entity_id == entity_id)
     total = query.count()
     rows = query.order_by(AuditLog.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
@@ -259,10 +257,9 @@ async def list_entity_audit_logs(
 async def get_audit_log(
     log_id: str,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    ensure_audit_viewer(db, x_user_id, x_user_email)
+    ensure_audit_viewer(db, authenticated_actor.employee)
     row = db.query(AuditLog).filter(AuditLog.id == log_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Audit log not found.")

@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useEffect, useMemo, useState } from 'react';
 import { CalendarClock, Download, SearchX, TrendingUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -121,17 +122,12 @@ export function WorkforceForecastPage() {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
 
-  const headers = useMemo(() => ({
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-  }), [user]);
-
   const loadForecast = async () => {
     if (!user || !canViewForecast(user.role)) return;
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${API_BASE}/forecasting?window_days=${windowDays}`, { headers });
+      const res = await authenticatedFetch(`${API_BASE}/forecasting?window_days=${windowDays}`);
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.detail || 'Unable to load workforce forecast.');
       setForecast(data);
@@ -174,7 +170,7 @@ export function WorkforceForecastPage() {
     setExporting(true);
     setError('');
     try {
-      const res = await fetch(`${API_BASE}/forecasting/export?window_days=${windowDays}`, { headers });
+      const res = await authenticatedFetch(`${API_BASE}/forecasting/export?window_days=${windowDays}`);
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         throw new Error(data?.detail || 'Unable to export workforce forecast.');

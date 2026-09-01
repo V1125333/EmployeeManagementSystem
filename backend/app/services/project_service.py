@@ -29,10 +29,6 @@ def _is_project_admin(actor: Employee) -> bool:
     return normalize_role(actor.role) in {"super_admin", "hr_admin", "admin", "global_access"}
 
 
-def _is_manager(actor: Employee) -> bool:
-    return normalize_role(actor.role) == "manager"
-
-
 def _employee_name_from_row(employee: Employee | None) -> str | None:
     if not employee:
         return None
@@ -51,6 +47,33 @@ def get_project_record(db: Session, project_id: str) -> Project:
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")
+    return project
+
+
+def has_current_project_allocation(db: Session, actor: Employee, project_id: str) -> bool:
+    today = date.today()
+    return db.query(Allocation.id).filter(
+        Allocation.project_id == project_id,
+        Allocation.employee_id == actor.id,
+        Allocation.status == "active",
+        Allocation.start_date <= today,
+        or_(Allocation.end_date.is_(None), Allocation.end_date >= today),
+    ).first() is not None
+
+
+def can_access_project(db: Session, actor: Employee, project: Project) -> bool:
+    """Central read policy for project-sensitive records and files."""
+    return bool(
+        _is_project_admin(actor)
+        or project.project_manager_id == actor.id
+        or has_current_project_allocation(db, actor, project.id)
+    )
+
+
+def require_project_access(db: Session, actor: Employee, project_id: str) -> Project:
+    project = get_project_record(db, project_id)
+    if not can_access_project(db, actor, project):
+        raise HTTPException(status_code=403, detail="Not authorized to access this project.")
     return project
 
 
@@ -120,7 +143,7 @@ def list_projects(
     offset: int = 0,
 ) -> tuple[list[dict[str, Any]], int]:
     query = db.query(Project)
-    if actor and not _is_project_admin(actor) and not _is_manager(actor):
+    if actor and not _is_project_admin(actor):
         today = date.today()
         allocated_project_ids = db.query(Allocation.project_id).filter(
             Allocation.employee_id == actor.id,
@@ -129,7 +152,10 @@ def list_projects(
             Allocation.start_date <= today,
             or_(Allocation.end_date.is_(None), Allocation.end_date >= today),
         )
-        query = query.filter(Project.id.in_(allocated_project_ids))
+        query = query.filter(or_(
+            Project.project_manager_id == actor.id,
+            Project.id.in_(allocated_project_ids),
+        ))
     if search and search.strip():
         term = f"%{search.strip()}%"
         query = query.filter(
@@ -323,7 +349,7 @@ def upload_project_document(
 
 
 def list_project_documents(db: Session, actor: Employee, project_id: str) -> list[ProjectDocument]:
-    get_project_record(db, project_id)
+    require_project_access(db, actor, project_id)
     return (
         db.query(ProjectDocument)
         .filter(ProjectDocument.project_id == project_id, ProjectDocument.is_deleted.is_(False))
@@ -333,7 +359,7 @@ def list_project_documents(db: Session, actor: Employee, project_id: str) -> lis
 
 
 def download_project_document(db: Session, actor: Employee, project_id: str, document_id: str) -> tuple[bytes, str, str]:
-    project = get_project_record(db, project_id)
+    project = require_project_access(db, actor, project_id)
     doc = _project_document_query(db, project_id, document_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found.")
@@ -358,7 +384,7 @@ def delete_project_document(db: Session, actor: Employee, project_id: str, docum
     doc = _project_document_query(db, project_id, document_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found.")
-    if doc.uploaded_by_id != actor.id and not _is_project_admin(actor):
+    if not _is_project_admin(actor):
         raise HTTPException(status_code=403, detail="Not authorized to delete this project document.")
     doc.is_deleted = True
     doc.deleted_at = datetime.utcnow()

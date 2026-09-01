@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from fastapi import FastAPI
@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.ai.conversation_context import reset_conversation_context_for_tests
+from app.ai import orchestrator as ai_orchestrator
 from app.ai.rate_limit import reset_ai_limits_for_tests
 from app.api import ai as ai_api
 from app.api.ai import router as ai_router
@@ -20,6 +21,8 @@ from app.models.employee import Employee
 from app.models.ai_workflow import AIConversation, AIConversationMessage, AILeaveIntakeState
 from app.models.leave_attendance import LeaveBalance, LeaveRequest, LeaveType
 from app.models.organization import Department, Designation
+from app.schemas.leave import MyLeaveRequestQuery
+from app.services.leave_service import list_my_leave_requests
 
 
 def _next_monday(today: date) -> date:
@@ -110,64 +113,71 @@ def phase1_context(monkeypatch):
     )
     db.add_all([manager, employee, other, casual, sick, earned])
     db.flush()
+    reference_now = datetime(2026, 3, 4, 10, 0, tzinfo=timezone.utc)
+    reference_today = reference_now.date()
+    monkeypatch.setattr(
+        ai_orchestrator,
+        "local_now",
+        lambda _db, _employee: (reference_now, "UTC"),
+    )
     db.add(
         LeaveBalance(
             id="phase-sick-balance",
             employee_id=employee.id,
             leave_type_id=sick.id,
-            year=date.today().year,
+            year=reference_today.year,
             total_days=10,
             used_days=7,
             carry_forward_days=0,
         )
     )
-    monday = _next_monday(date.today())
+    monday = _next_monday(reference_today)
     records = [
         LeaveRequest(
             id="phase-pending-latest", employee_id=employee.id,
             leave_type_id=casual.id, start_date=monday, end_date=monday,
             total_days=1, reason="Appointment", status="pending",
-            created_at=datetime.utcnow() - timedelta(days=1),
+            created_at=reference_now.replace(tzinfo=None) - timedelta(days=1),
         ),
         LeaveRequest(
             id="phase-approved", employee_id=employee.id,
-            leave_type_id=sick.id, start_date=date.today() - timedelta(days=20),
-            end_date=date.today() - timedelta(days=20), total_days=1,
+            leave_type_id=sick.id, start_date=reference_today - timedelta(days=20),
+            end_date=reference_today - timedelta(days=20), total_days=1,
             reason="Illness", status="approved", reviewed_by=manager.id,
-            reviewed_at=datetime.utcnow() - timedelta(days=18),
+            reviewed_at=reference_now.replace(tzinfo=None) - timedelta(days=18),
             reviewer_notes="Approved after review.",
-            created_at=datetime.utcnow() - timedelta(days=21),
+            created_at=reference_now.replace(tzinfo=None) - timedelta(days=21),
         ),
         LeaveRequest(
             id="phase-rejected-reason", employee_id=employee.id,
-            leave_type_id=casual.id, start_date=date.today() - timedelta(days=30),
-            end_date=date.today() - timedelta(days=29), total_days=2,
+            leave_type_id=casual.id, start_date=reference_today - timedelta(days=30),
+            end_date=reference_today - timedelta(days=29), total_days=2,
             reason="Travel", status="rejected", reviewed_by=manager.id,
-            reviewed_at=datetime.utcnow() - timedelta(days=28),
+            reviewed_at=reference_now.replace(tzinfo=None) - timedelta(days=28),
             reviewer_notes="Critical release coverage was required.",
-            created_at=datetime.utcnow() - timedelta(days=31),
+            created_at=reference_now.replace(tzinfo=None) - timedelta(days=31),
         ),
         LeaveRequest(
             id="phase-rejected-no-reason", employee_id=employee.id,
-            leave_type_id=sick.id, start_date=date.today() - timedelta(days=40),
-            end_date=date.today() - timedelta(days=40), total_days=1,
+            leave_type_id=sick.id, start_date=reference_today - timedelta(days=40),
+            end_date=reference_today - timedelta(days=40), total_days=1,
             reason="Sick", status="rejected", reviewed_by=manager.id,
-            reviewed_at=datetime.utcnow() - timedelta(days=39),
+            reviewed_at=reference_now.replace(tzinfo=None) - timedelta(days=39),
             reviewer_notes=None,
-            created_at=datetime.utcnow() - timedelta(days=41),
+            created_at=reference_now.replace(tzinfo=None) - timedelta(days=41),
         ),
         LeaveRequest(
             id="phase-cancelled", employee_id=employee.id,
-            leave_type_id=earned.id, start_date=date.today() - timedelta(days=50),
-            end_date=date.today() - timedelta(days=49), total_days=2,
+            leave_type_id=earned.id, start_date=reference_today - timedelta(days=50),
+            end_date=reference_today - timedelta(days=49), total_days=2,
             reason="Plans changed", status="cancelled",
-            created_at=datetime.utcnow() - timedelta(days=51),
+            created_at=reference_now.replace(tzinfo=None) - timedelta(days=51),
         ),
         LeaveRequest(
             id="phase-other-request", employee_id=other.id,
             leave_type_id=casual.id, start_date=monday, end_date=monday,
             total_days=1, reason="Private", status="approved",
-            created_at=datetime.utcnow(),
+            created_at=reference_now.replace(tzinfo=None),
         ),
     ]
     db.add_all(records)
@@ -180,6 +190,15 @@ def phase1_context(monkeypatch):
     app.include_router(ai_router, prefix="/api/v1")
     app.dependency_overrides[get_db] = override_db
     monkeypatch.setattr(ai_api, "_audit", lambda *args, **kwargs: None)
+
+    async def reject_unexpected_shadow_execution(*args, **kwargs):
+        raise AssertionError("ordinary leave tests must not execute contextual shadow")
+
+    monkeypatch.setattr(
+        ai_api,
+        "run_shadow_evaluation_background",
+        reject_unexpected_shadow_execution,
+    )
     old_secret = settings.AUTH_JWT_SECRET
     settings.AUTH_JWT_SECRET = "phase-one-secret-that-is-long-enough"
     client = TestClient(app)
@@ -190,6 +209,7 @@ def phase1_context(monkeypatch):
         "other": other,
         "token": create_access_token(employee),
         "monday": monday,
+        "reference_now": reference_now,
     }
     settings.AUTH_JWT_SECRET = old_secret
     reset_ai_limits_for_tests()
@@ -243,6 +263,72 @@ def test_latest_status_and_date_selected_request(phase1_context):
     ).json()
     assert selected["result"]["request"]["request_id"] == "phase-pending-latest"
     assert selected["result"]["request"]["approver"] == "David Park"
+
+
+def test_latest_request_uses_created_date_across_statuses(phase1_context):
+    payload = ask(phase1_context, "Was my latest leave approved?").json()
+    assert payload["result"]["request"]["request_id"] == "phase-pending-latest"
+    assert payload["result"]["request"]["status"] == "pending"
+
+
+def test_explicit_status_filters_before_latest_ordering(phase1_context):
+    payload = ask(
+        phase1_context,
+        "What is the status of my approved sick leave?",
+    ).json()
+    assert payload["result"]["request"]["request_id"] == "phase-approved"
+
+
+def test_equal_status_uses_created_date_then_stable_id_tie_breaker(phase1_context):
+    db = phase1_context["db"]
+    employee = phase1_context["employee"]
+    casual = db.query(LeaveType).filter(LeaveType.id == "phase-cl").one()
+    tied_at = phase1_context["reference_now"].replace(tzinfo=None)
+    db.add_all(
+        [
+            LeaveRequest(
+                id=request_id,
+                employee_id=employee.id,
+                leave_type_id=casual.id,
+                start_date=start_date,
+                end_date=start_date,
+                total_days=1,
+                reason="Ordering regression",
+                status="pending",
+                created_at=tied_at,
+            )
+            for request_id, start_date in (
+                ("phase-tie-a", date(2026, 4, 20)),
+                ("phase-tie-b", date(2026, 4, 6)),
+            )
+        ]
+    )
+    db.commit()
+
+    snapshot = list_my_leave_requests(
+        db,
+        employee,
+        MyLeaveRequestQuery(statuses=["pending"], limit=25),
+    )
+    assert [item.id for item in snapshot.requests[:2]] == [
+        "phase-tie-b",
+        "phase-tie-a",
+    ]
+
+
+def test_explicit_date_filter_selects_past_and_future_requests(phase1_context):
+    db = phase1_context["db"]
+    employee = phase1_context["employee"]
+    for on_date, expected_id in (
+        (date(2026, 2, 12), "phase-approved"),
+        (date(2026, 3, 9), "phase-pending-latest"),
+    ):
+        snapshot = list_my_leave_requests(
+            db,
+            employee,
+            MyLeaveRequestQuery(on_date=on_date, limit=25),
+        )
+        assert [item.id for item in snapshot.requests] == [expected_id]
 
 
 def test_multiple_matches_require_clarification(phase1_context):

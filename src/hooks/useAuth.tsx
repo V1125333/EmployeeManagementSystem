@@ -1,9 +1,18 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import {
+  ORBIT_PASSWORD_CHANGE_REQUIRED_EVENT,
+  ORBIT_SESSION_EXPIRED_EVENT,
+  authenticatedFetch,
+  clearOrbitSession,
+  publicFetch,
+  readOrbitSession,
+  writeOrbitSession,
+  type OrbitSession,
+} from '@/services/apiClient';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
-const STORAGE_KEY = 'reknew_orbit_auth';
 
-// ─── Types ───
 export interface AuthUser {
   id?: string;
   name: string;
@@ -22,54 +31,94 @@ interface AuthContextType {
   logout: () => void;
   setUserFromApi: (employee: any, token?: string) => void;
   updateUser: (updates: Partial<AuthUser>) => void;
+  refreshCurrentUser: () => Promise<AuthUser | null>;
 }
 
-// ─── Context ───
 const AuthContext = createContext<AuthContextType | null>(null);
 
 function makeInitials(name: string): string {
-  return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+  return name.split(' ').map((word) => word[0]).join('').toUpperCase().slice(0, 2);
 }
 
-function readStoredUser(): AuthUser | null {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    const parsed = stored ? JSON.parse(stored) : null;
-    return parsed?.user || null;
-  } catch {
-    localStorage.removeItem(STORAGE_KEY);
+interface CurrentUserProfile {
+  id: string;
+  first_name: string;
+  last_name: string;
+  work_email: string;
+  role: string;
+  profile_image_url?: string | null;
+  force_password_change?: boolean;
+}
+
+function currentProfileToAuthUser(profile: CurrentUserProfile): AuthUser {
+  const name = `${profile.first_name} ${profile.last_name}`.trim();
+  return {
+    id: profile.id,
+    name,
+    email: profile.work_email,
+    role: profile.role || 'Employee',
+    initials: makeInitials(name),
+    profileImageUrl: profile.profile_image_url || null,
+    forcePasswordChange: Boolean(profile.force_password_change),
+  };
+}
+
+function readInitialSession(): OrbitSession<AuthUser> | null {
+  const restored = readOrbitSession<AuthUser>();
+  if (!restored) return null;
+  const { user } = restored;
+  if (typeof user.name !== 'string' || !user.name.trim()
+    || typeof user.email !== 'string' || !user.email.trim()
+    || typeof user.role !== 'string' || !user.role.trim()) {
+    clearOrbitSession();
     return null;
   }
+  return restored;
 }
 
-function readStoredToken(): string | null {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    const parsed = stored ? JSON.parse(stored) : null;
-    return typeof parsed?.token === 'string' ? parsed.token : null;
-  } catch {
-    return null;
-  }
-}
-
-// ─── Provider ───
 export function AuthProvider({ children }: { children: ReactNode }) {
-  // Hydrate before the first protected-route render so bookmarks and refreshes keep their route.
-  const [user, setUser] = useState<AuthUser | null>(readStoredUser);
-  const [accessToken, setAccessToken] = useState<string | null>(readStoredToken);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [session, setSession] = useState<OrbitSession<AuthUser> | null>(readInitialSession);
+  const user = session?.user || null;
+  const accessToken = session?.token || null;
 
-  // Login via backend API (email + password + TOTP)
+  useEffect(() => {
+    const isPublicPath = () => ['/login', '/auth/callback', '/brand-preview'].includes(location.pathname)
+      || location.pathname.startsWith('/verify/');
+    const expireSession = () => {
+      clearOrbitSession();
+      setSession(null);
+      if (!isPublicPath()) navigate('/login', { replace: true });
+    };
+    const requirePasswordChange = () => {
+      if (location.pathname !== '/force-change-password') navigate('/force-change-password', { replace: true });
+    };
+    window.addEventListener(ORBIT_SESSION_EXPIRED_EVENT, expireSession);
+    window.addEventListener(ORBIT_PASSWORD_CHANGE_REQUIRED_EVENT, requirePasswordChange);
+    return () => {
+      window.removeEventListener(ORBIT_SESSION_EXPIRED_EVENT, expireSession);
+      window.removeEventListener(ORBIT_PASSWORD_CHANGE_REQUIRED_EVENT, requirePasswordChange);
+    };
+  }, [location.pathname, navigate]);
+
   const loginWithApi = async (email: string, password: string, totpCode: string) => {
     const normalizedEmail = email.trim().toLowerCase();
     try {
-      const response = await fetch(`${API_BASE}/auth/login`, {
+      const passwordResponse = await publicFetch(`${API_BASE}/auth/login/verify-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: normalizedEmail, password, totp_code: totpCode }),
+        body: JSON.stringify({ email: normalizedEmail, password }),
       });
-
-      const result = await response.json();
-
+      let result = await passwordResponse.json();
+      if (passwordResponse.ok && result.success && result.login_challenge_token) {
+        const mfaResponse = await publicFetch(`${API_BASE}/auth/login/verify-mfa`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ login_challenge_token: result.login_challenge_token, totp_code: totpCode }),
+        });
+        result = await mfaResponse.json();
+      }
       if (result.success && result.employee) {
         const authUser: AuthUser = {
           id: result.employee.id,
@@ -80,61 +129,90 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           profileImageUrl: result.employee.profile_image_url || null,
           forcePasswordChange: Boolean(result.force_password_change),
         };
-        setUser(authUser);
-        setAccessToken(result.token || null);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: authUser, token: result.token }));
+        const token = typeof result.token === 'string' ? result.token.trim() : '';
+        if (!token) return { success: false, message: 'Login did not return a valid session.' };
+        const nextSession = { user: authUser, token };
+        setSession(nextSession);
+        writeOrbitSession(nextSession);
         return { success: true, message: result.message };
       }
-
       return { success: false, message: result.message || 'Login failed' };
     } catch {
       return { success: false, message: 'Cannot connect to server' };
     }
   };
 
-  // Set user from API response (used after first-time setup completes)
   const setUserFromApi = (employee: any, token?: string) => {
+    const name = employee.name || `${employee.first_name} ${employee.last_name}`;
     const authUser: AuthUser = {
       id: employee.id,
-      name: employee.name || `${employee.first_name} ${employee.last_name}`,
+      name,
       email: employee.email || employee.work_email,
       role: employee.role || 'Employee',
-      initials: makeInitials(employee.name || `${employee.first_name} ${employee.last_name}`),
+      initials: makeInitials(name),
       profileImageUrl: employee.profile_image_url || null,
       forcePasswordChange: Boolean(employee.force_password_change),
     };
-    setUser(authUser);
-    setAccessToken(token || null);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: authUser, token: token || null }));
+    const orbitAccessToken = token?.trim() || '';
+    if (!orbitAccessToken) {
+      clearOrbitSession();
+      setSession(null);
+      return;
+    }
+    const nextSession = { user: authUser, token: orbitAccessToken };
+    setSession(nextSession);
+    writeOrbitSession(nextSession);
   };
 
   const logout = () => {
-    setUser(null);
-    setAccessToken(null);
-    localStorage.removeItem(STORAGE_KEY);
+    setSession(null);
+    clearOrbitSession();
   };
 
   const updateUser = (updates: Partial<AuthUser>) => {
-    setUser((current) => {
+    setSession((current) => {
       if (!current) return current;
-      const next = { ...current, ...updates };
-      const stored = localStorage.getItem(STORAGE_KEY);
-      const parsed = stored ? JSON.parse(stored) : {};
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...parsed, user: next }));
+      const next = { ...current, user: { ...current.user, ...updates } };
+      writeOrbitSession(next);
       return next;
     });
   };
 
+  const refreshCurrentUser = useCallback(async (): Promise<AuthUser | null> => {
+    if (!accessToken) return null;
+    const response = await authenticatedFetch(`${API_BASE}/auth/me`, {}, accessToken);
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (!data?.success || !data.employee) return null;
+    const authUser = currentProfileToAuthUser(data.employee);
+    const nextSession = { user: authUser, token: accessToken };
+    setSession(nextSession);
+    writeOrbitSession(nextSession);
+    return authUser;
+  }, [accessToken]);
+
+  useEffect(() => {
+    if (accessToken && user && !user.forcePasswordChange) {
+      void refreshCurrentUser().catch(() => undefined);
+    }
+  }, [accessToken, refreshCurrentUser]);
+
   return (
-    <AuthContext.Provider
-      value={{ user, accessToken, isAuthenticated: user !== null, loginWithApi, logout, setUserFromApi, updateUser }}
-    >
+    <AuthContext.Provider value={{
+      user,
+      accessToken,
+      isAuthenticated: Boolean(user && accessToken),
+      loginWithApi,
+      logout,
+      setUserFromApi,
+      updateUser,
+      refreshCurrentUser,
+    }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
-// ─── Hook ───
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) throw new Error('useAuth must be used within AuthProvider');

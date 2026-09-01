@@ -3,14 +3,14 @@ Action inbox and notification APIs.
 """
 
 from datetime import datetime
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
-from sqlalchemy import func
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from app.core.authentication import AuthenticatedActor, get_authenticated_actor
 from app.core.database import get_db
 from app.models.employee import Employee
 from app.models.leave_attendance import AttendanceCorrection, LeaveBalance, LeaveRequest, LeaveType
 from app.models.operations import ActionInboxItem, Notification
-from app.services.settings_service import get_current_employee, is_manager_or_admin_role, is_admin_role
+from app.services.settings_service import is_manager_or_admin_role, is_admin_role
 
 router = APIRouter(tags=["Inbox & Notifications"])
 MANAGER_ROLES = {"super_admin", "admin", "hr_admin", "global_access", "manager"}
@@ -32,22 +32,6 @@ def has_complete_emergency_contact(employee: Employee | None) -> bool:
         bool((employee.emergency_contact_phone or "").strip()),
         bool((employee.emergency_contact_relation or "").strip()),
     ])
-
-
-def current_employee(db: Session, user_id: str | None, user_email: str | None) -> Employee | None:
-    employee = None
-    if user_id:
-        employee = db.query(Employee).filter(Employee.id == user_id).first()
-    if not employee and user_email:
-        employee = db.query(Employee).filter(
-            func.lower(Employee.work_email) == user_email.strip().lower()
-        ).first()
-    return employee
-
-
-def actor_context(db: Session, user_id: str | None, user_email: str | None):
-    employee = get_current_employee(db, user_id, user_email)
-    return employee, normalize_role(employee.role)
 
 
 def serialize_notification(item: Notification) -> dict:
@@ -156,11 +140,11 @@ def manager_action_items(db: Session, actor: Employee) -> list[dict]:
 
 @router.get("/inbox")
 async def get_inbox(
-    current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_email: str = Header(None, alias="x-user-email"),
     db: Session = Depends(get_db),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee, role = actor_context(db, current_user_id, current_user_email)
+    employee = actor.employee
+    role = normalize_role(employee.role)
     items: list[dict] = []
 
     if employee:
@@ -202,24 +186,20 @@ async def get_inbox(
 
 @router.get("/inbox/count")
 async def get_inbox_count(
-    current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_email: str = Header(None, alias="x-user-email"),
     db: Session = Depends(get_db),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    data = await get_inbox(current_user_id, current_user_email, db)
+    data = await get_inbox(db, actor)
     return {"count": len(data["items"])}
 
 
 @router.post("/inbox/{item_id}/complete")
 async def complete_inbox_item(
     item_id: str,
-    current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_email: str = Header(None, alias="x-user-email"),
     db: Session = Depends(get_db),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = current_employee(db, current_user_id, current_user_email)
-    if not employee:
-        raise HTTPException(status_code=404, detail="Inbox item not found")
+    employee = actor.employee
     item = db.query(ActionInboxItem).filter(
         ActionInboxItem.id == item_id,
         ActionInboxItem.assigned_to_user_id == employee.id,
@@ -236,11 +216,10 @@ async def complete_inbox_item(
 async def decide_leave_request(
     request_id: str,
     decision: str,
-    current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_email: str = Header(None, alias="x-user-email"),
     db: Session = Depends(get_db),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    reviewer, role = actor_context(db, current_user_id, current_user_email)
+    reviewer = actor.employee
     if not is_manager_or_admin_role(reviewer.role):
         raise HTTPException(status_code=403, detail="Not authorized to review leave requests")
     if decision not in {"approve", "reject"}:
@@ -261,7 +240,7 @@ async def decide_leave_request(
 
     new_status = "approved" if decision == "approve" else "rejected"
     leave.status = new_status
-    leave.reviewed_by = reviewer.id if reviewer else current_user_id
+    leave.reviewed_by = reviewer.id
     leave.reviewed_at = datetime.utcnow()
     leave.updated_at = datetime.utcnow()
     if decision == "approve":
@@ -302,11 +281,10 @@ async def decide_leave_request(
 async def decide_attendance_correction(
     correction_id: str,
     decision: str,
-    current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_email: str = Header(None, alias="x-user-email"),
     db: Session = Depends(get_db),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    reviewer, role = actor_context(db, current_user_id, current_user_email)
+    reviewer = actor.employee
     if not is_manager_or_admin_role(reviewer.role):
         raise HTTPException(status_code=403, detail="Not authorized to review attendance corrections")
     if decision not in {"approve", "reject"}:
@@ -327,7 +305,7 @@ async def decide_attendance_correction(
 
     new_status = "approved" if decision == "approve" else "rejected"
     correction.status = new_status
-    correction.reviewed_by = reviewer.id if reviewer else current_user_id
+    correction.reviewed_by = reviewer.id
     correction.reviewed_at = datetime.utcnow()
     correction.updated_at = datetime.utcnow()
     create_notification(
@@ -345,15 +323,12 @@ async def decide_attendance_correction(
 
 @router.get("/notifications")
 async def get_notifications(
-    current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_email: str = Header(None, alias="x-user-email"),
     unread_only: bool = Query(False),
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = current_employee(db, current_user_id, current_user_email)
-    if not employee:
-        return {"notifications": []}
+    employee = actor.employee
     query = db.query(Notification).filter(Notification.user_id == employee.id)
     if unread_only:
         query = query.filter(Notification.is_read == False)
@@ -363,13 +338,10 @@ async def get_notifications(
 
 @router.get("/notifications/unread-count")
 async def get_unread_count(
-    current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_email: str = Header(None, alias="x-user-email"),
     db: Session = Depends(get_db),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = current_employee(db, current_user_id, current_user_email)
-    if not employee:
-        return {"count": 0}
+    employee = actor.employee
     count = db.query(Notification).filter(Notification.user_id == employee.id, Notification.is_read == False).count()
     return {"count": count}
 
@@ -377,13 +349,10 @@ async def get_unread_count(
 @router.put("/notifications/{notification_id}/read")
 async def mark_notification_read(
     notification_id: str,
-    current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_email: str = Header(None, alias="x-user-email"),
     db: Session = Depends(get_db),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = current_employee(db, current_user_id, current_user_email)
-    if not employee:
-        raise HTTPException(status_code=404, detail="Notification not found")
+    employee = actor.employee
     notification = db.query(Notification).filter(Notification.id == notification_id, Notification.user_id == employee.id).first()
     if not notification:
         raise HTTPException(status_code=404, detail="Notification not found")
@@ -394,13 +363,10 @@ async def mark_notification_read(
 
 @router.put("/notifications/mark-all-read")
 async def mark_all_notifications_read(
-    current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_email: str = Header(None, alias="x-user-email"),
     db: Session = Depends(get_db),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = current_employee(db, current_user_id, current_user_email)
-    if not employee:
-        return {"success": True}
+    employee = actor.employee
     db.query(Notification).filter(Notification.user_id == employee.id, Notification.is_read == False).update({"is_read": True})
     db.commit()
     return {"success": True}

@@ -53,7 +53,7 @@ export function Drawer({
         ref={drawerRef}
         className={cn(
           width,
-          'relative h-full bg-warm-card border-l border-[var(--color-border)] shadow-[-8px_0_30px_rgba(47,52,55,0.08)]',
+          'relative h-full max-w-full overflow-hidden bg-warm-card border-l border-[var(--color-border)] shadow-[-8px_0_30px_rgba(47,52,55,0.08)]',
           'flex min-h-0 flex-col',
           'animate-[slideInRight_0.3s_cubic-bezier(0.16,1,0.3,1)]'
         )}
@@ -79,7 +79,7 @@ export function Drawer({
         </div>
 
         {/* Content — scrollable */}
-        <div className={cn('min-h-0 flex-1 overflow-y-auto overscroll-contain px-7 py-6', footer && 'pb-28')}>
+        <div className={cn('min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-5 py-6 sm:px-7', footer && 'pb-28')}>
           {children}
         </div>
 

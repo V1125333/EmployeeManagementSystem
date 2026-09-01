@@ -1,3 +1,5 @@
+import { authenticatedFetch } from './apiClient';
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
 export type LeaveBalanceSource = 'stored_balance' | 'policy_default' | 'on_request';
@@ -274,14 +276,13 @@ async function conversationRequest<T>(
   if (!accessToken) {
     throw new AIAPIError('Please sign in again to use Orbit AI.', undefined, 401);
   }
-  const response = await fetch(`${API_BASE}/ai${path}`, {
+  const response = await authenticatedFetch(`${API_BASE}/ai${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${accessToken}`,
       ...(init?.headers || {}),
     },
-  });
+  }, accessToken);
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const detail = data?.detail || {};
@@ -372,18 +373,17 @@ export async function sendAIChat(
   if (!accessToken) {
     throw new AIAPIError('Please sign in again to use Orbit AI.', undefined, 401);
   }
-  const response = await fetch(`${API_BASE}/ai/chat`, {
+  const response = await authenticatedFetch(`${API_BASE}/ai/chat`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify({
       message,
       ...(conversationId ? { conversation_id: conversationId } : {}),
     }),
     signal,
-  });
+  }, accessToken);
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const detail = data?.detail || {};

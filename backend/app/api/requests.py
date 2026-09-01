@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, File, Form, Header, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.authentication import AuthenticatedActor, get_authenticated_actor
 from app.schemas.requests import ApproveSchema, CancelSchema, CommentSchema, ReassignSchema, RejectSchema, RequestCreateSchema, RequestUpdateSchema
 from app.services.attachment_service import (
     delete_attachment,
@@ -34,27 +35,23 @@ from app.services.requests_service import (
     submit_request,
     update_request,
 )
-from app.services.settings_service import get_current_employee
 
 router = APIRouter(prefix="/requests", tags=["Requests"])
 
 
-def actor_from_headers(db: Session, x_user_id: str | None, x_user_email: str | None):
-    return get_current_employee(db, x_user_id, x_user_email)
-
-
 @router.get("/types")
-async def request_types():
+async def request_types(
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
+):
     return get_types()
 
 
 @router.get("/policies")
 async def request_policies(
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(None, alias="x-user-id"),
-    x_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = actor_from_headers(db, x_user_id, x_user_email)
+    actor = authenticated_actor.employee
     return get_request_policies(actor)
 
 
@@ -62,10 +59,9 @@ async def request_policies(
 async def create_employee_request(
     payload: RequestCreateSchema,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(None, alias="x-user-id"),
-    x_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = actor_from_headers(db, x_user_id, x_user_email)
+    actor = authenticated_actor.employee
     row = create_request(db, actor, payload)
     return serialize_request(db, row, actor, include_detail=True)
 
@@ -80,10 +76,9 @@ async def my_requests(
     page: int = Query(1, ge=1),
     per_page: int = Query(25, ge=1, le=100),
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(None, alias="x-user-id"),
-    x_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = actor_from_headers(db, x_user_id, x_user_email)
+    actor = authenticated_actor.employee
     return get_my_requests(db, actor, status=status, request_type=request_type, search=search, date_from=date_from, date_to=date_to, page=page, per_page=per_page)
 
 
@@ -97,10 +92,9 @@ async def approval_queue(
     page: int = Query(1, ge=1),
     per_page: int = Query(25, ge=1, le=100),
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(None, alias="x-user-id"),
-    x_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = actor_from_headers(db, x_user_id, x_user_email)
+    actor = authenticated_actor.employee
     return get_approval_queue(db, actor, status=status, request_type=request_type, search=search, date_from=date_from, date_to=date_to, page=page, per_page=per_page)
 
 
@@ -108,10 +102,9 @@ async def approval_queue(
 async def request_detail(
     request_id: str,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(None, alias="x-user-id"),
-    x_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = actor_from_headers(db, x_user_id, x_user_email)
+    actor = authenticated_actor.employee
     row = get_request(db, request_id)
     ensure_read_access(db, actor, row)
     return serialize_request(db, row, actor, include_detail=True)
@@ -122,10 +115,9 @@ async def update_employee_request(
     request_id: str,
     payload: RequestUpdateSchema,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(None, alias="x-user-id"),
-    x_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = actor_from_headers(db, x_user_id, x_user_email)
+    actor = authenticated_actor.employee
     row = update_request(db, actor, request_id, payload)
     return serialize_request(db, row, actor, include_detail=True)
 
@@ -134,10 +126,9 @@ async def update_employee_request(
 async def submit_employee_request(
     request_id: str,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(None, alias="x-user-id"),
-    x_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = actor_from_headers(db, x_user_id, x_user_email)
+    actor = authenticated_actor.employee
     row = submit_request(db, actor, request_id)
     return serialize_request(db, row, actor, include_detail=True)
 
@@ -147,10 +138,9 @@ async def cancel_employee_request(
     request_id: str,
     payload: CancelSchema,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(None, alias="x-user-id"),
-    x_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = actor_from_headers(db, x_user_id, x_user_email)
+    actor = authenticated_actor.employee
     row = cancel_request(db, actor, request_id, payload.reason)
     return serialize_request(db, row, actor, include_detail=True)
 
@@ -160,10 +150,9 @@ async def approve_employee_request(
     request_id: str,
     payload: ApproveSchema,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(None, alias="x-user-id"),
-    x_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = actor_from_headers(db, x_user_id, x_user_email)
+    actor = authenticated_actor.employee
     row = approve_request(db, actor, request_id, payload.notes)
     return serialize_request(db, row, actor, include_detail=True)
 
@@ -173,10 +162,9 @@ async def reject_employee_request(
     request_id: str,
     payload: RejectSchema,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(None, alias="x-user-id"),
-    x_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = actor_from_headers(db, x_user_id, x_user_email)
+    actor = authenticated_actor.employee
     row = reject_request(db, actor, request_id, payload.reason)
     return serialize_request(db, row, actor, include_detail=True)
 
@@ -186,10 +174,9 @@ async def reassign_employee_request(
     request_id: str,
     payload: ReassignSchema,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(None, alias="x-user-id"),
-    x_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = actor_from_headers(db, x_user_id, x_user_email)
+    actor = authenticated_actor.employee
     row = reassign_request(db, actor, request_id, payload)
     return serialize_request(db, row, actor, include_detail=True)
 
@@ -199,10 +186,9 @@ async def add_request_comment(
     request_id: str,
     payload: CommentSchema,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(None, alias="x-user-id"),
-    x_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = actor_from_headers(db, x_user_id, x_user_email)
+    actor = authenticated_actor.employee
     row = add_comment(db, actor, request_id, payload)
     return serialize_comment(db, row)
 
@@ -213,10 +199,9 @@ async def upload_request_attachment(
     file: UploadFile = File(...),
     document_type: str = Form("OTHER"),
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(None, alias="x-user-id"),
-    x_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = actor_from_headers(db, x_user_id, x_user_email)
+    actor = authenticated_actor.employee
     content = await file.read()
     row = upload_attachment(
         db,
@@ -234,10 +219,9 @@ async def upload_request_attachment(
 async def list_request_attachments(
     request_id: str,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(None, alias="x-user-id"),
-    x_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = actor_from_headers(db, x_user_id, x_user_email)
+    actor = authenticated_actor.employee
     return [serialize_attachment(db, row) for row in list_attachments(db, actor, request_id)]
 
 
@@ -246,10 +230,9 @@ async def download_request_attachment(
     request_id: str,
     attachment_id: str,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(None, alias="x-user-id"),
-    x_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = actor_from_headers(db, x_user_id, x_user_email)
+    actor = authenticated_actor.employee
     file_bytes, mime_type, original_name = download_attachment(db, actor, request_id, attachment_id)
     safe_name = original_name.replace('"', "")
     return Response(
@@ -264,10 +247,9 @@ async def delete_request_attachment(
     request_id: str,
     attachment_id: str,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(None, alias="x-user-id"),
-    x_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = actor_from_headers(db, x_user_id, x_user_email)
+    actor = authenticated_actor.employee
     delete_attachment(db, actor, request_id, attachment_id)
     return {"success": True}
 
@@ -276,9 +258,8 @@ async def delete_request_attachment(
 async def mark_request_paid(
     request_id: str,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(None, alias="x-user-id"),
-    x_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = actor_from_headers(db, x_user_id, x_user_email)
+    actor = authenticated_actor.employee
     row = mark_expense_paid(db, actor, request_id)
     return serialize_request(db, row, actor, include_detail=True)

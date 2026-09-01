@@ -9,11 +9,12 @@ import re
 from urllib.parse import quote
 from typing import Optional
 from datetime import date, datetime
-from fastapi import APIRouter, Depends, HTTPException, Query, Header, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, exists, func, literal, or_
 from app.core.database import get_db
+from app.core.authentication import AuthenticatedActor, get_authenticated_actor
 from app.models.employee import Employee, EmployeeAuditLog, EmployeePerformanceSnapshot
 from app.models.leave_attendance import LeaveBalance, LeaveRequest
 from app.models.operations import ActionInboxItem, Allocation, Notification, Project
@@ -21,7 +22,7 @@ from app.models.training import TrainingEnrollment
 from app.schemas.employee import AddEmployeeRequest, AddEmployeeResponse, UpdateEmployeeRequest
 from app.services.employee_service import create_employee
 from app.services.audit_service import changed_fields, log_audit, log_authorization_failure
-from app.services.settings_service import get_current_employee, is_admin_role, normalize_role, require_admin_employee
+from app.services.settings_service import is_admin_role, normalize_role
 from app.services.security_service import (
     export_employee_csv,
     log_sensitive_access,
@@ -32,6 +33,18 @@ import base64
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/employees", tags=["Employees"])
+
+
+def authenticated_employee(
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
+) -> Employee:
+    return authenticated_actor.employee
+
+
+def require_admin_actor(actor: Employee) -> Employee:
+    if not is_admin_role(actor.role):
+        raise HTTPException(status_code=403, detail="Admin access is required.")
+    return actor
 
 BULK_EMPLOYEE_HEADERS = (
     "first_name", "last_name", "work_email", "phone", "country_code",
@@ -437,11 +450,10 @@ async def list_employees(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(authenticated_employee),
 ):
     """List employees with search, filters, and pagination."""
-    require_admin_employee(db, current_user_id, current_user_email)
+    require_admin_actor(actor)
     query = db.query(Employee).filter(Employee.work_email != "superadmin@reknew.ai")
     organization_employees = query.all()
     organization_total = len(organization_employees)
@@ -645,11 +657,10 @@ async def export_employees(
     reporting_manager: Optional[str] = Query(None),
     level: str = Query("basic", pattern="^(basic|hr|payroll)$"),
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(authenticated_employee),
 ):
     """Export employees with server-side role checks and sensitive-access audit."""
-    actor = require_admin_employee(db, current_user_id, current_user_email)
+    require_admin_actor(actor)
     require_export_level(actor, level)
 
     query = db.query(Employee).filter(Employee.work_email != "superadmin@reknew.ai")
@@ -764,11 +775,10 @@ async def export_employees(
 @router.get("/bulk-template.csv")
 async def bulk_employee_template(
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(authenticated_employee),
 ):
     """Download the canonical employee-import template."""
-    require_admin_employee(db, current_user_id, current_user_email)
+    require_admin_actor(actor)
     output = io.StringIO()
     writer = csv.writer(output, lineterminator="\n")
     writer.writerow(BULK_EMPLOYEE_HEADERS)
@@ -788,11 +798,10 @@ async def bulk_employee_template(
 async def validate_bulk_employees(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(authenticated_employee),
 ):
     """Validate a bulk employee file without writing any employee records."""
-    require_admin_employee(db, current_user_id, current_user_email)
+    require_admin_actor(actor)
     content = await file.read()
     rows = _parse_bulk_employee_file(file.filename or "", content)
     validated = _validate_bulk_employee_rows(db, rows)
@@ -809,11 +818,10 @@ async def validate_bulk_employees(
 async def import_bulk_employees(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(authenticated_employee),
 ):
     """Import valid rows only, queueing the normal secure activation email for each."""
-    actor = require_admin_employee(db, current_user_id, current_user_email)
+    require_admin_actor(actor)
     content = await file.read()
     rows = _validate_bulk_employee_rows(db, _parse_bulk_employee_file(file.filename or "", content))
     imported = 0
@@ -849,11 +857,9 @@ async def import_bulk_employees(
 @router.get("/organization", response_model=dict)
 async def organization_chart(
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(authenticated_employee),
 ):
     """Return the minimal flat employee graph needed to render reporting lines."""
-    actor = get_current_employee(db, current_user_id, current_user_email)
     employees = db.query(Employee).filter(Employee.is_active.is_(True)).order_by(
         Employee.first_name.asc(), Employee.last_name.asc()
     ).all()
@@ -895,11 +901,9 @@ async def organization_chart(
 async def get_employee(
     employee_id: str,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(authenticated_employee),
 ):
     """Get single employee details."""
-    actor = get_current_employee(db, current_user_id, current_user_email)
     emp = db.query(Employee).filter(Employee.id == employee_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -925,11 +929,10 @@ async def get_employee(
 async def get_employee_preview(
     employee_id: str,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(authenticated_employee),
 ):
     """Executive employee preview drawer data."""
-    actor = require_admin_employee(db, current_user_id, current_user_email)
+    require_admin_actor(actor)
     emp = db.query(Employee).filter(Employee.id == employee_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -1071,11 +1074,10 @@ async def get_employee_preview(
 async def remind_emergency_contact(
     employee_id: str,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(authenticated_employee),
 ):
     """Ask an employee to update missing emergency contact information."""
-    actor = require_admin_employee(db, current_user_id, current_user_email)
+    require_admin_actor(actor)
     emp = db.query(Employee).filter(Employee.id == employee_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -1165,11 +1167,10 @@ async def remind_emergency_contact(
 async def add_employee(
     data: AddEmployeeRequest,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(authenticated_employee),
 ):
     """Add an employee and queue a secure activation email."""
-    actor = require_admin_employee(db, current_user_id, current_user_email)
+    require_admin_actor(actor)
     try:
         result = create_employee(db, data)
         if result.success and result.employee_id:
@@ -1193,13 +1194,10 @@ async def add_employee(
 async def update_employee(
     employee_id: str,
     data: UpdateEmployeeRequest,
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
-    current_user_name: str | None = Header(None, alias="x-user-name"),
     db: Session = Depends(get_db),
+    actor: Employee = Depends(authenticated_employee),
 ):
     """Update employee details. Current user must be the employee or an admin."""
-    actor = get_current_employee(db, current_user_id, current_user_email)
     emp = db.query(Employee).filter(Employee.id == employee_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -1315,7 +1313,7 @@ async def update_employee(
             setattr(emp, field, value)
 
     emp.last_updated_at = datetime.utcnow()
-    emp.updated_by = changed_by_value(actor.work_email, current_user_name, actor.id)
+    emp.updated_by = changed_by_value(actor.work_email, employee_name(actor), actor.id)
 
     emergency_contact_complete = all([
         bool((emp.emergency_contact_name or "").strip()),
@@ -1395,13 +1393,10 @@ async def update_employee(
 async def upload_profile_picture(
     employee_id: str,
     file: UploadFile = File(...),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
-    current_user_name: str | None = Header(None, alias="x-user-name"),
     db: Session = Depends(get_db),
+    actor: Employee = Depends(authenticated_employee),
 ):
     """Upload profile picture for an employee. User can only upload for their own profile or super_admin can upload for anyone."""
-    actor = get_current_employee(db, current_user_id, current_user_email)
     emp = db.query(Employee).filter(Employee.id == employee_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -1429,7 +1424,7 @@ async def upload_profile_picture(
     # Update employee profile picture
     emp.profile_image_url = data_uri
     emp.last_updated_at = datetime.utcnow()
-    emp.updated_by = actor.work_email or current_user_name or actor.id or "unknown"
+    emp.updated_by = actor.work_email or employee_name(actor) or actor.id or "unknown"
     log_audit(
         db,
         actor,

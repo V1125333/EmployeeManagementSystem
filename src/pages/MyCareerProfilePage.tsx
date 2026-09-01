@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useEffect, useState } from 'react';
 import { Card } from '@/components/ui';
 import { CareerProfilePanel } from '@/components/career/CareerProfilePanel';
@@ -23,15 +24,15 @@ export function MyCareerProfilePage() {
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      if (!user?.email) {
+      if (!user) {
         setLoading(false);
-        setError('No employee email found.');
+        setError('No authenticated employee found.');
         return;
       }
       setLoading(true);
       setError('');
       try {
-        const res = await fetch(`${API_BASE}/auth/me/${encodeURIComponent(user.email)}`);
+        const res = await authenticatedFetch(`${API_BASE}/auth/me`);
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.success || !data.employee) {
           throw new Error(data.detail || data.message || 'Could not load employee profile.');
@@ -45,7 +46,7 @@ export function MyCareerProfilePage() {
     };
     load();
     return () => { cancelled = true; };
-  }, [user?.email]);
+  }, [user?.id]);
 
   if (loading) {
     return <div className="p-6 text-sm text-gray-500">Loading career profile...</div>;

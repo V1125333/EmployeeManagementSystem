@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useState, useEffect } from 'react';
 import { Card, CardHeader, Avatar, Badge } from '@/components/ui';
 import { cn } from '@/utils/cn';
@@ -17,7 +18,7 @@ export function OnLeaveToday() {
   const [entries, setEntries] = useState<LeaveEntry[]>([]);
 
   useEffect(() => {
-    fetch(`${API_BASE}/dashboard/on-leave-today`)
+    authenticatedFetch(`${API_BASE}/dashboard/on-leave-today`)
       .then((res) => res.json())
       .then((data) => setEntries(data.on_leave || []))
       .catch(() => setEntries([]));
@@ -60,7 +61,7 @@ export function TeamLeaveCalendar() {
   const [month, setMonth] = useState('');
 
   useEffect(() => {
-    fetch(`${API_BASE}/dashboard/leave-calendar`)
+    authenticatedFetch(`${API_BASE}/dashboard/leave-calendar`)
       .then((res) => res.json())
       .then((data) => {
         setDays(data.calendar || []);

@@ -1,7 +1,7 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle, Copy, LockKeyhole, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { Badge, Button, Card, CardHeader } from '@/components/ui';
-import { useAuth } from '@/hooks/useAuth';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
@@ -46,7 +46,6 @@ function formatDateTime(value?: string) {
 }
 
 export function SecurityCenterPage() {
-  const { user } = useAuth();
   const [tab, setTab] = useState<'locked' | 'requests'>('locked');
   const [lockedAccounts, setLockedAccounts] = useState<LockedAccount[]>([]);
   const [unlockRequests, setUnlockRequests] = useState<UnlockRequest[]>([]);
@@ -61,17 +60,15 @@ export function SecurityCenterPage() {
 
   const headers = useMemo(() => ({
     'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-  }), [user?.id, user?.email]);
+  }), []);
 
   async function loadData() {
     setLoading(true);
     setError('');
     try {
       const [lockedRes, requestRes] = await Promise.all([
-        fetch(`${API_BASE}/admin/security/locked-accounts`, { headers }),
-        fetch(`${API_BASE}/admin/security/unlock-requests?status=${statusFilter}`, { headers }),
+        authenticatedFetch(`${API_BASE}/admin/security/locked-accounts`, { headers }),
+        authenticatedFetch(`${API_BASE}/admin/security/unlock-requests?status=${statusFilter}`, { headers }),
       ]);
       if (!lockedRes.ok || !requestRes.ok) throw new Error('Could not load security data.');
       const lockedData = await lockedRes.json();
@@ -109,7 +106,7 @@ export function SecurityCenterPage() {
     setError('');
     setActionLoading(true);
     try {
-      const res = await fetch(`${API_BASE}${unlockIntent.url}`, {
+      const res = await authenticatedFetch(`${API_BASE}${unlockIntent.url}`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ admin_notes: adminNotes.trim() || unlockIntent.defaultNotes }),

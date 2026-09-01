@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Award,
@@ -176,9 +177,7 @@ export function CertificateGeneratorPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const authHeaders = useMemo(() => ({
     'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-  }), [user]);
+  }), []);
 
   const relevantCounters = useMemo(() => {
     const normalizedCohort = cohortCode.trim().toUpperCase();
@@ -193,7 +192,7 @@ export function CertificateGeneratorPage() {
       setLoadingMeta(true);
       setError(null);
       try {
-        const res = await fetch(`${API_BASE}/certificates/meta`);
+        const res = await authenticatedFetch(`${API_BASE}/certificates/meta`);
         if (!res.ok) throw new Error('Could not load certificate settings.');
         const data: CertificateMeta = await res.json();
         if (!mounted) return;
@@ -229,7 +228,7 @@ export function CertificateGeneratorPage() {
           cohort_code: cohortCode.trim().toUpperCase(),
           year: String(year),
         });
-        const res = await fetch(`${API_BASE}/certificates/next-serial?${params.toString()}`, {
+        const res = await authenticatedFetch(`${API_BASE}/certificates/next-serial?${params.toString()}`, {
           signal: controller.signal,
         });
         if (!res.ok) throw new Error('Could not preview the next certificate ID.');
@@ -254,12 +253,12 @@ export function CertificateGeneratorPage() {
     !generating;
 
   async function refreshMeta() {
-    const res = await fetch(`${API_BASE}/certificates/meta`);
+    const res = await authenticatedFetch(`${API_BASE}/certificates/meta`);
     if (res.ok) setMeta(await res.json());
   }
 
   async function refreshCertificates() {
-    const res = await fetch(`${API_BASE}/certificates`, { headers: authHeaders });
+    const res = await authenticatedFetch(`${API_BASE}/certificates`, { headers: authHeaders });
     if (res.ok) {
       const body = await res.json();
       setCertificates(body.certificates || []);
@@ -273,7 +272,7 @@ export function CertificateGeneratorPage() {
       cohort_code: cohortCode.trim().toUpperCase(),
       year: String(year),
     });
-    const res = await fetch(`${API_BASE}/certificates/next-serial?${params.toString()}`);
+    const res = await authenticatedFetch(`${API_BASE}/certificates/next-serial?${params.toString()}`);
     if (res.ok) setNextSerial(await res.json());
   }
 
@@ -284,7 +283,7 @@ export function CertificateGeneratorPage() {
     setSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/certificates/generate`, {
+      const res = await authenticatedFetch(`${API_BASE}/certificates/generate`, {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({
@@ -348,7 +347,7 @@ export function CertificateGeneratorPage() {
     setSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/certificates/bulk-generate`, {
+      const res = await authenticatedFetch(`${API_BASE}/certificates/bulk-generate`, {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({
@@ -380,7 +379,7 @@ export function CertificateGeneratorPage() {
   async function downloadIssuedCertificate(record: CertificateRecord) {
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/certificates/${encodeURIComponent(record.certificate_code)}/download`, { headers: authHeaders });
+      const res = await authenticatedFetch(`${API_BASE}/certificates/${encodeURIComponent(record.certificate_code)}/download`, { headers: authHeaders });
       if (!res.ok) throw new Error('Could not download certificate PDF.');
       downloadBlob(await res.blob(), readDownloadFilename(res.headers.get('Content-Disposition'), `${record.certificate_code}.pdf`));
     } catch (err) {

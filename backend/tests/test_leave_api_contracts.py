@@ -9,6 +9,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.leaves import router
+from app.core.authentication import create_access_token
+from app.core.config import settings
 from app.core.database import Base, get_db
 from app.models.employee import Employee
 from app.models.leave_attendance import LeaveBalance, LeaveRequest, LeaveType
@@ -19,6 +21,8 @@ from app.models.organization import Department, Designation
 class LeaveApiContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls.original_jwt_secret = settings.AUTH_JWT_SECRET
+        settings.AUTH_JWT_SECRET = "leave-contract-secret-that-is-long-enough"
         cls.engine = create_engine(
             "sqlite://",
             connect_args={"check_same_thread": False},
@@ -54,6 +58,7 @@ class LeaveApiContractTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.client.close()
         cls.engine.dispose()
+        settings.AUTH_JWT_SECRET = cls.original_jwt_secret
 
     def setUp(self):
         db = self.Session()
@@ -123,10 +128,12 @@ class LeaveApiContractTests(unittest.TestCase):
         self.leave_type_id = self.leave_type.id
         self.manager_id = self.manager.id
         self.manager_email = self.manager.work_email
+        self.manager_token = create_access_token(self.manager)
         db.close()
         self.headers = {
-            "x-user-id": self.employee_id,
-            "x-user-email": self.employee_email,
+            "Authorization": f"Bearer {create_access_token(self.employee)}",
+            "x-user-id": self.other_id,
+            "x-user-email": self.other.work_email,
         }
 
     def _counts(self):
@@ -274,7 +281,11 @@ class LeaveApiContractTests(unittest.TestCase):
 
         response = self.client.post(
             "/api/v1/leaves/approvals/approval-request/decision",
-            headers={"x-user-id": self.manager_id, "x-user-email": self.manager_email},
+            headers={
+                "Authorization": f"Bearer {self.manager_token}",
+                "x-user-id": self.other_id,
+                "x-user-email": self.other.work_email,
+            },
             json={"decision": "approve", "reviewer_notes": "Approved"},
         )
 

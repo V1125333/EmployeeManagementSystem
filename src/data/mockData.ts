@@ -105,6 +105,7 @@ export const mainNavItems: NavItem[] = [
   { key: 'client', label: 'Client Onboarding', icon: 'Briefcase', path: '/client-onboarding' },
   { key: 'projects', label: 'Projects', icon: 'Briefcase', path: '/projects' },
   { key: 'timeoff', label: 'Time Off & Attendance', icon: 'CalendarDays', path: '/time-off' },
+  { key: 'my-timesheets', label: 'My Timesheets', icon: 'Clock3', path: '/timesheets' },
   { key: 'team', label: 'Team Allocation', icon: 'Network', path: '/team-allocation' },
   { key: 'assets', label: 'Assets & Access', icon: 'Package', path: '/assets' },
 ];

@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Copy, Download, FileSearch, Search, ShieldCheck } from 'lucide-react';
 import { Badge, Button, Card, Avatar } from '@/components/ui';
@@ -231,21 +232,13 @@ export function AuditTrailPage() {
   const canExport = role === 'super_admin';
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
 
-  const headers = useMemo(() => ({
-    'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-    'x-user-role': user?.role || '',
-    'x-user-name': user?.name || '',
-  }), [user]);
-
   const loadLogs = useCallback(async () => {
     if (!user || !canView) return;
     setLoading(true);
     setError('');
     try {
       const params = buildParams(filters, true, page);
-      const res = await fetch(`${API_BASE}/audit-logs?${params.toString()}`, { headers });
+      const res = await authenticatedFetch(`${API_BASE}/audit-logs?${params.toString()}`);
       const body: AuditLogPage | null = await res.json().catch(() => null);
       if (!res.ok) throw new Error((body as { detail?: string } | null)?.detail || 'Could not load audit logs.');
       setRows(body?.items || []);
@@ -255,7 +248,7 @@ export function AuditTrailPage() {
     } finally {
       setLoading(false);
     }
-  }, [canView, filters, headers, page, user]);
+  }, [canView, filters, page, user]);
 
   useEffect(() => {
     loadLogs();
@@ -284,7 +277,7 @@ export function AuditTrailPage() {
     setExporting(true);
     try {
       const params = buildParams(filters, false, page);
-      const res = await fetch(`${API_BASE}/audit-logs/export?${params.toString()}`, { headers });
+      const res = await authenticatedFetch(`${API_BASE}/audit-logs/export?${params.toString()}`);
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(body?.detail || 'Could not export audit logs.');

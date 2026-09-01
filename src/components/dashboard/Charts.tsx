@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useState, useEffect } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -16,7 +17,7 @@ export function DeptChart() {
   const [data, setData] = useState<{ dept: string; count: number }[]>([]);
 
   useEffect(() => {
-    fetch(`${API_BASE}/dashboard/department-chart`)
+    authenticatedFetch(`${API_BASE}/dashboard/department-chart`)
       .then((res) => res.json())
       .then((d) => setData(d.departments || []))
       .catch(() => setData([]));
@@ -63,7 +64,7 @@ export function AttendanceTrend() {
   const [data, setData] = useState<{ day: string; rate: number }[]>([]);
 
   useEffect(() => {
-    fetch(`${API_BASE}/dashboard/attendance-trend`)
+    authenticatedFetch(`${API_BASE}/dashboard/attendance-trend`)
       .then((res) => res.json())
       .then((d) => setData(d.trend || []))
       .catch(() => setData([]));

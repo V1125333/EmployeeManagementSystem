@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
@@ -443,7 +444,7 @@ function BalanceDrawer({ group, headers, onClose, onSaved, onError }: { group: E
     if (usedDays > totalDays + carryForwardDays) return onError('Used days cannot be greater than total plus carry forward.');
     setSaving(true);
     try {
-      const res = await fetch(`${API_BASE}/admin/time-off/leave-balances/${editing.id}`, { method: 'PUT', headers, body: JSON.stringify({ total_days: totalDays, used_days: usedDays, carry_forward_days: carryForwardDays, reason: form.reason.trim() }) });
+      const res = await authenticatedFetch(`${API_BASE}/admin/time-off/leave-balances/${editing.id}`, { method: 'PUT', headers, body: JSON.stringify({ total_days: totalDays, used_days: usedDays, carry_forward_days: carryForwardDays, reason: form.reason.trim() }) });
       const body = await res.json().catch(() => null);
       if (!res.ok) throw new Error(body?.detail || 'Could not adjust balance.');
       setEditing(null);
@@ -539,7 +540,7 @@ function AttendanceModal({ row, headers, onClose, onSaved, onError }: { row: Att
   const save = async () => {
     if (!form.reason.trim()) return onError('Correction reason is required.');
     try {
-      const res = await fetch(`${API_BASE}/admin/time-off/attendance/${row.id}`, { method: 'PUT', headers, body: JSON.stringify({ check_in: form.check_in ? new Date(form.check_in).toISOString() : null, check_out: form.check_out ? new Date(form.check_out).toISOString() : null, status: form.status, remarks: form.remarks, reason: form.reason.trim() }) });
+      const res = await authenticatedFetch(`${API_BASE}/admin/time-off/attendance/${row.id}`, { method: 'PUT', headers, body: JSON.stringify({ check_in: form.check_in ? new Date(form.check_in).toISOString() : null, check_out: form.check_out ? new Date(form.check_out).toISOString() : null, status: form.status, remarks: form.remarks, reason: form.reason.trim() }) });
       const body = await res.json().catch(() => null);
       if (!res.ok) throw new Error(body?.detail || 'Could not update attendance.');
       onSaved(body);
@@ -1138,7 +1139,7 @@ export function ClientOnboardingPage() {
   const { showToast } = useToast();
   const role = (user?.role || '').toLowerCase().replace(/\s+/g, '_');
   const canAdmin = ['super_admin', 'admin', 'hr_admin', 'global_access'].includes(role);
-  const headers = useMemo(() => ({ 'Content-Type': 'application/json', 'x-user-id': user?.id || '', 'x-user-email': user?.email || '', 'x-user-name': user?.name || '' }), [user]);
+  const headers = useMemo(() => ({ 'Content-Type': 'application/json' }), []);
   const [data, setData] = useState<ClientData>({ clients: [], total_count: 0, metrics: emptyClientMetrics, employees: [], stages: [] });
   const [detail, setDetail] = useState<ClientDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1160,7 +1161,7 @@ export function ClientOnboardingPage() {
     if (filters.stage !== 'All') params.set('stage', filters.stage);
     if (filters.owner !== 'All') params.set('owner', filters.owner);
     try {
-      const res = await fetch(`${API_BASE}/admin/client-onboarding?${params.toString()}`, { headers });
+      const res = await authenticatedFetch(`${API_BASE}/admin/client-onboarding?${params.toString()}`, { headers });
       const body = await res.json().catch(() => null);
       if (!res.ok) throw new Error(body?.detail || 'Could not load client onboarding.');
       setData({ ...body, metrics: body.metrics || emptyClientMetrics });
@@ -1177,7 +1178,7 @@ export function ClientOnboardingPage() {
   useEffect(() => { loadClients(); }, [loadClients]);
 
   const loadDetail = async (id: string) => {
-    const res = await fetch(`${API_BASE}/admin/client-onboarding/${id}`, { headers });
+    const res = await authenticatedFetch(`${API_BASE}/admin/client-onboarding/${id}`, { headers });
     const body = await res.json().catch(() => null);
     if (!res.ok) return showToast({ message: body?.detail || 'Could not load client details.' });
     setDetail(body);
@@ -1191,7 +1192,7 @@ export function ClientOnboardingPage() {
     const url = id ? `${API_BASE}/admin/client-onboarding/${id}` : `${API_BASE}/admin/client-onboarding`;
     const cleaned = Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, value === '' ? null : value]));
     try {
-      const res = await fetch(url, { method, headers, body: JSON.stringify(cleaned) });
+      const res = await authenticatedFetch(url, { method, headers, body: JSON.stringify(cleaned) });
       const body = await res.json().catch(() => null);
       if (!res.ok) throw new Error(body?.detail || 'Could not save client.');
       setClientForm(null);
@@ -1207,7 +1208,7 @@ export function ClientOnboardingPage() {
 
   const updateDetail = async (url: string, method: string, payload?: Record<string, unknown>, message = 'Saved.') => {
     if (!detail) return;
-    const res = await fetch(`${API_BASE}/admin/client-onboarding/${detail.client.id}${url}`, { method, headers, body: payload ? JSON.stringify(Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, value === '' ? null : value]))) : undefined });
+    const res = await authenticatedFetch(`${API_BASE}/admin/client-onboarding/${detail.client.id}${url}`, { method, headers, body: payload ? JSON.stringify(Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, value === '' ? null : value]))) : undefined });
     const body = await res.json().catch(() => null);
     if (!res.ok) return showToast({ message: body?.detail || 'Action failed.' });
     setDetail(body);
@@ -1310,18 +1311,14 @@ export function TimeOffPage() {
   const canAdmin = ['super_admin', 'admin', 'hr_admin', 'global_access'].includes(role);
   const headers = useMemo(() => ({
     'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-    'x-user-role': role,
-    'x-user-name': user?.name || '',
-  }), [role, user]);
+  }), []);
 
   const loadData = useCallback(async () => {
     if (!user || !canAdmin) return;
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${API_BASE}/admin/time-off/dashboard`, { headers });
+      const res = await authenticatedFetch(`${API_BASE}/admin/time-off/dashboard`, { headers });
       const body = await res.json().catch(() => null);
       if (!res.ok) throw new Error(body?.detail || 'Could not load Time Off & Attendance data.');
       setData(body);
@@ -1350,7 +1347,7 @@ export function TimeOffPage() {
   const runDecision = async (pending: PendingDecision, reason: string) => {
     setActionLoading(`${pending.url}-${pending.decision}`);
     try {
-      const res = await fetch(`${API_BASE}${pending.url}`, {
+      const res = await authenticatedFetch(`${API_BASE}${pending.url}`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ decision: pending.decision, reason: reason.trim() || null }),
@@ -1370,7 +1367,7 @@ export function TimeOffPage() {
   const exportReport = async (report: string) => {
     try {
       const month = new Date().toISOString().slice(0, 7);
-      const res = await fetch(`${API_BASE}/admin/time-off/reports/${report}/csv?month=${month}`, { headers });
+      const res = await authenticatedFetch(`${API_BASE}/admin/time-off/reports/${report}/csv?month=${month}`, { headers });
       if (!res.ok) throw new Error('Could not export report.');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -1554,12 +1551,190 @@ export function TeamAllocationPage() {
   );
 }
 
+type AssetAccessTab = 'hardware' | 'software' | 'access';
+
+interface AssetRow {
+  id: string;
+  item: string;
+  type: string;
+  assignedTo: string | null;
+  serial: string;
+  status: string;
+}
+
+const assetTabs: Array<{ key: AssetAccessTab; label: string }> = [
+  { key: 'hardware', label: 'Hardware Assets' },
+  { key: 'software', label: 'Software Licenses' },
+  { key: 'access', label: 'Access Permissions' },
+];
+
+const hardwareAssetRows: AssetRow[] = [
+  { id: 'asset-1', item: 'MacBook Pro 16"', type: 'Laptop', assignedTo: 'Priya Sharma', serial: 'C02F-3JXH', status: 'Active' },
+  { id: 'asset-2', item: 'Dell UltraSharp 27"', type: 'Monitor', assignedTo: 'Jon Kim', serial: 'DU27-9910', status: 'Active' },
+  { id: 'asset-3', item: 'iPhone 15', type: 'Mobile', assignedTo: null, serial: 'IP15-0021', status: 'Unassigned' },
+  { id: 'asset-4', item: 'MacBook Air 13"', type: 'Laptop', assignedTo: 'Dana Nguyen', serial: 'C02G-7712', status: 'In repair' },
+  { id: 'asset-5', item: 'ThinkPad X1', type: 'Laptop', assignedTo: 'Omar Faye', serial: 'TP1-4432', status: 'Active' },
+  { id: 'asset-6', item: 'Yubikey 5C', type: 'Security', assignedTo: 'Sam Torres', serial: 'YK5-2291', status: 'Active' },
+];
+
+const softwareLicenseRows: AssetRow[] = [
+  { id: 'license-1', item: 'Figma Org Seat', type: 'Design', assignedTo: 'Aaliyah Brooks', serial: 'FIG-ORG-23', status: 'Active' },
+  { id: 'license-2', item: 'Adobe Creative Cloud', type: 'Creative', assignedTo: 'Tom Keller', serial: 'ACC-2049', status: 'Expiring soon' },
+  { id: 'license-3', item: 'JetBrains All Products', type: 'Developer', assignedTo: 'Lin Chen', serial: 'JB-1182', status: 'Active' },
+  { id: 'license-4', item: 'Tableau Creator', type: 'Analytics', assignedTo: null, serial: 'TAB-8820', status: 'Unused' },
+  { id: 'license-5', item: 'Notion Enterprise', type: 'Productivity', assignedTo: 'Maya Patel', serial: 'NOT-4430', status: 'Active' },
+  { id: 'license-6', item: 'Slack Enterprise Grid', type: 'Communication', assignedTo: 'Operations Pool', serial: 'SLK-8761', status: 'Renewal due' },
+];
+
+const accessPermissionRows: AssetRow[] = [
+  { id: 'access-1', item: 'AWS Production', type: 'Cloud Access', assignedTo: 'Marcus Chen', serial: 'ACC-AWS-01', status: 'Review due' },
+  { id: 'access-2', item: 'GitHub Admin', type: 'Repository Access', assignedTo: 'Sarah Chen', serial: 'ACC-GH-14', status: 'Active' },
+  { id: 'access-3', item: 'HubSpot Sales', type: 'Sales Platform', assignedTo: 'Ananya Reddy', serial: 'ACC-HS-88', status: 'Review due' },
+  { id: 'access-4', item: 'Snowflake BI', type: 'Data Access', assignedTo: 'Maya Patel', serial: 'ACC-SF-31', status: 'Active' },
+  { id: 'access-5', item: 'Payroll Admin', type: 'Finance Access', assignedTo: 'Raj Kapoor', serial: 'ACC-PY-09', status: 'Privileged' },
+  { id: 'access-6', item: 'Jira Service Desk', type: 'Support Access', assignedTo: null, serial: 'ACC-JSD-27', status: 'Unassigned' },
+];
+
+function assetAssigneeInitials(name: string | null) {
+  if (!name) return '—';
+  return name.split(' ').filter(Boolean).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
+}
+
+function assetStatusClasses(status: string) {
+  const normalized = status.toLowerCase();
+  if (normalized.includes('active')) return 'bg-[#E6F5F2] text-[#167B68]';
+  if (normalized.includes('unassigned') || normalized.includes('unused')) return 'bg-[#FBE9E3] text-[#E2643A]';
+  if (normalized.includes('repair') || normalized.includes('expiring') || normalized.includes('renewal') || normalized.includes('review')) return 'bg-[#FBF1DC] text-[#A87A1A]';
+  if (normalized.includes('privileged')) return 'bg-[#EEEAF7] text-[#5A54AE]';
+  return 'bg-[#F1ECE3] text-[#6F6657]';
+}
+
+function assetAvatarTone(name: string | null) {
+  if (!name) return 'bg-[#B9B6C3] text-white';
+  const tones = [
+    'bg-[#EA7546] text-white',
+    'bg-[#0F7A72] text-white',
+    'bg-[#4D4AA4] text-white',
+    'bg-[#C89322] text-white',
+    'bg-[#7A5E2D] text-white',
+  ];
+  const seed = name.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return tones[seed % tones.length];
+}
+
 export function AssetsPage() {
+  const [activeTab, setActiveTab] = useState<AssetAccessTab>('hardware');
+
+  const rows = activeTab === 'hardware'
+    ? hardwareAssetRows
+    : activeTab === 'software'
+      ? softwareLicenseRows
+      : accessPermissionRows;
+
+  const summaryCards = [
+    { label: 'TOTAL ASSETS', value: 312, tone: '#EEEAF7', accent: '#5A54AE' },
+    { label: 'UNASSIGNED', value: 17, tone: '#FBE7DE', accent: '#E2643A' },
+    { label: 'LICENSES EXPIRING', value: 5, tone: '#FBF1DC', accent: '#A87A1A' },
+    { label: 'ACCESS REVIEWS DUE', value: 9, tone: '#E6F2EE', accent: '#146B5D' },
+  ];
+
   return (
-    <PlaceholderPage
-      title="Assets & Access"
-      description="Manage hardware assets, software licenses, and access permissions."
-    />
+    <div className="animate-fade-up font-['Plus_Jakarta_Sans',system-ui,sans-serif]">
+      <div className="mb-7">
+        <h1 className="mb-1 text-2xl font-bold tracking-tight text-[var(--color-brand-navy)]">
+          Assets &amp; Access
+        </h1>
+        <p className="text-sm text-gray-500">
+          Manage hardware assets, software licenses, and access permissions.
+        </p>
+      </div>
+
+      <div className="rounded-[24px] border border-[#EEE4D6] bg-[#F7F2E9] p-6 text-[#23241F] shadow-[0_10px_30px_rgba(36,28,16,0.04)]">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {summaryCards.map((card) => (
+            <div
+              key={card.label}
+              className="rounded-[14px] px-[14px] py-[12px]"
+              style={{ backgroundColor: card.tone }}
+            >
+              <div className="text-[10.5px] font-extrabold tracking-[0.02em]" style={{ color: card.accent }}>
+                {card.label}
+              </div>
+              <div className="mt-2 text-[36px] font-extrabold leading-none tracking-[-0.03em] text-[#23241F]">
+                {card.value}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-5 flex gap-6 border-b border-[#E8E0D2]">
+          {assetTabs.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
+              className={cn(
+                'border-b-2 px-1 pb-3 text-[13px] font-semibold transition-colors',
+                activeTab === tab.key
+                  ? 'border-[#E2643A] text-[#23241F]'
+                  : 'border-transparent text-[#8F8878] hover:text-[#23241F]'
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-4 overflow-hidden rounded-[16px] border border-[#E8E0D2] bg-white">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[980px] text-sm">
+              <thead className="border-b border-[#F0E8DB] bg-white">
+                <tr className="text-left text-[10.5px] font-extrabold tracking-[0.02em] text-[#B0A590]">
+                  <th className="px-6 py-4">ASSET</th>
+                  <th className="px-6 py-4">TYPE</th>
+                  <th className="px-6 py-4">ASSIGNED TO</th>
+                  <th className="px-6 py-4">SERIAL</th>
+                  <th className="px-6 py-4">STATUS</th>
+                  <th className="px-6 py-4 text-right">ACTION</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.id} className="border-b border-[#F6EFE3] last:border-b-0">
+                    <td className="px-6 py-4">
+                      <div className="font-semibold text-[#23241F]">{row.item}</div>
+                    </td>
+                    <td className="px-6 py-4 text-[#5F5B50]">{row.type}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2.5">
+                        <span className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold', assetAvatarTone(row.assignedTo))}>
+                          {assetAssigneeInitials(row.assignedTo)}
+                        </span>
+                        <span className="text-[#4C463D]">{row.assignedTo || 'Unassigned'}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-[12px] text-[#9B9182]">{row.serial}</td>
+                    <td className="px-6 py-4">
+                      <span className={cn('inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold', assetStatusClasses(row.status))}>
+                        {row.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <button
+                        type="button"
+                        className="text-[12px] font-semibold text-[#5A54AE] transition-colors hover:text-[#433c96]"
+                      >
+                        Manage
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

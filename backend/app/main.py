@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings, validate_security_settings
 from app.core.database import (
     create_tables,
+    validate_required_migration_head,
     ensure_audit_log_table,
     ensure_employee_audit_columns,
     ensure_employee_sensitive_columns,
@@ -26,6 +27,7 @@ from app.core.database import (
     ensure_allocation_columns,
     ensure_project_workflow_tables,
     ensure_staffing_fulfillment_columns,
+    ensure_ai_conversation_columns,
     ensure_employee_request_tables,
     SessionLocal,
 )
@@ -52,7 +54,6 @@ from app.models import (
     AIContextualShadowEvaluation, AIConversation, AIConversationMessage,
     AILeaveIntakeState, AILeaveRequestDraft,
 )
-from app.services.auth_service import hash_password
 from app.services.allocation_service import ensure_allocation_ending_notifications
 from app.api.dashboard import router as dashboard_router
 from app.api.employees import router as employees_router
@@ -78,7 +79,9 @@ from app.api.requests import router as requests_router
 from app.api.holidays import router as holidays_router
 from app.api.documents import router as documents_router
 from app.api.orbit_ai import router as orbit_ai_router
+from app.api.orbit_chat import router as orbit_chat_router
 from app.api.ai import router as ai_router
+from app.api.ai_platform_preview import router as ai_platform_preview_router
 
 _log_level = logging.DEBUG if os.getenv("APP_ENV", "development") == "development" else logging.INFO
 logging.basicConfig(
@@ -263,41 +266,12 @@ def seed_default_channels(db):
     logger.info(f"Seeded {len(channels)} chat channels")
 
 
-def seed_admin(db):
-    """Create the super admin account if it doesn't exist."""
-    admin = db.query(Employee).filter(Employee.work_email == "superadmin@reknew.ai").first()
-    if admin:
-        return
-
-    admin = Employee(
-        first_name="Super",
-        last_name="Admin",
-        work_email="superadmin@reknew.ai",
-        phone="0000000000",
-        workforce_type="Full-Time Employee",
-        role="super_admin",
-        department="People",
-        designation="Administrator",
-        reporting_manager="Self",
-        employment_status="active",
-        work_location="Onshore",
-        joining_date=date(2024, 1, 1),
-        password_hash=hash_password("test"),
-        totp_secret=None,
-        is_first_login=False,
-        is_active=True,
-        setup_code=None,
-    )
-    db.add(admin)
-    db.commit()
-    logger.info("Super admin account seeded: superadmin@reknew.ai / test")
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup: create all tables and seed data."""
     validate_security_settings()
     logger.info("Security configuration validated")
+    validate_required_migration_head()
     create_tables()
     ensure_audit_log_table()
     ensure_employee_audit_columns()
@@ -313,6 +287,7 @@ async def lifespan(app: FastAPI):
     ensure_allocation_columns()
     ensure_project_workflow_tables()
     ensure_staffing_fulfillment_columns()
+    ensure_ai_conversation_columns()
     ensure_employee_request_tables()
     logger.info("All database tables created")
 
@@ -323,7 +298,6 @@ async def lifespan(app: FastAPI):
         seed_leave_types(db)
         seed_company_holidays(db)
         seed_default_channels(db)
-        seed_admin(db)
         created_notifications = ensure_allocation_ending_notifications(db)
         if created_notifications:
             logger.info(f"Created {created_notifications} allocation ending notifications")
@@ -334,11 +308,24 @@ async def lifespan(app: FastAPI):
     yield
 
 
+def documentation_paths(app_env: str) -> dict[str, str | None]:
+    enabled = app_env.strip().lower() == "development"
+    return {
+        "docs_url": "/docs" if enabled else None,
+        "redoc_url": "/redoc" if enabled else None,
+        "openapi_url": "/openapi.json" if enabled else None,
+        "swagger_ui_oauth2_redirect_url": "/docs/oauth2-redirect" if enabled else None,
+    }
+
+
+_documentation_paths = documentation_paths(settings.APP_ENV)
+
 app = FastAPI(
     title="Reknew Orbit API",
     description="Employee Management System — 19 tables, TOTP auth",
     version="3.0.0",
     lifespan=lifespan,
+    **_documentation_paths,
 )
 
 app.add_middleware(
@@ -373,15 +360,17 @@ app.include_router(requests_router, prefix="/api/v1")
 app.include_router(holidays_router, prefix="/api/v1")
 app.include_router(documents_router, prefix="/api/v1")
 app.include_router(orbit_ai_router, prefix="/api/v1")
+app.include_router(orbit_chat_router, prefix="/api/v1")
 app.include_router(ai_router, prefix="/api/v1")
+app.include_router(ai_platform_preview_router, prefix="/api/v1")
 
 
 
 @app.get("/")
 async def root():
-    return {"app": "Reknew Orbit API", "version": "3.0.0", "tables": 19}
+    return {"service": "reknew-orbit", "status": "ok"}
 
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "auth": "TOTP", "tables": 19}
+    return {"status": "healthy"}

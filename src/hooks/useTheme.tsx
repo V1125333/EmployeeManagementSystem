@@ -1,8 +1,10 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -63,16 +65,6 @@ const defaultPreferences: UserPreferences = {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-function headersFor(user: ReturnType<typeof useAuth>['user']) {
-  return {
-    'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-    'x-user-role': user?.role || '',
-    'x-user-name': user?.name || '',
-  };
-}
-
 function effectiveTheme(mode: ThemeMode) {
   if (mode !== 'system') return mode;
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -94,13 +86,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [savedPreferences, setSavedPreferences] = useState<UserPreferences>(defaultPreferences);
   const [draftPreferences, setDraftPreferences] = useState<UserPreferences>(defaultPreferences);
   const [loading, setLoading] = useState(false);
-  const headers = useMemo(() => headersFor(user), [user]);
 
   const refreshPreferences = useCallback(async () => {
     if (!user?.id && !user?.email) return;
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/settings/preferences`, { headers });
+      const res = await authenticatedFetch(`${API_BASE}/settings/preferences`);
       if (!res.ok) throw new Error('Could not load preferences.');
       const data = await res.json();
       const next = { ...defaultPreferences, ...data };
@@ -110,7 +101,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [headers, user?.email, user?.id]);
+  }, [user?.email, user?.id]);
 
   useEffect(() => {
     refreshPreferences().catch(() => undefined);
@@ -134,9 +125,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const saveAppearancePatch = useCallback(async (patch: Partial<UserPreferences>) => {
     const nextDraft = { ...draftPreferences, ...patch };
     setDraftPreferences(nextDraft);
-    const res = await fetch(`${API_BASE}/settings/preferences/appearance`, {
+    const res = await authenticatedFetch(`${API_BASE}/settings/preferences/appearance`, {
       method: 'PATCH',
-      headers,
+      headers: JSON_HEADERS,
       body: JSON.stringify({
         theme_mode: patch.theme_mode,
         accent_color: patch.accent_color,
@@ -150,12 +141,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setSavedPreferences(next);
     setDraftPreferences(next);
     return next;
-  }, [draftPreferences, headers]);
+  }, [draftPreferences]);
 
   const savePreferences = useCallback(async () => {
-    const res = await fetch(`${API_BASE}/settings/preferences/appearance`, {
+    const res = await authenticatedFetch(`${API_BASE}/settings/preferences/appearance`, {
       method: 'PATCH',
-      headers,
+      headers: JSON_HEADERS,
       body: JSON.stringify({
         theme_mode: draftPreferences.theme_mode,
         accent_color: draftPreferences.accent_color,
@@ -169,7 +160,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setSavedPreferences(next);
     setDraftPreferences(next);
     return next;
-  }, [draftPreferences, headers]);
+  }, [draftPreferences]);
 
   const revertPreferences = useCallback(() => {
     setDraftPreferences(savedPreferences);

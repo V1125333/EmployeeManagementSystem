@@ -6,11 +6,12 @@ import io
 import zipfile
 from datetime import date
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.authentication import AuthenticatedActor, get_authenticated_actor
 from app.models.certificate import Certificate, CertificateAuditLog
 from app.models.employee import Employee
 from app.schemas.certificate import (
@@ -33,14 +34,15 @@ from app.services.certificate_service import (
     validate_certificate_type,
     certificate_verify_url,
 )
-from app.services.settings_service import get_current_employee, is_admin_role
+from app.services.settings_service import is_admin_role
 from app.services.audit_service import log_audit
+from app.services.rate_limit_service import consume_rate_limit
+from app.core.config import settings
 
 router = APIRouter(prefix="/certificates", tags=["Certificates"])
 
 
-def require_certificate_admin(db: Session, user_id: str | None, user_email: str | None):
-    user = get_current_employee(db, user_id, user_email)
+def require_certificate_admin(user: Employee):
     if not is_admin_role(user.role):
         raise HTTPException(status_code=403, detail="Only Super Admin/Admin can manage certificates.")
     return user
@@ -57,6 +59,21 @@ def safe_certificate(record: Certificate) -> dict:
         "status": record.status,
         "verification_url": record.verification_url,
         "pdf_url": record.pdf_url,
+        "issued_by": record.issued_by or "ReKnew",
+    }
+
+
+def public_certificate(record: Certificate) -> dict:
+    """Return only fields intentionally displayed by public verification."""
+    return {
+        "valid": record.status == "valid",
+        "certificate_code": record.certificate_code,
+        "learner_name": record.learner_name,
+        "course_name": record.course_name,
+        "start_date": record.start_date.isoformat(),
+        "end_date": record.end_date.isoformat(),
+        "issue_date": record.issue_date.isoformat(),
+        "status": record.status,
         "issued_by": record.issued_by or "ReKnew",
     }
 
@@ -149,7 +166,8 @@ def request_from_certificate(record: Certificate) -> CertificateGenerateRequest:
 
 
 @router.get("/meta", response_model=CertificateMetaResponse)
-async def certificate_meta():
+async def certificate_meta(authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor)):
+    require_certificate_admin(authenticated_actor.employee)
     return {
         "certificate_types": CERT_TYPES,
         "counters": list_counters(),
@@ -161,7 +179,9 @@ async def next_serial(
     certificate_type: str = Query(...),
     cohort_code: str = Query("C1"),
     year: int = Query(..., ge=2020, le=2099),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
+    require_certificate_admin(authenticated_actor.employee)
     try:
         validate_certificate_type(certificate_type)
     except ValueError as exc:
@@ -175,8 +195,8 @@ async def next_serial(
 
 
 @router.post("/generate")
-async def generate_certificate(request: CertificateGenerateRequest, db: Session = Depends(get_db), x_user_id: str | None = Header(None, alias="x-user-id"), x_user_email: str | None = Header(None, alias="x-user-email")):
-    actor = require_certificate_admin(db, x_user_id, x_user_email)
+async def generate_certificate(request: CertificateGenerateRequest, db: Session = Depends(get_db), authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor)):
+    actor = require_certificate_admin(authenticated_actor.employee)
     try:
         validate_certificate_type(request.certificate_type)
     except ValueError as exc:
@@ -213,8 +233,8 @@ async def generate_certificate(request: CertificateGenerateRequest, db: Session 
 
 
 @router.post("/bulk-generate")
-async def bulk_generate_certificates(request: BulkCertificateGenerateRequest, db: Session = Depends(get_db), x_user_id: str | None = Header(None, alias="x-user-id"), x_user_email: str | None = Header(None, alias="x-user-email")):
-    actor = require_certificate_admin(db, x_user_id, x_user_email)
+async def bulk_generate_certificates(request: BulkCertificateGenerateRequest, db: Session = Depends(get_db), authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor)):
+    actor = require_certificate_admin(authenticated_actor.employee)
     zip_buffer = io.BytesIO()
     issued_ids: list[str] = []
 
@@ -257,16 +277,16 @@ async def bulk_generate_certificates(request: BulkCertificateGenerateRequest, db
 
 
 @router.get("")
-async def list_certificates(db: Session = Depends(get_db), x_user_id: str | None = Header(None, alias="x-user-id"), x_user_email: str | None = Header(None, alias="x-user-email")):
-    require_certificate_admin(db, x_user_id, x_user_email)
+async def list_certificates(db: Session = Depends(get_db), authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor)):
+    require_certificate_admin(authenticated_actor.employee)
     sync_legacy_certificates(db)
     rows = db.query(Certificate).order_by(Certificate.created_at.desc()).limit(200).all()
     return {"certificates": [safe_certificate(row) for row in rows]}
 
 
 @router.post("/{cert_id}/revoke")
-async def revoke_certificate(cert_id: str, db: Session = Depends(get_db), x_user_id: str | None = Header(None, alias="x-user-id"), x_user_email: str | None = Header(None, alias="x-user-email")):
-    actor = require_certificate_admin(db, x_user_id, x_user_email)
+async def revoke_certificate(cert_id: str, db: Session = Depends(get_db), authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor)):
+    actor = require_certificate_admin(authenticated_actor.employee)
     record = db.query(Certificate).filter(Certificate.certificate_code == cert_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Certificate not found")
@@ -289,8 +309,8 @@ async def revoke_certificate(cert_id: str, db: Session = Depends(get_db), x_user
 
 
 @router.get("/{cert_id}/download")
-async def download_certificate(cert_id: str, db: Session = Depends(get_db), x_user_id: str | None = Header(None, alias="x-user-id"), x_user_email: str | None = Header(None, alias="x-user-email")):
-    actor = require_certificate_admin(db, x_user_id, x_user_email)
+async def download_certificate(cert_id: str, db: Session = Depends(get_db), authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor)):
+    actor = require_certificate_admin(authenticated_actor.employee)
     record = db.query(Certificate).filter(Certificate.certificate_code == cert_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Certificate not found")
@@ -315,7 +335,15 @@ async def download_certificate(cert_id: str, db: Session = Depends(get_db), x_us
 
 
 @router.get("/verify/{cert_id}")
-async def verify_certificate(cert_id: str, db: Session = Depends(get_db)):
+async def verify_certificate(cert_id: str, request: Request, db: Session = Depends(get_db)):
+    peer = request.client.host if request.client else "unknown"
+    if not consume_rate_limit(
+        db,
+        scope="public_certificate_verify",
+        key=peer,
+        limit=settings.CERTIFICATE_VERIFY_RATE_LIMIT_PER_HOUR,
+    ):
+        raise HTTPException(status_code=429, detail="Too many verification requests. Please try again later.")
     db_record = db.query(Certificate).filter(Certificate.certificate_code == cert_id).first()
     if db_record:
         log_audit(
@@ -328,10 +356,7 @@ async def verify_certificate(cert_id: str, db: Session = Depends(get_db)):
             source="api",
         )
         db.commit()
-        return {
-            "valid": db_record.status == "valid",
-            **safe_certificate(db_record),
-        }
+        return public_certificate(db_record)
     record = get_certificate_verification(cert_id)
     if not record:
         log_audit(
@@ -369,7 +394,5 @@ async def verify_certificate(cert_id: str, db: Session = Depends(get_db)):
         "end_date": record.get("end_date"),
         "issue_date": record.get("issued_date"),
         "status": record.get("status", "valid"),
-        "verification_url": certificate_verify_url(cert_id),
-        "pdf_url": record.get("pdf_url"),
         "issued_by": "ReKnew",
     }

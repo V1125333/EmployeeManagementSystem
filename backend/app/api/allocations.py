@@ -1,13 +1,27 @@
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.authentication import AuthenticatedActor, get_authenticated_actor
 from app.models.allocation import Allocation
 from app.models.employee import Employee
 from app.models.operations import Project
-from app.schemas.allocation import AllocationCreate, AllocationOut, AllocationSummaryOut, AllocationUpdate, BenchEmployeeOut
+from app.schemas.allocation import (
+    AllocationCreate,
+    AllocationOut,
+    AllocationSummaryOut,
+    AllocationUpdate,
+    BenchAllocationSliceOut,
+    BenchEmployeeOut,
+    BenchEndingSoonOut,
+    BenchInProjectOut,
+    BenchMultipleAllocationOut,
+    BenchNowAvailableOut,
+    BenchOverviewOut,
+    BenchSummaryCountsOut,
+)
 from app.services.allocation_service import (
     cancel_allocation,
     create_allocation,
@@ -19,8 +33,9 @@ from app.services.allocation_service import (
     update_allocation,
 )
 from app.services.audit_service import log_authorization_failure
-from app.services.settings_service import get_current_employee, normalize_role
+from app.services.settings_service import normalize_role
 from app.services.staffing_allocation_service import capacity_check_payload
+from app.services.project_service import require_project_access
 
 router = APIRouter(prefix="/allocations", tags=["Allocations"])
 
@@ -100,24 +115,78 @@ def _employee_name(employee: Employee) -> str:
     return " ".join(part.strip() for part in parts if part and part.strip())
 
 
+def _project_name_lookup(db: Session, project_ids: list[str]) -> dict[str, str]:
+    unique_ids = [project_id for project_id in dict.fromkeys(project_ids) if project_id]
+    if not unique_ids:
+        return {}
+
+    projects = db.query(Project.id, Project.name).filter(Project.id.in_(unique_ids)).all()
+    return {project.id: project.name for project in projects if project.id and project.name}
+
+
 def _active_project_names(db: Session, employee_id: str) -> list[str]:
     allocations = get_active_allocations(db, employee_id)
+    project_names = _project_name_lookup(db, [allocation.project_id for allocation in allocations if allocation.project_id])
     names: list[str] = []
     for allocation in allocations:
-        name = allocation.project_name or allocation.project_id
+        name = (
+            allocation.project_name
+            or (project_names.get(allocation.project_id) if allocation.project_id else None)
+            or allocation.project_id
+        )
         if name and name not in names:
             names.append(name)
     return names
+
+
+def _active_allocation_slices(db: Session, employee_id: str) -> list[BenchAllocationSliceOut]:
+    allocations = get_active_allocations(db, employee_id)
+    project_names = _project_name_lookup(db, [allocation.project_id for allocation in allocations if allocation.project_id])
+    rows: list[BenchAllocationSliceOut] = []
+    for allocation in allocations:
+        rows.append(
+            BenchAllocationSliceOut(
+                allocation_id=allocation.id,
+                project_id=allocation.project_id,
+                project_name=(
+                    allocation.project_name
+                    or (project_names.get(allocation.project_id) if allocation.project_id else None)
+                    or allocation.project_id
+                    or "Untitled project"
+                ),
+                allocation_percentage=int(allocation.allocation_percentage or 0),
+                allocation_role=allocation.allocation_role,
+                billing_type=allocation.billing_type,
+                end_date=allocation.end_date,
+                status=allocation.status,
+            )
+        )
+    rows.sort(
+        key=lambda item: (
+            item.end_date is None,
+            item.end_date or date.max,
+            -item.allocation_percentage,
+            item.project_name.lower(),
+        )
+    )
+    return rows
+
+
+def _bench_access_query(db: Session, actor: Employee):
+    query = db.query(Employee).filter(Employee.work_email != "superadmin@reknew.ai")
+    if _is_manager(actor) and not _is_hr_admin(actor):
+        actor_name = f"{actor.first_name} {actor.last_name}".strip()
+        query = query.filter((Employee.manager_id == actor.id) | (Employee.reporting_manager == actor_name))
+    return query
 
 
 @router.post("/", response_model=AllocationOut)
 async def create_allocation_endpoint(
     data: AllocationCreate,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
+    actor = authenticated_actor.employee
     _require_write_access(db, actor, data.employee_id)
     allocation = create_allocation(db, data, actor.id)
     return serialize_allocation(db, allocation)
@@ -128,10 +197,9 @@ async def update_allocation_endpoint(
     allocation_id: str,
     data: AllocationUpdate,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
+    actor = authenticated_actor.employee
     allocation = db.query(Allocation).filter(Allocation.id == allocation_id).first()
     if not allocation:
         raise HTTPException(status_code=404, detail="Allocation not found.")
@@ -146,10 +214,9 @@ async def update_allocation_endpoint(
 async def cancel_allocation_endpoint(
     allocation_id: str,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
+    actor = authenticated_actor.employee
     allocation = db.query(Allocation).filter(Allocation.id == allocation_id).first()
     if not allocation:
         raise HTTPException(status_code=404, detail="Allocation not found.")
@@ -165,10 +232,9 @@ async def bench_availability(
     max_allocation: int | None = Query(None, ge=0),
     available_within_days: int | None = Query(None, ge=0),
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
+    actor = authenticated_actor.employee
     _require_bench_access(db, actor)
 
     query = db.query(Employee).filter(Employee.work_email != "superadmin@reknew.ai")
@@ -216,14 +282,120 @@ async def bench_availability(
     return rows
 
 
+@router.get("/bench/overview", response_model=BenchOverviewOut)
+async def bench_availability_overview(
+    db: Session = Depends(get_db),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
+):
+    actor = authenticated_actor.employee
+    _require_bench_access(db, actor)
+
+    employees = _bench_access_query(db, actor).order_by(Employee.first_name.asc(), Employee.last_name.asc()).all()
+    today = date.today()
+    ending_soon_cutoff = today + timedelta(days=14)
+
+    ending_soon: list[BenchEndingSoonOut] = []
+    multiple_allocations: list[BenchMultipleAllocationOut] = []
+    on_bench: list[BenchNowAvailableOut] = []
+    in_projects: list[BenchInProjectOut] = []
+
+    for employee in employees:
+        summary = get_allocation_summary(db, employee.id)
+        allocations = _active_allocation_slices(db, employee.id)
+        total_active = summary["total_active_allocation_percentage"]
+        available_capacity = summary["available_capacity_percentage"]
+
+        ending_candidates = [allocation for allocation in allocations if allocation.end_date and allocation.end_date <= ending_soon_cutoff]
+        if ending_candidates:
+            soonest = min(ending_candidates, key=lambda allocation: (allocation.end_date or date.max, allocation.project_name.lower()))
+            ending_soon.append(
+                BenchEndingSoonOut(
+                    employee_id=employee.id,
+                    employee_name=_employee_name(employee),
+                    designation=employee.designation,
+                    profile_image_url=employee.profile_image_url,
+                    current_project_name=soonest.project_name,
+                    allocation_end_date=soonest.end_date,
+                    days_until_end=max(0, (soonest.end_date - today).days),
+                    available_capacity_percentage=available_capacity,
+                )
+            )
+            continue
+
+        if len(allocations) >= 2:
+            multiple_allocations.append(
+                BenchMultipleAllocationOut(
+                    employee_id=employee.id,
+                    employee_name=_employee_name(employee),
+                    designation=employee.designation,
+                    profile_image_url=employee.profile_image_url,
+                    allocations=allocations,
+                    total_active_allocation_percentage=total_active,
+                    available_capacity_percentage=available_capacity,
+                )
+            )
+            continue
+
+        if total_active == 0:
+            on_bench.append(
+                BenchNowAvailableOut(
+                    employee_id=employee.id,
+                    employee_name=_employee_name(employee),
+                    department=employee.department,
+                    designation=employee.designation,
+                    profile_image_url=employee.profile_image_url,
+                    available_capacity_percentage=available_capacity,
+                )
+            )
+            continue
+
+        primary = allocations[0] if allocations else None
+        if primary:
+            in_projects.append(
+                BenchInProjectOut(
+                    employee_id=employee.id,
+                    employee_name=_employee_name(employee),
+                    designation=employee.designation,
+                    profile_image_url=employee.profile_image_url,
+                    current_project_name=primary.project_name,
+                    allocation_percentage=primary.allocation_percentage,
+                    allocation_end_date=primary.end_date,
+                    available_capacity_percentage=available_capacity,
+                )
+            )
+
+    ending_soon.sort(key=lambda item: (item.days_until_end, item.employee_name.lower()))
+    multiple_allocations.sort(key=lambda item: (-len(item.allocations), item.employee_name.lower()))
+    on_bench.sort(key=lambda item: item.employee_name.lower())
+    in_projects.sort(
+        key=lambda item: (
+            item.allocation_end_date is None,
+            item.allocation_end_date or date.max,
+            item.employee_name.lower(),
+        )
+    )
+
+    return BenchOverviewOut(
+        summary=BenchSummaryCountsOut(
+            ending_soon_count=len(ending_soon),
+            multiple_allocations_count=len(multiple_allocations),
+            on_bench_count=len(on_bench),
+            in_projects_count=len(in_projects),
+        ),
+        ending_soon=ending_soon,
+        multiple_allocations=multiple_allocations,
+        on_bench=on_bench,
+        in_projects=in_projects,
+    )
+
+
 @router.get("/employee/{employee_id}", response_model=list[AllocationOut])
 async def employee_allocations(
     employee_id: str,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
+    actor = authenticated_actor.employee
     _require_read_access(db, actor, employee_id)
     return [serialize_allocation(db, item) for item in get_allocations_by_employee(db, employee_id)]
 
@@ -232,13 +404,10 @@ async def employee_allocations(
 async def project_allocations(
     project_id: str,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    get_current_employee(db, current_user_id, current_user_email)
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found.")
+    actor = authenticated_actor.employee
+    require_project_access(db, actor, project_id)
     allocations = (
         db.query(Allocation)
         .filter(Allocation.project_id == project_id)
@@ -252,10 +421,9 @@ async def project_allocations(
 async def employee_allocation_summary(
     employee_id: str,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
+    actor = authenticated_actor.employee
     _require_read_access(db, actor, employee_id)
     return get_allocation_summary(db, employee_id)
 
@@ -268,10 +436,9 @@ async def employee_capacity_check(
     end_date: date | None = Query(None),
     exclude_allocation_id: str | None = Query(None),
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
+    actor = authenticated_actor.employee
     _require_read_access(db, actor, employee_id)
     return capacity_check_payload(
         db,
@@ -287,10 +454,9 @@ async def employee_capacity_check(
 async def employee_active_allocations(
     employee_id: str,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
+    actor = authenticated_actor.employee
     _require_read_access(db, actor, employee_id)
     return [serialize_allocation(db, item) for item in get_active_allocations(db, employee_id)]
 
@@ -299,9 +465,8 @@ async def employee_active_allocations(
 async def employee_upcoming_allocations(
     employee_id: str,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
+    actor = authenticated_actor.employee
     _require_read_access(db, actor, employee_id)
     return [serialize_allocation(db, item) for item in get_upcoming_allocations(db, employee_id)]

@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useMemo, useState } from 'react';
 import {
   BriefcaseBusiness,
@@ -103,7 +104,7 @@ export function HRDocumentsPage() {
     setSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/hr-documents/internship-completion?format=${format}`, {
+      const res = await authenticatedFetch(`${API_BASE}/hr-documents/internship-completion?format=${format}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

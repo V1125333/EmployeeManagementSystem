@@ -3,16 +3,21 @@ Employee attendance self-service endpoints.
 """
 
 from datetime import date, datetime, timedelta
-from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.authentication import AuthenticatedActor, get_authenticated_actor
 from app.models.leave_attendance import Attendance
 from app.services.audit_service import log_audit
-from app.services.settings_service import get_current_employee
+from app.services.attendance_service import (
+    employee_joining_date,
+    get_my_attendance_today,
+    list_my_attendance_history,
+    serialize_attendance_record,
+)
 
 router = APIRouter(prefix="/attendance", tags=["Attendance"])
 
@@ -32,61 +37,41 @@ class AttendanceContextResponse(BaseModel):
     today: date
 
 
-def employee_joining_date(employee) -> date:
-    return employee.date_of_joining or employee.joining_date
-
-
 def serialize_attendance(attendance: Attendance | None, target_date: date | None = None) -> AttendanceResponse:
-    if not attendance:
-        return AttendanceResponse(
-            date=target_date or date.today(),
-            status="not_checked_in",
-            is_checked_in=False,
-        )
-
-    is_checked_in = bool(attendance.check_in and not attendance.check_out)
-    total_hours = float(attendance.total_hours) if isinstance(attendance.total_hours, Decimal) else attendance.total_hours
-    return AttendanceResponse(
-        id=attendance.id,
-        date=attendance.date,
-        check_in=attendance.check_in,
-        check_out=attendance.check_out,
-        total_hours=total_hours,
-        status=attendance.status,
-        is_checked_in=is_checked_in,
+    snapshot = (
+        attendance
+        if hasattr(attendance, "is_checked_in") and hasattr(attendance, "total_hours")
+        else None
     )
-
-
-def current_employee(
-    db: Session,
-    x_user_id: str | None,
-    x_user_email: str | None,
-):
-    return get_current_employee(db, x_user_id, x_user_email)
+    if snapshot is None:
+        snapshot = serialize_attendance_record(attendance, target_date)
+    return AttendanceResponse(
+        id=snapshot.id,
+        date=snapshot.date,
+        check_in=snapshot.check_in,
+        check_out=snapshot.check_out,
+        total_hours=snapshot.total_hours,
+        status=snapshot.status,
+        is_checked_in=snapshot.is_checked_in,
+    )
 
 
 @router.get("/me/today", response_model=AttendanceResponse)
 async def my_attendance_today(
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = current_employee(db, x_user_id, x_user_email)
+    employee = actor.employee
     today = date.today()
-    attendance = db.query(Attendance).filter(
-        Attendance.employee_id == employee.id,
-        Attendance.date == today,
-    ).first()
-    return serialize_attendance(attendance, today)
+    return serialize_attendance(get_my_attendance_today(db, employee, today=today), today)
 
 
 @router.get("/me/context", response_model=AttendanceContextResponse)
 async def my_attendance_context(
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = current_employee(db, x_user_id, x_user_email)
+    employee = actor.employee
     return AttendanceContextResponse(
         joining_date=employee_joining_date(employee),
         today=date.today(),
@@ -96,10 +81,9 @@ async def my_attendance_context(
 @router.post("/me/check-in", response_model=AttendanceResponse)
 async def check_in(
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = current_employee(db, x_user_id, x_user_email)
+    employee = actor.employee
     today = date.today()
     now = datetime.utcnow()
     attendance = db.query(Attendance).filter(
@@ -145,10 +129,9 @@ async def check_in(
 @router.post("/me/check-out", response_model=AttendanceResponse)
 async def check_out(
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = current_employee(db, x_user_id, x_user_email)
+    employee = actor.employee
     today = date.today()
     now = datetime.utcnow()
     attendance = db.query(Attendance).filter(
@@ -186,10 +169,9 @@ async def my_attendance_history(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = current_employee(db, x_user_id, x_user_email)
+    employee = actor.employee
     joining_date = employee_joining_date(employee)
     today = date.today()
     effective_to = date_to or today
@@ -201,9 +183,11 @@ async def my_attendance_history(
     if effective_from > effective_to:
         raise HTTPException(status_code=400, detail="From date must be on or before To date.")
 
-    records = db.query(Attendance).filter(
-        Attendance.employee_id == employee.id,
-        Attendance.date >= effective_from,
-        Attendance.date <= effective_to,
-    ).order_by(Attendance.date.desc()).all()
+    records = list_my_attendance_history(
+        db,
+        employee,
+        date_from=effective_from,
+        date_to=effective_to,
+        today=today,
+    )
     return [serialize_attendance(record) for record in records]

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 import { OrbitAIBriefing } from './OrbitAIBriefing';
@@ -108,6 +108,10 @@ function ResizableBriefing() {
   );
 }
 
+function CurrentPath() {
+  return <output aria-label="Current path">{useLocation().pathname}{useLocation().search}</output>;
+}
+
 function setScrollGeometry(
   element: HTMLElement,
   { scrollHeight, clientHeight, scrollTop }: {
@@ -128,6 +132,7 @@ describe('OrbitAIBriefing panel layout and scrolling', () => {
 
   beforeEach(() => {
     sessionStorage.clear();
+    localStorage.clear();
     Object.values(mocks).forEach((mock) => mock.mockReset());
     mocks.startAIConversation.mockResolvedValue({
       id: 'new-conversation',
@@ -341,5 +346,123 @@ describe('OrbitAIBriefing panel layout and scrolling', () => {
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     expect(screen.getByText('Leave Balance')).toBeVisible();
     expect(mocks.deleteAIConversation).not.toHaveBeenCalled();
+  });
+
+  it('loads read-only briefing cards with the Orbit bearer token and never sends identity headers or POSTs', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => ({
+      ok: true,
+      status: 200,
+      json: async () => String(input).includes('/upcoming')
+        ? { item: { title: 'India Holiday', displayDate: '03 August' } }
+        : {
+            items: [
+              {
+                key: 'timesheet_attention',
+                severity: 'advisory',
+                title: "This week's timesheet",
+                urgencyLabel: 'Due in 2 days',
+                heroValue: '4',
+                heroUnit: 'of 48 hours logged',
+                weekBars: [],
+                reasoning: 'Review the recorded hours on the timesheet page.',
+                primaryAction: {
+                  type: 'navigate',
+                  label: 'Review timesheet',
+                  href: '/employee/timesheets?week_start=2026-07-26',
+                },
+                dismissLabel: 'Later',
+              },
+              {
+                key: 'leave_request_waiting',
+                severity: 'waiting',
+                title: 'Sick Leave, 04 August',
+                urgencyLabel: 'Waiting',
+                weekBars: [],
+                reasoning: 'This request is pending with your manager.',
+                primaryAction: {
+                  type: 'navigate',
+                  label: 'View request',
+                  href: '/employee/apply-leave',
+                },
+                dismissLabel: 'Leave it',
+              },
+            ],
+            total: 2,
+          },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    renderBriefing();
+
+    expect(await screen.findByText("This week's timesheet")).toBeVisible();
+    expect(screen.getByText('Sick Leave, 04 August')).toBeVisible();
+    expect(screen.getByText(/India Holiday/)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Review timesheet' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'View request' })).toBeVisible();
+    expect(screen.queryByText(/submit as drafted|send a reminder|undo/i)).not.toBeInTheDocument();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const [, init] of fetchMock.mock.calls) {
+      const requestInit = init as RequestInit;
+      const headers = new Headers(requestInit.headers);
+      expect(requestInit.method ?? 'GET').toBe('GET');
+      expect(headers.get('Authorization')).toBe('Bearer signed-token');
+      expect(headers.has('X-User-Id')).toBe(false);
+      expect(headers.has('X-User-Email')).toBe(false);
+    }
+  });
+
+  it('treats briefing actions as navigation only', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => ({
+      ok: true,
+      status: 200,
+      json: async () => String(input).includes('/upcoming')
+        ? { item: null }
+        : {
+            items: [{
+              key: 'timesheet_attention',
+              severity: 'advisory',
+              title: "This week's timesheet",
+              urgencyLabel: 'Due soon',
+              heroValue: null,
+              weekBars: [],
+              reasoning: 'Review the recorded hours.',
+              primaryAction: {
+                type: 'navigate',
+                label: 'Review timesheet',
+                href: '/employee/timesheets?week_start=2026-07-26',
+              },
+              dismissLabel: 'Later',
+            }],
+            total: 1,
+          },
+    })));
+    render(
+      <MemoryRouter initialEntries={['/employee/dashboard']}>
+        <OrbitAIBriefing maximized={false} onToggleMaximize={vi.fn()} />
+        <CurrentPath />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Review timesheet' }));
+    expect(screen.getByRole('status', { name: 'Current path' })).toHaveTextContent(
+      '/employee/timesheets?week_start=2026-07-26',
+    );
+    const fetchMock = vi.mocked(fetch);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.every(([, init]) => (init as RequestInit).method !== 'POST')).toBe(true);
+  });
+
+  it('shows bounded empty and failure states for briefing reads', async () => {
+    renderBriefing();
+    expect(await screen.findByText(/You're clear\./)).toBeVisible();
+
+    vi.mocked(fetch).mockImplementation(async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({ detail: 'Could not load your briefing.' }),
+    } as Response));
+    renderBriefing();
+    expect(await screen.findByText("I couldn't finish your briefing.")).toBeVisible();
+    expect(screen.getByText('Could not load your briefing.')).toBeVisible();
   });
 });

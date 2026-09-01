@@ -2,20 +2,20 @@
 Admin security operations: locked accounts and unlock request review.
 """
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from app.core.authentication import AuthenticatedActor, get_authenticated_actor
 from app.core.database import get_db
 from app.models.employee import Employee
 from app.models.unlock_request import AccountUnlockRequest
 from app.schemas.employee import ReviewUnlockRequest
 from app.services.auth_service import approve_unlock, direct_unlock, reject_unlock
-from app.services.settings_service import get_current_employee, is_admin_role
+from app.services.settings_service import is_admin_role
 
 router = APIRouter(prefix="/admin/security", tags=["Admin Security"])
 
 
-def require_security_admin(db: Session, user_id: str | None, user_email: str | None) -> Employee:
-    actor = get_current_employee(db, user_id, user_email)
+def require_security_admin(actor: Employee) -> Employee:
     if not is_admin_role(actor.role):
         raise HTTPException(status_code=403, detail="Only Super Admin, Admin, and HR can access security administration.")
     return actor
@@ -64,11 +64,10 @@ def serialize_request(db: Session, row: AccountUnlockRequest) -> dict:
 async def locked_accounts(
     page: int = Query(1, ge=1),
     per_page: int = Query(25, ge=1, le=100),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
     db: Session = Depends(get_db),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    require_security_admin(db, x_user_id, x_user_email)
+    require_security_admin(authenticated_actor.employee)
     query = db.query(Employee).filter(Employee.account_locked == True).order_by(Employee.locked_at.desc().nullslast())
     total = query.count()
     rows = query.offset((page - 1) * per_page).limit(per_page).all()
@@ -80,11 +79,10 @@ async def unlock_requests(
     status: str = Query("pending"),
     page: int = Query(1, ge=1),
     per_page: int = Query(25, ge=1, le=100),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
     db: Session = Depends(get_db),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    require_security_admin(db, x_user_id, x_user_email)
+    require_security_admin(authenticated_actor.employee)
     query = db.query(AccountUnlockRequest)
     if status != "all":
         query = query.filter(AccountUnlockRequest.status == status)
@@ -98,11 +96,10 @@ async def unlock_requests(
 async def approve_unlock_request(
     request_id: str,
     payload: ReviewUnlockRequest,
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
     db: Session = Depends(get_db),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = require_security_admin(db, x_user_id, x_user_email)
+    actor = require_security_admin(authenticated_actor.employee)
     return approve_unlock(db, actor, request_id, payload.admin_notes)
 
 
@@ -110,11 +107,10 @@ async def approve_unlock_request(
 async def reject_unlock_request(
     request_id: str,
     payload: ReviewUnlockRequest,
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
     db: Session = Depends(get_db),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = require_security_admin(db, x_user_id, x_user_email)
+    actor = require_security_admin(authenticated_actor.employee)
     return reject_unlock(db, actor, request_id, payload.admin_notes)
 
 
@@ -122,10 +118,8 @@ async def reject_unlock_request(
 async def unlock_locked_account(
     employee_id: str,
     payload: ReviewUnlockRequest,
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
     db: Session = Depends(get_db),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = require_security_admin(db, x_user_id, x_user_email)
+    actor = require_security_admin(authenticated_actor.employee)
     return direct_unlock(db, actor, employee_id, payload.admin_notes)
-

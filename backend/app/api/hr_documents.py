@@ -2,13 +2,14 @@
 HR document generation API endpoints.
 """
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.authentication import AuthenticatedActor, get_authenticated_actor
 from app.schemas.hr_document import InternshipCompletionLetterRequest
-from app.services.settings_service import require_admin_employee
+from app.services.settings_service import is_admin_role
 from app.services.security_service import log_sensitive_access
 from app.services.hr_document_service import (
     build_internship_completion_filename,
@@ -24,10 +25,11 @@ async def generate_internship_completion_letter(
     request: InternshipCompletionLetterRequest,
     format: str = Query(default="pdf", pattern="^(pdf|docx)$"),
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(None, alias="x-user-id"),
-    x_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = require_admin_employee(db, x_user_id, x_user_email)
+    actor = authenticated_actor.employee
+    if not is_admin_role(actor.role):
+        raise HTTPException(status_code=403, detail="Admin access is required.")
     if format == "pdf":
         content = generate_internship_completion_pdf(request)
         media_type = "application/pdf"

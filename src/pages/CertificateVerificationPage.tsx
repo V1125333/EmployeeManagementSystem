@@ -1,3 +1,4 @@
+import { publicFetch } from '@/services/apiClient';
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Award, CheckCircle2, ShieldAlert } from 'lucide-react';
@@ -31,7 +32,7 @@ export function CertificateVerificationPage() {
     async function loadCertificate() {
       setLoading(true);
       try {
-        const res = await fetch(`${API_BASE}/certificates/verify/${encodeURIComponent(certificateCode)}`);
+        const res = await publicFetch(`${API_BASE}/certificates/verify/${encodeURIComponent(certificateCode)}`);
         const body = await res.json();
         if (mounted) setRecord(body);
       } catch {

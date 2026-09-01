@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ElementType } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -58,6 +59,7 @@ const searchDestinations: SearchDestination[] = [
   { label: 'Dashboard', description: 'Workforce hub and company overview', path: '/dashboard', keywords: 'dashboard workforce hub kpi overview birthdays anniversary', roles: ['admin'] },
   { label: 'Employees', description: 'Search and manage employee records', path: '/employees', keywords: 'employees people directory department role manager skills', roles: ['admin'] },
   { label: 'Time Off & Attendance', description: 'Leave, attendance, corrections, timesheets, reports', path: '/time-off', keywords: 'time off attendance leave balances corrections timesheets reports policies', roles: ['admin'] },
+  { label: 'My Timesheets', description: 'Log and submit your own weekly hours', path: '/timesheets', keywords: 'my timesheets time entry weekly hours submit own', roles: ['admin'] },
   { label: 'Onboarding Center', description: 'Employee onboarding workflows', path: '/onboarding', keywords: 'onboarding setup new employee trainee', roles: ['admin'] },
   { label: 'Client Onboarding', description: 'Client onboarding workstreams', path: '/client-onboarding', keywords: 'client onboarding customer implementation', roles: ['admin'] },
   { label: 'Projects', description: 'Project registry and assignments', path: '/projects', keywords: 'projects assignments allocation client delivery', roles: ['all'] },
@@ -112,6 +114,10 @@ function isAdminRole(role?: string) {
   return ['super_admin', 'admin', 'hr_admin', 'global_access'].includes(normalizeRole(role));
 }
 
+function ownTimesheetPath(role?: string) {
+  return isAdminRole(role) ? '/timesheets' : '/employee/timesheets';
+}
+
 export function TopNav() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -130,17 +136,13 @@ export function TopNav() {
 
   const headers = useMemo(() => ({
     'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-role': normalizeRole(user?.role),
-    'x-user-email': user?.email || '',
-    'x-user-name': user?.name || '',
-  }), [user]);
+  }), []);
 
   const loadInbox = async () => {
     if (!user) return;
     setLoadingInbox(true);
     try {
-      const res = await fetch(`${API_BASE}/inbox`, { headers });
+      const res = await authenticatedFetch(`${API_BASE}/inbox`);
       const data = await res.json();
       setInboxItems(data.items || []);
     } catch {
@@ -155,8 +157,8 @@ export function TopNav() {
     setLoadingNotifications(true);
     try {
       const [res, countRes] = await Promise.all([
-        fetch(`${API_BASE}/notifications?unread_only=true&limit=6`, { headers }),
-        fetch(`${API_BASE}/notifications/unread-count`, { headers }),
+        authenticatedFetch(`${API_BASE}/notifications?unread_only=true&limit=6`),
+        authenticatedFetch(`${API_BASE}/notifications/unread-count`),
       ]);
       const data = await res.json();
       const countData = await countRes.json().catch(() => null);
@@ -223,7 +225,7 @@ export function TopNav() {
       setSearchLoading(true);
       try {
         const params = new URLSearchParams({ search: term, per_page: '5', page: '1' });
-        const res = await fetch(`${API_BASE}/employees/?${params.toString()}`, { signal: controller.signal, headers });
+        const res = await authenticatedFetch(`${API_BASE}/employees/?${params.toString()}`, { signal: controller.signal, headers });
         const data = await res.json();
         setEmployeeResults(data.employees || []);
       } catch (error) {
@@ -241,7 +243,7 @@ export function TopNav() {
 
   const markNotificationRead = async (notification: NotificationItem) => {
     if (!notification.is_read) {
-      await fetch(`${API_BASE}/notifications/${notification.id}/read`, { method: 'PUT', headers }).catch(() => undefined);
+      await authenticatedFetch(`${API_BASE}/notifications/${notification.id}/read`, { method: 'PUT' }).catch(() => undefined);
       setNotifications((current) => current.filter((item) => item.id !== notification.id));
       setUnreadNotificationCount((current) => Math.max(0, current - 1));
     }
@@ -256,9 +258,10 @@ export function TopNav() {
     }
 
     if (type.includes('timesheet') || title.includes('timesheet')) {
-      return canReviewApprovals(user?.role) && (title.includes('submitted') || title.includes('recalled'))
-        ? '/employee/approvals'
-        : '/employee/timesheets';
+      if (canReviewApprovals(user?.role) && (title.includes('submitted') || title.includes('recalled'))) {
+        return isAdminRole(user?.role) ? '/time-off' : '/employee/approvals';
+      }
+      return ownTimesheetPath(user?.role);
     }
 
     if (type.includes('leave') || title.includes('leave')) {
@@ -295,16 +298,16 @@ export function TopNav() {
   };
 
   const markAllRead = async () => {
-    await fetch(`${API_BASE}/notifications/mark-all-read`, { method: 'PUT', headers }).catch(() => undefined);
+    await authenticatedFetch(`${API_BASE}/notifications/mark-all-read`, { method: 'PUT' }).catch(() => undefined);
     setNotifications([]);
     setUnreadNotificationCount(0);
   };
 
   const completeInboxItem = async (item: InboxItem) => {
     if (item.item_type === 'announcement_acknowledgment' && item.related_entity_id) {
-      await fetch(`${API_BASE}/announcements/${item.related_entity_id}/acknowledge`, { method: 'POST', headers }).catch(() => undefined);
+      await authenticatedFetch(`${API_BASE}/announcements/${item.related_entity_id}/acknowledge`, { method: 'POST', headers }).catch(() => undefined);
     } else if (!item.id.includes(':')) {
-      await fetch(`${API_BASE}/inbox/${item.id}/complete`, { method: 'POST', headers }).catch(() => undefined);
+      await authenticatedFetch(`${API_BASE}/inbox/${item.id}/complete`, { method: 'POST' }).catch(() => undefined);
     }
     loadInbox();
     loadNotifications();
@@ -319,7 +322,7 @@ export function TopNav() {
         : null;
     if (!entityPath) return;
 
-    await fetch(`${API_BASE}/inbox/${entityPath}/${item.related_entity_id}/${decision}`, { method: 'POST', headers }).catch(() => undefined);
+    await authenticatedFetch(`${API_BASE}/inbox/${entityPath}/${item.related_entity_id}/${decision}`, { method: 'POST', headers }).catch(() => undefined);
     loadInbox();
     loadNotifications();
   };

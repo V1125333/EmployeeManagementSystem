@@ -10,18 +10,18 @@ import json
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.authentication import AuthenticatedActor, get_authenticated_actor
 from app.models.employee import Employee
 from app.models.leave_attendance import Attendance, AttendanceCorrection, LeaveBalance, LeaveRequest, LeaveType
 from app.models.operations import ActivityLog, Notification, TimesheetEntry
 from app.services.audit_service import log_audit as log_central_audit
-from app.services.settings_service import get_current_employee
 
 router = APIRouter(prefix="/admin/time-off", tags=["Admin Time Off & Attendance"])
 
@@ -64,8 +64,7 @@ def is_admin_role(role: str | None) -> bool:
     return normalize_role(role) in {"super_admin", "admin", "hr_admin", "global_access"}
 
 
-def require_admin(db: Session, user_id: str | None, user_email: str | None) -> Employee:
-    user = get_current_employee(db, user_id, user_email)
+def require_admin(user: Employee) -> Employee:
     if not is_admin_role(user.role):
         raise HTTPException(status_code=403, detail="Only Super Admin and HR roles can access Time Off & Attendance administration.")
     return user
@@ -279,10 +278,9 @@ def overview_counts(db: Session) -> dict:
 @router.get("/dashboard")
 async def admin_time_off_dashboard(
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    require_admin(db, x_user_id, x_user_email)
+    require_admin(authenticated_actor.employee)
     current_year = date.today().year
     employees = db.query(Employee).filter(Employee.work_email != "superadmin@reknew.ai").order_by(Employee.first_name.asc()).all()
     leave_requests = db.query(LeaveRequest).order_by(LeaveRequest.created_at.desc()).limit(50).all()
@@ -328,10 +326,9 @@ async def decide_leave(
     request_id: str,
     payload: DecisionPayload,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = require_admin(db, x_user_id, x_user_email)
+    actor = require_admin(authenticated_actor.employee)
     if payload.decision == "reject" and not payload.reason:
         raise HTTPException(status_code=400, detail="Rejection reason is required.")
     request = db.query(LeaveRequest).filter(LeaveRequest.id == request_id).first()
@@ -361,7 +358,7 @@ async def decide_leave(
     log_audit(db, actor, f"leave_{request.status}", "leave_request", request.id, old, {"status": request.status}, payload.reason)
     notify(db, request.employee_id, f"Leave request {request.status}", f"Your leave request was {request.status} by {employee_name(actor)}.", "leave_request", request.id)
     db.commit()
-    return await admin_time_off_dashboard(db, x_user_id, x_user_email)
+    return await admin_time_off_dashboard(db, authenticated_actor)
 
 
 @router.put("/leave-balances/{balance_id}")
@@ -369,10 +366,9 @@ async def adjust_balance(
     balance_id: str,
     payload: BalanceAdjustmentPayload,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = require_admin(db, x_user_id, x_user_email)
+    actor = require_admin(authenticated_actor.employee)
     balance = db.query(LeaveBalance).filter(LeaveBalance.id == balance_id).first()
     if not balance:
         raise HTTPException(status_code=404, detail="Leave balance not found.")
@@ -394,7 +390,7 @@ async def adjust_balance(
     log_audit(db, actor, "leave_balance_adjusted", "leave_balance", balance.id, old, new, payload.reason)
     notify(db, balance.employee_id, "Leave balance updated", f"Your leave balance was updated by {employee_name(actor)}.", "leave_balance", balance.id)
     db.commit()
-    return await admin_time_off_dashboard(db, x_user_id, x_user_email)
+    return await admin_time_off_dashboard(db, authenticated_actor)
 
 
 @router.put("/attendance/{attendance_id}")
@@ -402,10 +398,9 @@ async def update_attendance(
     attendance_id: str,
     payload: AttendanceUpdatePayload,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = require_admin(db, x_user_id, x_user_email)
+    actor = require_admin(authenticated_actor.employee)
     record = db.query(Attendance).filter(Attendance.id == attendance_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Attendance record not found.")
@@ -423,7 +418,7 @@ async def update_attendance(
     log_audit(db, actor, "attendance_corrected", "attendance", record.id, old, serialize_attendance(db, record), payload.reason)
     notify(db, record.employee_id, "Attendance corrected", f"Your attendance for {record.date} was corrected by {employee_name(actor)}.", "attendance", record.id)
     db.commit()
-    return await admin_time_off_dashboard(db, x_user_id, x_user_email)
+    return await admin_time_off_dashboard(db, authenticated_actor)
 
 
 @router.post("/corrections/{correction_id}/decision")
@@ -431,10 +426,9 @@ async def decide_correction(
     correction_id: str,
     payload: DecisionPayload,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = require_admin(db, x_user_id, x_user_email)
+    actor = require_admin(authenticated_actor.employee)
     if payload.decision == "reject" and not payload.reason:
         raise HTTPException(status_code=400, detail="Rejection reason is required.")
     correction = db.query(AttendanceCorrection).filter(AttendanceCorrection.id == correction_id).first()
@@ -461,7 +455,7 @@ async def decide_correction(
     log_audit(db, actor, f"attendance_correction_{correction.status}", "attendance_correction", correction.id, old, serialize_attendance(db, attendance) if attendance else {}, payload.reason)
     notify(db, correction.employee_id, f"Attendance correction {correction.status}", f"Your attendance correction was {correction.status} by {employee_name(actor)}.", "attendance_correction", correction.id)
     db.commit()
-    return await admin_time_off_dashboard(db, x_user_id, x_user_email)
+    return await admin_time_off_dashboard(db, authenticated_actor)
 
 
 @router.post("/timesheets/{employee_id}/{week_start}/decision")
@@ -470,10 +464,9 @@ async def decide_timesheet(
     week_start: date,
     payload: DecisionPayload,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = require_admin(db, x_user_id, x_user_email)
+    actor = require_admin(authenticated_actor.employee)
     if payload.decision == "reject" and not payload.reason:
         raise HTTPException(status_code=400, detail="Rejection reason is required.")
     entries = db.query(TimesheetEntry).filter(TimesheetEntry.employee_id == employee_id, TimesheetEntry.week_start == week_start).all()
@@ -516,7 +509,7 @@ async def decide_timesheet(
     )
     notify(db, employee_id, f"Timesheet {next_status}", f"Your timesheet for {week_start} to {week_end(week_start)} was {next_status} by {employee_name(actor)}.", "timesheet", entries[0].id)
     db.commit()
-    return await admin_time_off_dashboard(db, x_user_id, x_user_email)
+    return await admin_time_off_dashboard(db, authenticated_actor)
 
 
 @router.get("/reports/{report_type}/csv")
@@ -524,10 +517,9 @@ async def export_report(
     report_type: str,
     month: str = Query(default_factory=lambda: date.today().strftime("%Y-%m")),
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    require_admin(db, x_user_id, x_user_email)
+    require_admin(authenticated_actor.employee)
     try:
         start = datetime.strptime(month, "%Y-%m").date().replace(day=1)
     except ValueError:

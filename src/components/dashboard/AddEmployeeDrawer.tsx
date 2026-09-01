@@ -1,9 +1,9 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useState } from 'react';
 import { AlertCircle, CalendarDays, ChevronDown, Search } from 'lucide-react';
 import { Drawer } from '@/components/ui/Drawer';
 import { useToast } from '@/components/ui/Toast';
 import { COUNTRY_CODES } from '@/data/countryCodes';
-import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/utils/cn';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
@@ -191,8 +191,8 @@ function PhoneInput({
     : COUNTRY_CODES;
 
   return (
-    <div className="relative flex gap-2">
-      <div className="relative">
+    <div className="relative flex min-w-0 gap-2">
+      <div className="relative shrink-0">
         <button
           type="button"
           onClick={() => setShowCodes(!showCodes)}
@@ -247,7 +247,7 @@ function PhoneInput({
         value={phone}
         onChange={(e) => onPhoneChange(e.target.value)}
         placeholder="Enter phone number"
-        className="flex-1 py-2.5 px-4 rounded-xl text-[14px] font-medium bg-warm-bg border border-[var(--color-border)] text-[var(--color-brand-navy)] placeholder:text-gray-400 outline-none transition-all focus:border-accent/40 focus:ring-2 focus:ring-accent-light font-sans"
+        className="min-w-0 flex-1 py-2.5 px-4 rounded-xl text-[14px] font-medium bg-warm-bg border border-[var(--color-border)] text-[var(--color-brand-navy)] placeholder:text-gray-400 outline-none transition-all focus:border-accent/40 focus:ring-2 focus:ring-accent-light font-sans"
       />
     </div>
   );
@@ -304,7 +304,6 @@ const INITIAL_FORM: FormState = {
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
-  const { user } = useAuth();
   const { showToast } = useToast();
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
@@ -369,13 +368,10 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
     };
 
     try {
-      const response = await fetch(`${API_BASE}/employees/`, {
+      const response = await authenticatedFetch(`${API_BASE}/employees/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user?.id || '',
-          'x-user-email': user?.email || '',
-          'x-user-name': user?.name || '',
         },
         body: JSON.stringify(payload),
       });
@@ -422,7 +418,7 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
       onClose={handleCancel}
       title="Add Employee"
       subtitle="Register a new employee in Reknew Orbit."
-      width="w-[580px]"
+      width="w-[680px]"
       footer={
         <div className="flex items-center justify-end gap-3">
           <button
@@ -449,7 +445,7 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
       {/* ─── Section 1: Basic Information ─── */}
       <SectionTitle>Basic Information</SectionTitle>
 
-      <div className="grid grid-cols-2 gap-4 mb-4">
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 [&>*]:min-w-0">
         <div>
           <FormLabel required>First Name</FormLabel>
           <FormInput
@@ -470,7 +466,7 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 mb-4">
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 [&>*]:min-w-0">
         <div>
           <FormLabel required>Work Email</FormLabel>
           <FormInput
@@ -500,7 +496,7 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
 
       <div className="mb-4">
         <FormLabel required>Date of Birth</FormLabel>
-        <div className="relative w-1/2">
+        <div className="relative w-full sm:w-1/2">
           <input
             type="date"
             value={form.dateOfBirth}
@@ -527,7 +523,7 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
       <div className="h-px bg-[var(--color-border)] my-6" />
       <SectionTitle>Workforce Information</SectionTitle>
 
-      <div className="grid grid-cols-2 gap-4 mb-4">
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 [&>*]:min-w-0">
         <div>
           <FormLabel required>Workforce Type</FormLabel>
           <FormSelect
@@ -548,7 +544,7 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 mb-4">
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 [&>*]:min-w-0">
         <div>
           <FormLabel required>Department</FormLabel>
           <FormSelect
@@ -568,7 +564,7 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 mb-4">
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 [&>*]:min-w-0">
         <div>
           <FormLabel required>Reporting Manager</FormLabel>
           <FormSelect
@@ -616,7 +612,7 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
         {errors.workLocation && <div className="mt-1.5 text-[12px] font-medium text-status-error">{errors.workLocation}</div>}
       </div>
 
-      <div className="grid grid-cols-2 gap-4 mb-4">
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 [&>*]:min-w-0">
         <div>
           <FormLabel required>Work City</FormLabel>
           <FormInput value={form.workCity} onChange={(v) => update('workCity', v)} placeholder="e.g. Hartford" error={errors.workCity} />

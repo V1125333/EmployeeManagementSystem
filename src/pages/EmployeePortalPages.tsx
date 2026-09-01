@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -8,14 +9,16 @@ import {
   BookOpen,
   CalendarCheck, CalendarClock, CalendarPlus, CheckCircle2, ChevronDown, ClipboardCheck,
   Clock3, Copy, Download, FileText, FolderKanban, Hourglass, LogIn, Pencil, Plus,
-  Grid2X2, GraduationCap, List, MapPin, RefreshCw, Search, Send, ShieldAlert, Sparkles,
+  Grid2X2, GraduationCap, List, MapPin, RefreshCw, Search, Send, ShieldAlert,
   Trash2, Upload, UsersRound, WalletCards, X,
 } from 'lucide-react';
 import { Badge, Button, Card, CardHeader } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
+import { HourCentricTimesheetsPage } from '@/pages/timesheets/HourCentricTimesheetsPage';
 import { cn } from '@/utils/cn';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 const attendanceCache: Record<string, {
   today: AttendanceRecord | null;
@@ -283,6 +286,7 @@ interface TimesheetApprovalItem {
   leave_hours: number;
   regular_hours: number;
   overtime_hours: number;
+  weekly_limit_hours: number;
   submitted_at?: string | null;
   reviewed_by?: string | null;
   reviewer_notes?: string | null;
@@ -354,19 +358,13 @@ function useAttendance() {
   const [actionLoading, setActionLoading] = useState<'check-in' | 'check-out' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const headers = useMemo(() => ({
-    'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-  }), [user]);
-
   const loadAttendance = useCallback(async () => {
     if (!user) return;
     const currentCache = cacheKey ? attendanceCache[cacheKey] : undefined;
     setLoading(!currentCache);
     setError(null);
     try {
-      const contextRes = await fetch(`${API_BASE}/attendance/me/context`, { headers });
+      const contextRes = await authenticatedFetch(`${API_BASE}/attendance/me/context`);
       if (!contextRes.ok) throw new Error('Could not load attendance date limits.');
       const contextData = await contextRes.json();
       const defaultTo = contextData.today as string;
@@ -374,8 +372,8 @@ function useAttendance() {
       const defaultFrom = contextData.joining_date > thirtyDaysAgo ? contextData.joining_date : thirtyDaysAgo;
       const query = new URLSearchParams({ date_from: defaultFrom, date_to: defaultTo });
       const [todayRes, historyRes] = await Promise.all([
-        fetch(`${API_BASE}/attendance/me/today`, { headers }),
-        fetch(`${API_BASE}/attendance/me/history?${query.toString()}`, { headers }),
+        authenticatedFetch(`${API_BASE}/attendance/me/today`),
+        authenticatedFetch(`${API_BASE}/attendance/me/history?${query.toString()}`),
       ]);
       if (!todayRes.ok) throw new Error('Could not load today\'s attendance.');
       if (!historyRes.ok) throw new Error('Could not load attendance history.');
@@ -392,14 +390,14 @@ function useAttendance() {
     } finally {
       setLoading(false);
     }
-  }, [cacheKey, headers, user]);
+  }, [cacheKey, user]);
 
   const loadHistory = useCallback(async (dateFrom: string, dateTo: string) => {
     setHistoryLoading(true);
     setError(null);
     try {
       const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
-      const response = await fetch(`${API_BASE}/attendance/me/history?${query.toString()}`, { headers });
+      const response = await authenticatedFetch(`${API_BASE}/attendance/me/history?${query.toString()}`);
       const data = await response.json().catch(() => null);
       if (!response.ok) throw new Error(data?.detail || 'Could not load attendance history.');
       setHistory(data);
@@ -408,15 +406,14 @@ function useAttendance() {
     } finally {
       setHistoryLoading(false);
     }
-  }, [headers]);
+  }, []);
 
   const runAction = useCallback(async (action: 'check-in' | 'check-out') => {
     setActionLoading(action);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/attendance/me/${action}`, {
+      const res = await authenticatedFetch(`${API_BASE}/attendance/me/${action}`, {
         method: 'POST',
-        headers,
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.detail || `Could not ${action.replace('-', ' ')}.`);
@@ -426,7 +423,7 @@ function useAttendance() {
     } finally {
       setActionLoading(null);
     }
-  }, [headers, loadAttendance]);
+  }, [loadAttendance]);
 
   useEffect(() => {
     loadAttendance();
@@ -719,11 +716,7 @@ function holidayTone(type: string) {
   return 'bg-[#e9eff7] text-[#426a9b]';
 }
 
-function HolidayCalendarContent({
-  headers,
-}: {
-  headers: Record<string, string>;
-}) {
+function HolidayCalendarContent() {
   const [holidays, setHolidays] = useState<HolidayItem[]>([]);
   const [optionalHolidays, setOptionalHolidays] = useState<HolidayItem[]>([]);
   const [loadingHolidays, setLoadingHolidays] = useState(false);
@@ -745,8 +738,8 @@ function HolidayCalendarContent({
           to_date: `${holidayYear}-12-31`,
         });
         const [calendarRes, optionalRes] = await Promise.all([
-          fetch(`${API_BASE}/holidays?${params.toString()}`, { headers }),
-          fetch(`${API_BASE}/holidays/available-floating`, { headers }),
+          authenticatedFetch(`${API_BASE}/holidays?${params.toString()}`),
+          authenticatedFetch(`${API_BASE}/holidays/available-floating`),
         ]);
         const calendarData = await calendarRes.json().catch(() => null);
         const optionalData = await optionalRes.json().catch(() => null);
@@ -763,7 +756,7 @@ function HolidayCalendarContent({
     };
     loadHolidays();
     return () => { cancelled = true; };
-  }, [headers, holidayYear]);
+  }, [holidayYear]);
 
   const filteredHolidays = useMemo(() => holidays.filter((holiday) => {
     return holidayVisibleInRegion(holiday, holidayRegionFilter);
@@ -1634,23 +1627,17 @@ function EmployeeDashboardPageLegacy() {
   const [actionInboxRows, setActionInboxRows] = useState<ActionInboxItem[]>(cachedDashboard?.actionInboxRows ?? []);
   const [employeeContext, setEmployeeContext] = useState<EmployeeDashboardContext | null>(cachedDashboard?.employeeContext ?? null);
 
-  const headers = useMemo(() => ({
-    'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-  }), [user]);
-
   useEffect(() => {
     if (!user) return;
     Promise.all([
-      fetch(`${API_BASE}/leaves/me/summary`, { headers }).then((res) => res.ok ? res.json() : null),
-      fetch(`${API_BASE}/timesheets/me/summary`, { headers }).then((res) => res.ok ? res.json() : null),
-      fetch(`${API_BASE}/timesheets/me/history`, { headers }).then((res) => res.ok ? res.json() : null),
-      fetch(`${API_BASE}/leaves/approvals`, { headers }).then((res) => res.ok ? res.json() : null),
-      fetch(`${API_BASE}/timesheets/approvals`, { headers }).then((res) => res.ok ? res.json() : null),
-      fetch(`${API_BASE}/inbox`, { headers }).then((res) => res.ok ? res.json() : null),
-      user.id ? fetch(`${API_BASE}/allocations/employee/${user.id}/active`, { headers }).then((res) => res.ok ? res.json() : null) : Promise.resolve(null),
-      fetch(`${API_BASE}/dashboard/employee-context`, { headers }).then((res) => res.ok ? res.json() : null),
+      authenticatedFetch(`${API_BASE}/leaves/me/summary`).then((res) => res.ok ? res.json() : null),
+      authenticatedFetch(`${API_BASE}/timesheets/me/summary`).then((res) => res.ok ? res.json() : null),
+      authenticatedFetch(`${API_BASE}/timesheets/me/history`).then((res) => res.ok ? res.json() : null),
+      authenticatedFetch(`${API_BASE}/leaves/approvals`).then((res) => res.ok ? res.json() : null),
+      authenticatedFetch(`${API_BASE}/timesheets/approvals`).then((res) => res.ok ? res.json() : null),
+      authenticatedFetch(`${API_BASE}/inbox`).then((res) => res.ok ? res.json() : null),
+      user.id ? authenticatedFetch(`${API_BASE}/allocations/employee/${user.id}/active`).then((res) => res.ok ? res.json() : null) : Promise.resolve(null),
+      authenticatedFetch(`${API_BASE}/dashboard/employee-context`).then((res) => res.ok ? res.json() : null),
     ]).then(([leaveData, timesheetSummaryData, timesheetHistoryData, approvalsData, timesheetApprovalsData, inboxData, activeProjectsData, employeeContextData]) => {
       const existingCache = dashboardCacheKey ? dashboardCache[dashboardCacheKey] : undefined;
       const nextLeaveSummary = leaveData || existingCache?.leaveSummary || null;
@@ -1684,7 +1671,7 @@ function EmployeeDashboardPageLegacy() {
     }).catch(() => {
       // Keep dashboard usable even if one summary endpoint is temporarily unavailable.
     });
-  }, [dashboardCacheKey, headers, user]);
+  }, [dashboardCacheKey, user]);
 
   const timesheetCardWeekStart = timesheetSummary?.week_start || toDateInput(startOfLocalWeek());
   const openTimesheetSummary = () => navigate(`/employee/timesheets?week_start=${encodeURIComponent(timesheetCardWeekStart)}`);
@@ -1869,27 +1856,21 @@ export function EmployeeDashboardPage() {
   const [documents, setDocuments] = useState<DashboardDocument[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const headers = useMemo(() => ({
-    'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-  }), [user]);
-
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
     const todayInput = toDateInput(new Date());
     Promise.all([
-      fetch(`${API_BASE}/leaves/me/summary`, { headers }).then((response) => response.ok ? response.json() : null),
-      fetch(`${API_BASE}/timesheets/me/summary`, { headers }).then((response) => response.ok ? response.json() : null),
-      fetch(`${API_BASE}/timesheets/me/history`, { headers }).then((response) => response.ok ? response.json() : null),
-      fetch(`${API_BASE}/leaves/approvals`, { headers }).then((response) => response.ok ? response.json() : null),
-      fetch(`${API_BASE}/timesheets/approvals`, { headers }).then((response) => response.ok ? response.json() : null),
-      fetch(`${API_BASE}/inbox`, { headers }).then((response) => response.ok ? response.json() : null),
-      user.id ? fetch(`${API_BASE}/allocations/employee/${user.id}/active`, { headers }).then((response) => response.ok ? response.json() : null) : Promise.resolve(null),
-      fetch(`${API_BASE}/dashboard/employee-context`, { headers }).then((response) => response.ok ? response.json() : null),
-      fetch(`${API_BASE}/holidays?from_date=${todayInput}&to_date=${toDateInput(addDays(new Date(), 365))}`, { headers }).then((response) => response.ok ? response.json() : null),
-      fetch(`${API_BASE}/documents`, { headers }).then((response) => response.ok ? response.json() : null),
+      authenticatedFetch(`${API_BASE}/leaves/me/summary`).then((response) => response.ok ? response.json() : null),
+      authenticatedFetch(`${API_BASE}/timesheets/me/summary`).then((response) => response.ok ? response.json() : null),
+      authenticatedFetch(`${API_BASE}/timesheets/me/history`).then((response) => response.ok ? response.json() : null),
+      authenticatedFetch(`${API_BASE}/leaves/approvals`).then((response) => response.ok ? response.json() : null),
+      authenticatedFetch(`${API_BASE}/timesheets/approvals`).then((response) => response.ok ? response.json() : null),
+      authenticatedFetch(`${API_BASE}/inbox`).then((response) => response.ok ? response.json() : null),
+      user.id ? authenticatedFetch(`${API_BASE}/allocations/employee/${user.id}/active`).then((response) => response.ok ? response.json() : null) : Promise.resolve(null),
+      authenticatedFetch(`${API_BASE}/dashboard/employee-context`).then((response) => response.ok ? response.json() : null),
+      authenticatedFetch(`${API_BASE}/holidays?from_date=${todayInput}&to_date=${toDateInput(addDays(new Date(), 365))}`).then((response) => response.ok ? response.json() : null),
+      authenticatedFetch(`${API_BASE}/documents`).then((response) => response.ok ? response.json() : null),
     ]).then(([leaveData, timesheetData, historyData, leaveApprovalData, timesheetApprovalData, inboxData, allocationData, contextData, holidayData, documentData]) => {
       if (cancelled) return;
       setLeaveSummary(leaveData);
@@ -1906,7 +1887,7 @@ export function EmployeeDashboardPage() {
       // Individual cards retain their empty state when an optional source is unavailable.
     });
     return () => { cancelled = true; };
-  }, [headers, user]);
+  }, [user]);
 
   const employee = employeeContext?.employee;
   const employeeName = employee?.name || user?.name || 'Employee';
@@ -2016,7 +1997,12 @@ export function EmployeeDashboardPage() {
     if (/document|file|payslip|certificate/.test(term)) navigate('/employee/documents');
     else if (/project|allocation/.test(term)) navigate('/projects');
     else if (/people|person|manager|org/.test(term)) navigate('/profile?tab=organization');
-    else navigate('/ask-orbit-ai');
+    else if (/leave|vacation|sick|casual|earned/.test(term)) navigate('/employee/apply-leave');
+    else if (/timesheet|time entry|hours/.test(term)) navigate('/employee/timesheets');
+    else if (/attendance|check in|check out|clock/.test(term)) navigate('/employee/check-in');
+    else if (/holiday/.test(term)) navigate('/employee/holidays');
+    else if (/request|support/.test(term)) navigate('/employee/requests');
+    else navigate('/employee');
   };
 
   const nextHoliday = holidays[0];
@@ -2097,7 +2083,7 @@ export function EmployeeDashboardPage() {
 
       <section className="mb-6 overflow-hidden rounded-[18px] border border-[#e8dfd1] bg-white shadow-[0_4px_14px_rgba(60,40,10,.035)] lg:grid lg:grid-cols-[266px_minmax(0,1fr)]">
         <div className="bg-[#12433f] px-7 py-6 text-white">
-          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[.05em] text-[#82e0d4]"><Sparkles size={14} className="animate-pulse" /> Orbit AI · Your day</div>
+          <div className="text-[11px] font-bold uppercase tracking-[.08em] text-[#82e0d4]">Your day</div>
           <div className="mt-3 text-[21px] font-bold leading-[1.35]">{visibleBriefingItems.length ? `${visibleBriefingItems.length} ${visibleBriefingItems.length === 1 ? 'thing' : 'things'} before you log off.` : 'You’re all caught up.'}</div>
           <p className="mt-3 text-[12.5px] leading-relaxed text-[#c9e4df]">{visibleBriefingItems.length ? 'Here is what needs your attention today.' : 'Nothing else needs you today.'}</p>
         </div>
@@ -2206,18 +2192,12 @@ export function ApplyLeavePage() {
   const [confirmWithdrawId, setConfirmWithdrawId] = useState<string | null>(null);
   const [withdrawingLeaveId, setWithdrawingLeaveId] = useState<string | null>(null);
 
-  const headers = useMemo(() => ({
-    'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-  }), [user]);
-
   const loadLeaveSummary = useCallback(async () => {
     if (!user) return;
     setLoadingLeave(true);
     setLeaveError(null);
     try {
-      const res = await fetch(`${API_BASE}/leaves/me/summary`, { headers });
+      const res = await authenticatedFetch(`${API_BASE}/leaves/me/summary`);
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.detail || 'Could not load leave details.');
       setLeaveSummary(data);
@@ -2235,7 +2215,7 @@ export function ApplyLeavePage() {
     } finally {
       setLoadingLeave(false);
     }
-  }, [headers, user]);
+  }, [user]);
 
   useEffect(() => {
     loadLeaveSummary();
@@ -2289,9 +2269,9 @@ export function ApplyLeavePage() {
       if (leavePolicyMessage && selectedPolicy?.allow_future_dates === false) {
         throw new Error(leavePolicyMessage);
       }
-      const res = await fetch(`${API_BASE}/leaves/me/requests${editingLeaveId ? `/${editingLeaveId}` : ''}`, {
+      const res = await authenticatedFetch(`${API_BASE}/leaves/me/requests${editingLeaveId ? `/${editingLeaveId}` : ''}`, {
         method: editingLeaveId ? 'PUT' : 'POST',
-        headers,
+        headers: JSON_HEADERS,
         body: JSON.stringify({
           leave_type_id: leaveForm.leaveTypeId,
           start_date: leaveForm.fromDate,
@@ -2364,7 +2344,7 @@ export function ApplyLeavePage() {
     let cancelled = false;
     const loadFloatingHolidays = async () => {
       try {
-        const res = await fetch(`${API_BASE}/holidays/available-floating`, { headers });
+        const res = await authenticatedFetch(`${API_BASE}/holidays/available-floating`);
         const data = await res.json().catch(() => null);
         if (!res.ok) throw new Error(data?.detail || 'Could not load available holidays.');
         if (!cancelled) setFloatingHolidays(data.holidays || []);
@@ -2374,7 +2354,7 @@ export function ApplyLeavePage() {
     };
     loadFloatingHolidays();
     return () => { cancelled = true; };
-  }, [headers, user]);
+  }, [user]);
 
   useEffect(() => {
     if (!selectedHoliday) return;
@@ -2396,7 +2376,7 @@ export function ApplyLeavePage() {
       setLoadingWorkingDays(true);
       try {
         const params = new URLSearchParams({ start_date: leaveForm.fromDate, end_date: leaveForm.toDate });
-        const res = await fetch(`${API_BASE}/holidays/working-days?${params.toString()}`, { headers });
+        const res = await authenticatedFetch(`${API_BASE}/holidays/working-days?${params.toString()}`);
         const data = await res.json().catch(() => null);
         if (!res.ok) throw new Error(data?.detail || 'Could not calculate working days.');
         if (!cancelled) setWorkingDays(data);
@@ -2410,7 +2390,7 @@ export function ApplyLeavePage() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [headers, leaveForm.fromDate, leaveForm.toDate]);
+  }, [leaveForm.fromDate, leaveForm.toDate]);
 
   useEffect(() => {
     if (quickLeaveApplied || loadingLeave || leaveBalances.length === 0) return;
@@ -2468,9 +2448,8 @@ export function ApplyLeavePage() {
     setLeaveError(null);
     setLeaveSuccess(null);
     try {
-      const res = await fetch(`${API_BASE}/leaves/me/requests/${request.id}`, {
+      const res = await authenticatedFetch(`${API_BASE}/leaves/me/requests/${request.id}`, {
         method: 'DELETE',
-        headers,
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.detail || 'Could not delete draft leave request.');
@@ -2507,9 +2486,8 @@ export function ApplyLeavePage() {
     setLeaveError(null);
     setLeaveSuccess(null);
     try {
-      const res = await fetch(`${API_BASE}/leaves/me/requests/${request.id}/withdraw`, {
+      const res = await authenticatedFetch(`${API_BASE}/leaves/me/requests/${request.id}/withdraw`, {
         method: 'POST',
-        headers,
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.detail || 'Could not withdraw leave request.');
@@ -2744,9 +2722,7 @@ export function LeaveApprovalsPage() {
 
   const headers = useMemo(() => ({
     'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-  }), [user]);
+  }), []);
 
   const loadApprovals = useCallback(async () => {
     if (!user || !canReviewApprovals(user.role)) return;
@@ -2754,9 +2730,9 @@ export function LeaveApprovalsPage() {
     setApprovalError(null);
     try {
       const [leaveRes, timesheetRes, requestRes] = await Promise.all([
-        fetch(`${API_BASE}/leaves/approvals`, { headers }),
-        fetch(`${API_BASE}/timesheets/approvals`, { headers }),
-        fetch(`${API_BASE}/requests/queue`, { headers }),
+        authenticatedFetch(`${API_BASE}/leaves/approvals`, { headers }),
+        authenticatedFetch(`${API_BASE}/timesheets/approvals`, { headers }),
+        authenticatedFetch(`${API_BASE}/requests/queue`),
       ]);
       const leaveData = await leaveRes.json().catch(() => null);
       const timesheetData = await timesheetRes.json().catch(() => null);
@@ -2788,7 +2764,7 @@ export function LeaveApprovalsPage() {
     let cancelled = false;
     setReviewCompliance(null);
     setReviewComplianceLoading(true);
-    fetch(`${API_BASE}/timesheets/${entryId}/allocation-compliance`, { headers })
+    authenticatedFetch(`${API_BASE}/timesheets/${entryId}/allocation-compliance`, { headers })
       .then(async (res) => {
         const data = await res.json().catch(() => null);
         if (!res.ok) throw new Error(data?.detail || 'Could not load allocation compliance.');
@@ -2816,7 +2792,7 @@ export function LeaveApprovalsPage() {
     setReviewingId(requestId);
     setApprovalError(null);
     try {
-      const res = await fetch(`${API_BASE}/leaves/approvals/${requestId}/decision`, {
+      const res = await authenticatedFetch(`${API_BASE}/leaves/approvals/${requestId}/decision`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ decision, reviewer_notes: reviewerNotes || null }),
@@ -2837,7 +2813,7 @@ export function LeaveApprovalsPage() {
     setReviewingId(approvalKey);
     setApprovalError(null);
     try {
-      const res = await fetch(`${API_BASE}/timesheets/approvals/${approval.employee_id}/${approval.week_start}/decision`, {
+      const res = await authenticatedFetch(`${API_BASE}/timesheets/approvals/${approval.employee_id}/${approval.week_start}/decision`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ decision, reviewer_notes: reviewerNotes || null }),
@@ -2858,7 +2834,7 @@ export function LeaveApprovalsPage() {
     setReviewingId(request.id);
     setApprovalError(null);
     try {
-      const res = await fetch(`${API_BASE}/requests/${request.id}/${decision}`, {
+      const res = await authenticatedFetch(`${API_BASE}/requests/${request.id}/${decision}`, {
         method: 'POST',
         headers,
         body: JSON.stringify(decision === 'approve' ? { notes: null } : { reason: reason?.trim() || 'Rejected by manager.' }),
@@ -2935,7 +2911,44 @@ export function LeaveApprovalsPage() {
           {approvalError}
         </div>
       )}
+      <Card className="mb-5 overflow-hidden">
+        <CardHeader
+          title="Team timesheets"
+          icon={<Clock3 size={16} />}
+          badge={timesheetApprovalRows.length ? `${timesheetApprovalRows.length} awaiting review` : 'All clear'}
+          badgeColor={timesheetApprovalRows.length ? 'warning' : 'success'}
+        />
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-left text-sm">
+            <thead className="bg-warm-bg text-[11px] uppercase tracking-wide text-gray-400">
+              <tr>
+                <th className="px-5 py-3 font-bold">Employee</th>
+                <th className="px-5 py-3 font-bold">Logged / Target</th>
+                <th className="px-5 py-3 font-bold">Flag</th>
+                <th className="px-5 py-3 font-bold">Status</th>
+                <th className="px-5 py-3 text-right font-bold">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--color-border)]">
+              {loadingApprovals ? <tr><td colSpan={5} className="px-5 py-8 text-center text-gray-500">Loading team timesheets...</td></tr> : timesheetApprovalRows.length === 0 ? <tr><td colSpan={5} className="px-5 py-8 text-center text-gray-500">No timesheets are waiting for approval.</td></tr> : timesheetApprovalRows.map((approval) => {
+                const approvalKey = `${approval.employee_id}-${approval.week_start}`;
+                const accounted = approval.working_hours + approval.leave_hours;
+                const target = approval.weekly_limit_hours || 40;
+                const variance = Math.round((accounted - target) * 100) / 100;
+                return <tr key={`roster-${approvalKey}`} className={cn('text-[var(--color-brand-navy)]', variance !== 0 && 'bg-[var(--color-status-warning-bg)]/25')}>
+                  <td className="px-5 py-4"><div className="font-bold">{approval.employee_name}</div><div className="mt-1 text-xs text-gray-500">{formatDate(approval.week_start)} - {formatDate(approval.week_end)}</div></td>
+                  <td className="px-5 py-4"><strong>{accounted}h</strong><span className="text-gray-400"> / {target}h</span><div className="mt-2 h-1.5 w-28 overflow-hidden rounded-full bg-[var(--color-border)]"><div className={cn('h-full rounded-full', variance > 0 ? 'bg-status-warning' : variance < 0 ? 'bg-accent' : 'bg-status-success')} style={{ width: `${Math.min(100, target ? accounted / target * 100 : 0)}%` }} /></div></td>
+                  <td className="px-5 py-4">{variance > 0 ? <Badge variant="warning">Overtime +{variance}h</Badge> : variance < 0 ? <Badge variant="warning">Under target {Math.abs(variance)}h</Badge> : <span className="text-xs text-gray-400">—</span>}</td>
+                  <td className="px-5 py-4"><Badge variant="warning">Submitted</Badge></td>
+                  <td className="px-5 py-4"><div className="flex justify-end gap-2"><Button size="sm" variant="ghost" onClick={() => setReviewTimesheet(approval)}>Review</Button><Button size="sm" variant="soft" disabled={reviewingId === approvalKey} onClick={() => decideTimesheet(approval, 'approve')}>{reviewingId === approvalKey ? 'Approving...' : 'Approve'}</Button></div></td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
       <Card className="overflow-hidden">
+        <CardHeader title="Leave and requests" badge={`${leaveApprovalRows.length + requestApprovalRows.length} pending`} badgeColor={leaveApprovalRows.length + requestApprovalRows.length ? 'warning' : 'success'} />
         <table className="w-full text-left text-sm">
           <thead className="bg-warm-bg text-[11px] uppercase tracking-wide text-gray-400">
             <tr>
@@ -2949,7 +2962,7 @@ export function LeaveApprovalsPage() {
           <tbody className="divide-y divide-[var(--color-border)]">
             {loadingApprovals ? (
               <tr><td colSpan={5} className="px-5 py-8 text-center text-gray-500">Loading approvals...</td></tr>
-            ) : totalApprovalRows === 0 ? (
+            ) : leaveApprovalRows.length + requestApprovalRows.length === 0 ? (
               <tr><td colSpan={5} className="px-5 py-8 text-center text-gray-500">No pending approvals.</td></tr>
             ) : (
               <>
@@ -2990,28 +3003,6 @@ export function LeaveApprovalsPage() {
                     </td>
                   </tr>
                 ))}
-                {timesheetApprovalRows.map((approval) => {
-                  const approvalKey = `${approval.employee_id}-${approval.week_start}`;
-                  return (
-                    <tr key={`timesheet-${approvalKey}`} className="text-[var(--color-brand-navy)]">
-                      <td className="px-5 py-4 font-semibold">{approval.employee_name}</td>
-                      <td className="px-5 py-4">
-                        <div className="font-semibold">Timesheet</div>
-                        <div className="text-xs text-gray-500">
-                          Working {approval.working_hours}h, Break {approval.break_hours}h, Leave {approval.leave_hours}h
-                          {approval.overtime_hours > 0 ? `, Overtime ${approval.overtime_hours}h` : ''}
-                        </div>
-                      </td>
-                      <td className="px-5 py-4">{formatDate(approval.week_start)} - {formatDate(approval.week_end)}</td>
-                      <td className="px-5 py-4"><Badge variant="warning">submitted</Badge></td>
-                      <td className="px-5 py-4">
-                        <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="soft" onClick={() => setReviewTimesheet(approval)}>Review</Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
               </>
             )}
           </tbody>
@@ -3205,7 +3196,7 @@ function TimeEntryDetailsPanel({
 
 }
 
-export function TimesheetsPage() {
+function LegacyTimesheetsPage() {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -3234,12 +3225,6 @@ export function TimesheetsPage() {
   const [submitCompliance, setSubmitCompliance] = useState<ComplianceReport | null>(null);
   const [submitComplianceOpen, setSubmitComplianceOpen] = useState(true);
   const [complianceCheckMessage, setComplianceCheckMessage] = useState<string | null>(null);
-
-  const headers = useMemo(() => ({
-    'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-  }), [user]);
 
   const weekDates = useMemo(() => {
     const start = new Date(`${weekStart}T00:00:00`);
@@ -3319,8 +3304,8 @@ export function TimesheetsPage() {
     setError(null);
     try {
       const [optionsRes, weekRes] = await Promise.all([
-        fetch(`${API_BASE}/timesheets/me/options?week_start=${weekStart}`, { headers }),
-        fetch(`${API_BASE}/timesheets/me/week?week_start=${weekStart}`, { headers }),
+        authenticatedFetch(`${API_BASE}/timesheets/me/options?week_start=${weekStart}`),
+        authenticatedFetch(`${API_BASE}/timesheets/me/week?week_start=${weekStart}`),
       ]);
       if (!optionsRes.ok) throw new Error('Could not load timesheet options.');
       if (!weekRes.ok) throw new Error('Could not load this week\'s timesheet.');
@@ -3356,7 +3341,7 @@ export function TimesheetsPage() {
     } finally {
       setLoading(false);
     }
-  }, [headers, user, weekStart]);
+  }, [user, weekStart]);
 
   useEffect(() => {
     loadTimesheet();
@@ -3546,9 +3531,9 @@ export function TimesheetsPage() {
   };
 
   const postDraftTimesheet = async () => {
-    const res = await fetch(`${API_BASE}/timesheets/me/week`, {
+    const res = await authenticatedFetch(`${API_BASE}/timesheets/me/week`, {
       method: 'POST',
-      headers,
+      headers: JSON_HEADERS,
       body: JSON.stringify(buildPayload()),
     });
     const data = await res.json().catch(() => null);
@@ -3557,9 +3542,9 @@ export function TimesheetsPage() {
   };
 
   const submitTimesheetToBackend = async () => {
-    const res = await fetch(`${API_BASE}/timesheets/me/week/submit`, {
+    const res = await authenticatedFetch(`${API_BASE}/timesheets/me/week/submit`, {
       method: 'POST',
-      headers,
+      headers: JSON_HEADERS,
       body: JSON.stringify(buildPayload()),
     });
     const data = await res.json().catch(() => null);
@@ -3592,7 +3577,7 @@ export function TimesheetsPage() {
         throw new Error('Add at least one timesheet entry before submitting.');
       }
       try {
-        const complianceRes = await fetch(`${API_BASE}/timesheets/${timesheetId}/allocation-compliance`, { headers });
+        const complianceRes = await authenticatedFetch(`${API_BASE}/timesheets/${timesheetId}/allocation-compliance`);
         const complianceData = await complianceRes.json().catch(() => null);
         if (!complianceRes.ok) throw new Error(complianceData?.detail || 'Allocation compliance could not be checked.');
         const report = complianceData as ComplianceReport;
@@ -3633,9 +3618,8 @@ export function TimesheetsPage() {
     setSuccess(null);
     try {
       const params = new URLSearchParams({ week_start: weekStart, time_zone: timeZone });
-      const res = await fetch(`${API_BASE}/timesheets/me/week/recall?${params.toString()}`, {
+      const res = await authenticatedFetch(`${API_BASE}/timesheets/me/week/recall?${params.toString()}`, {
         method: 'POST',
-        headers,
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.detail || 'Could not recall timesheet.');
@@ -3660,9 +3644,9 @@ export function TimesheetsPage() {
         target_week_start: weekStart,
         time_zone: timeZone,
       });
-      const res = await fetch(`${API_BASE}/timesheets/me/week/copy`, {
+      const res = await authenticatedFetch(`${API_BASE}/timesheets/me/week/copy`, {
         method: 'POST',
-        headers,
+        headers: JSON_HEADERS,
         body,
       });
       const data = await res.json().catch(() => null);
@@ -3687,9 +3671,8 @@ export function TimesheetsPage() {
     setSuccess(null);
     try {
       const params = new URLSearchParams({ week_start: weekStart, time_zone: timeZone });
-      const res = await fetch(`${API_BASE}/timesheets/me/week?${params.toString()}`, {
+      const res = await authenticatedFetch(`${API_BASE}/timesheets/me/week?${params.toString()}`, {
         method: 'DELETE',
-        headers,
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.detail || 'Could not delete timesheet.');
@@ -3810,6 +3793,10 @@ export function TimesheetsPage() {
     </div>
   );
 
+}
+
+export function TimesheetsPage() {
+  return <HourCentricTimesheetsPage />;
 }
 
 export function CheckInOutPage() {
@@ -4225,19 +4212,12 @@ export function CompanyHandbookPage() {
 }
 
 export function HolidaysPage() {
-  const { user } = useAuth();
-  const headers = useMemo(() => ({
-    'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-  }), [user]);
-
   return <div className="-mx-[var(--layout-main-padding-x)] -my-[var(--layout-main-padding-y)] min-h-[calc(100vh-3.5rem)] bg-[#f7f3ec] px-8 py-[26px]">
     <div className="mb-6">
       <h1 className="text-[26px] font-bold tracking-[-.5px] text-[#1f2430]">Holiday Calendar</h1>
       <p className="mt-1 text-sm text-[#7a7263]">View company holidays and public holiday schedules for India and the United States.</p>
     </div>
-    <HolidayCalendarContent headers={headers} />
+    <HolidayCalendarContent />
   </div>;
 }
 
@@ -4246,17 +4226,11 @@ export function EmployeeNotificationsPage() {
   const [items, setItems] = useState<NotificationHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const headers = useMemo(() => ({
-    'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-  }), [user]);
-
   const loadNotifications = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/notifications?limit=100`, { headers });
+      const res = await authenticatedFetch(`${API_BASE}/notifications?limit=100`);
       const data = await res.json().catch(() => null);
       setItems(data?.notifications || []);
     } catch {
@@ -4264,19 +4238,19 @@ export function EmployeeNotificationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [headers, user]);
+  }, [user]);
 
   useEffect(() => {
     loadNotifications();
   }, [loadNotifications]);
 
   const markRead = async (id: string) => {
-    await fetch(`${API_BASE}/notifications/${id}/read`, { method: 'PUT', headers }).catch(() => undefined);
+    await authenticatedFetch(`${API_BASE}/notifications/${id}/read`, { method: 'PUT' }).catch(() => undefined);
     setItems((current) => current.map((item) => item.id === id ? { ...item, is_read: true } : item));
   };
 
   const markAllRead = async () => {
-    await fetch(`${API_BASE}/notifications/mark-all-read`, { method: 'PUT', headers }).catch(() => undefined);
+    await authenticatedFetch(`${API_BASE}/notifications/mark-all-read`, { method: 'PUT' }).catch(() => undefined);
     setItems((current) => current.map((item) => ({ ...item, is_read: true })));
   };
 

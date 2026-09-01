@@ -1,6 +1,6 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Download, Search, Users } from 'lucide-react';
-import { useAuth } from '@/hooks/useAuth';
+import { Download, Minus, Plus, Search, Users } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import '@/styles/organization.css';
 
@@ -149,14 +149,15 @@ function Tier({ label, people, selectedId, onSelect }: { label: string; people: 
 }
 
 export function OrganizationChart({ initialView = 'my-line', focusedEmployeeId }: OrganizationChartProps) {
-  const { user } = useAuth();
   const [data, setData] = useState<OrganizationResponse | null>(null);
   const [view, setView] = useState<'my-line' | 'full'>(initialView);
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState('');
+  const [zoom, setZoom] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const canvasRef = useRef<HTMLDivElement>(null);
+  const zoomPercentage = Math.round(zoom * 100);
 
   useEffect(() => {
     let cancelled = false;
@@ -164,9 +165,7 @@ export function OrganizationChart({ initialView = 'my-line', focusedEmployeeId }
       setLoading(true);
       setError('');
       try {
-        const response = await fetch(`${API_BASE}/employees/organization`, {
-          headers: { 'x-user-id': user?.id || '', 'x-user-email': user?.email || '' },
-        });
+        const response = await authenticatedFetch(`${API_BASE}/employees/organization`);
         const payload = await response.json().catch(() => null);
         if (!response.ok || !payload) throw new Error(payload?.detail || 'Could not load the organization chart.');
         if (!cancelled) {
@@ -181,7 +180,7 @@ export function OrganizationChart({ initialView = 'my-line', focusedEmployeeId }
     };
     void load();
     return () => { cancelled = true; };
-  }, [focusedEmployeeId, user?.email, user?.id]);
+  }, [focusedEmployeeId]);
 
   const chartEmployees = useMemo(
     () => data && USE_MOCK_HIERARCHY ? buildMockHierarchy(data.employees, data.current_user_id) : data?.employees || [],
@@ -252,6 +251,10 @@ export function OrganizationChart({ initialView = 'my-line', focusedEmployeeId }
     URL.revokeObjectURL(url);
   };
 
+  const adjustZoom = (delta: number) => {
+    setZoom((current) => Math.min(1.6, Math.max(0.7, Number((current + delta).toFixed(2)))));
+  };
+
   if (loading) return <div className="org-state">Loading organization chart...</div>;
   if (error || !data) return <div className="org-state org-state-error">{error || 'Organization chart is unavailable.'}</div>;
 
@@ -276,28 +279,39 @@ export function OrganizationChart({ initialView = 'my-line', focusedEmployeeId }
               </div>
             )}
           </div>
+          <div className="org-zoom-controls" aria-label="Organization chart zoom controls">
+            <button type="button" onClick={() => adjustZoom(-0.1)} aria-label="Zoom out" disabled={zoom <= 0.7}>
+              <Minus size={14} />
+            </button>
+            <span>{zoomPercentage}%</span>
+            <button type="button" onClick={() => adjustZoom(0.1)} aria-label="Zoom in" disabled={zoom >= 1.6}>
+              <Plus size={14} />
+            </button>
+          </div>
           <button type="button" className="org-export" onClick={exportChart}><Download size={14} /> Export</button>
         </div>
       </div>
 
       <div ref={canvasRef} className="org-chart-canvas">
-        {view === 'full' ? (
-          <div className="org-tree-inner">
-            <ul className="org-tree">
-              {roots.map((person) => <FullTreeNode key={person.id} person={person} childrenByManager={childrenByManager} selectedId={selectedId} onSelect={selectPerson} />)}
-            </ul>
-          </div>
-        ) : focusPerson ? (
-          <div className="org-my-line">
-            {manager && <Tier label="Reports to" people={[manager]} selectedId={selectedId} onSelect={selectPerson} />}
-            {manager && <div className="org-tier-connector" />}
-            <Tier label="Manager's team" people={peers.length ? peers : [focusPerson]} selectedId={selectedId} onSelect={selectPerson} />
-            {directReports.length > 0 && <div className="org-tier-connector" />}
-            <Tier label="Reports to you" people={directReports} selectedId={selectedId} onSelect={selectPerson} />
-          </div>
-        ) : (
-          <div className="org-empty"><Users size={22} />Your employee record was not found in the organization chart.</div>
-        )}
+        <div className="org-chart-zoom-layer" style={{ zoom: `${zoom}` }}>
+          {view === 'full' ? (
+            <div className="org-tree-inner">
+              <ul className="org-tree">
+                {roots.map((person) => <FullTreeNode key={person.id} person={person} childrenByManager={childrenByManager} selectedId={selectedId} onSelect={selectPerson} />)}
+              </ul>
+            </div>
+          ) : focusPerson ? (
+            <div className="org-my-line">
+              {manager && <Tier label="Reports to" people={[manager]} selectedId={selectedId} onSelect={selectPerson} />}
+              {manager && <div className="org-tier-connector" />}
+              <Tier label="Manager's team" people={peers.length ? peers : [focusPerson]} selectedId={selectedId} onSelect={selectPerson} />
+              {directReports.length > 0 && <div className="org-tier-connector" />}
+              <Tier label="Reports to you" people={directReports} selectedId={selectedId} onSelect={selectPerson} />
+            </div>
+          ) : (
+            <div className="org-empty"><Users size={22} />Your employee record was not found in the organization chart.</div>
+          )}
+        </div>
       </div>
     </section>
   );

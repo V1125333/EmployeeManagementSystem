@@ -3,11 +3,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.authentication import AuthenticatedActor, get_authenticated_actor
 from app.models.audit import AuditLog
 from app.models.employee import Employee
 from app.models.allocation import Allocation
@@ -26,7 +27,7 @@ from app.schemas.staffing_request import (
     StaffingRequestUpdate,
 )
 from app.services.audit_service import log_audit, log_authorization_failure
-from app.services.settings_service import get_current_employee, normalize_role
+from app.services.settings_service import normalize_role
 from app.services.staffing_service import (
     cancel_request,
     change_status,
@@ -45,6 +46,12 @@ from app.services.allocation_service import serialize_allocation
 from app.services.staffing_allocation_service import create_allocation_from_staffing_request
 
 router = APIRouter(prefix="/staffing-requests", tags=["Staffing Requests"])
+
+
+def _authenticated_employee(
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
+) -> Employee:
+    return authenticated_actor.employee
 
 
 def _is_hr_admin(actor: Employee) -> bool:
@@ -180,10 +187,8 @@ def _audit_row(row: AuditLog) -> dict[str, Any]:
 @router.get("/options", response_model=StaffingRequestOptions)
 async def staffing_request_options(
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(_authenticated_employee),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
     _require_module_access(db, actor)
 
     departments = [item.name for item in db.query(Department).order_by(Department.sort_order.asc(), Department.name.asc()).all()]
@@ -220,10 +225,8 @@ async def list_staffing_requests(
     page: int = Query(1, ge=1),
     per_page: int = Query(25, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(_authenticated_employee),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
     _require_module_access(db, actor)
     query = _scope_query(db, actor)
 
@@ -255,10 +258,8 @@ async def list_staffing_requests(
 async def create_staffing_request_endpoint(
     data: StaffingRequestCreate,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(_authenticated_employee),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
     _require_module_access(db, actor)
     return create_staffing_request(db, data, actor.id)
 
@@ -267,10 +268,8 @@ async def create_staffing_request_endpoint(
 async def get_staffing_request(
     request_id: str,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(_authenticated_employee),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
     row = _get_request_or_404(db, request_id)
     _require_request_read(db, actor, row)
     return serialize_request(db, row, include_candidates=True)
@@ -281,10 +280,8 @@ async def update_staffing_request_endpoint(
     request_id: str,
     data: StaffingRequestUpdate,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(_authenticated_employee),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
     row = _get_request_or_404(db, request_id)
     _require_request_edit(db, actor, row)
     return update_staffing_request(db, request_id, data, actor.id)
@@ -295,10 +292,8 @@ async def update_staffing_request_status(
     request_id: str,
     data: StaffingRequestStatusUpdate,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(_authenticated_employee),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
     row = _get_request_or_404(db, request_id)
     _require_hr_action(db, actor, row, "staffing_request.status")
     return change_status(db, request_id, data.status, data.rejection_reason, actor.id)
@@ -308,10 +303,8 @@ async def update_staffing_request_status(
 async def cancel_staffing_request_endpoint(
     request_id: str,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(_authenticated_employee),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
     row = _get_request_or_404(db, request_id)
     _require_request_edit(db, actor, row)
     return cancel_request(db, request_id, actor.id)
@@ -321,10 +314,8 @@ async def cancel_staffing_request_endpoint(
 async def get_staffing_candidates(
     request_id: str,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(_authenticated_employee),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
     row = _get_request_or_404(db, request_id)
     _require_request_read(db, actor, row)
     candidates = db.query(StaffingRequestCandidate).filter(
@@ -338,10 +329,8 @@ async def create_allocation_from_request_endpoint(
     request_id: str,
     data: CreateAllocationFromRequestBody,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(_authenticated_employee),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
     _require_hr_only(db, actor, "staffing_request.create_allocation", request_id)
     return create_allocation_from_staffing_request(
         db,
@@ -356,10 +345,8 @@ async def create_allocation_from_request_endpoint(
 async def get_staffing_request_allocations(
     request_id: str,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(_authenticated_employee),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
     row = _get_request_or_404(db, request_id)
     _require_request_read(db, actor, row)
     allocation_ids = fulfilled_allocation_ids(row)
@@ -373,10 +360,8 @@ async def get_staffing_request_allocations(
 async def refresh_staffing_candidates(
     request_id: str,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(_authenticated_employee),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
     row = _get_request_or_404(db, request_id)
     _require_hr_action(db, actor, row, "staffing_request.candidates.refresh")
     refresh_system_candidates(db, row)
@@ -392,10 +377,8 @@ async def shortlist_staffing_candidate(
     request_id: str,
     employee_id: str,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(_authenticated_employee),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
     row = _get_request_or_404(db, request_id)
     _require_hr_action(db, actor, row, "staffing_request.candidates.shortlist")
     return shortlist_candidate(db, request_id, employee_id, actor.id)
@@ -406,10 +389,8 @@ async def select_staffing_candidate(
     request_id: str,
     employee_id: str,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(_authenticated_employee),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
     row = _get_request_or_404(db, request_id)
     _require_hr_action(db, actor, row, "staffing_request.candidates.select")
     return select_candidate(db, request_id, employee_id, actor.id)
@@ -420,10 +401,8 @@ async def reject_staffing_candidate(
     request_id: str,
     employee_id: str,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(_authenticated_employee),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
     row = _get_request_or_404(db, request_id)
     _require_hr_action(db, actor, row, "staffing_request.candidates.reject")
     return reject_candidate(db, request_id, employee_id, actor.id)
@@ -433,10 +412,8 @@ async def reject_staffing_candidate(
 async def staffing_request_activity(
     request_id: str,
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    actor: Employee = Depends(_authenticated_employee),
 ):
-    actor = get_current_employee(db, current_user_id, current_user_email)
     row = _get_request_or_404(db, request_id)
     _require_request_read(db, actor, row)
     logs = db.query(AuditLog).filter(

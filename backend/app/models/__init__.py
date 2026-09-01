@@ -34,6 +34,9 @@ from app.models.operations import (
     Project,
     ProjectDocument,
     CompanyHoliday,
+    TimesheetWeek,
+    TimesheetIdempotencyRecord,
+    TimesheetMigrationAnomaly,
     TimesheetEntry,
     Announcement,
     AnnouncementAudience,
@@ -45,7 +48,7 @@ from app.models.operations import (
 )
 
 # User preference and support tables
-from app.models.settings import UserSettings, SupportTicket
+from app.models.settings import OrganizationSecurityPolicy, UserSettings, SupportTicket
 from app.models.user_preferences import UserPreferences
 
 # Client onboarding tables

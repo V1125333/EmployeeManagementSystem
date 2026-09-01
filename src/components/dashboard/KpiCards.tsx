@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useEffect, useMemo, useRef, useState, type ElementType } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Activity, Award, BriefcaseBusiness, Cake, CalendarDays, UserPlus } from 'lucide-react';
@@ -101,7 +102,7 @@ export function KpiCards() {
   const sectionRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetch(`${API_BASE}/dashboard/kpis`)
+    authenticatedFetch(`${API_BASE}/dashboard/kpis`)
       .then((response) => {
         if (!response.ok) throw new Error(`Dashboard metrics failed (${response.status})`);
         return response.json();

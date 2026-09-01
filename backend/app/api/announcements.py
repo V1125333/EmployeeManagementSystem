@@ -5,11 +5,12 @@ Announcement API endpoints.
 import logging
 from datetime import datetime, timezone
 from typing import Optional
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func, or_
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from app.core.database import get_db
+from app.core.authentication import AuthenticatedActor, get_authenticated_actor
 from app.models.employee import Employee
 from app.models.operations import (
     Announcement,
@@ -19,6 +20,7 @@ from app.models.operations import (
     ActionInboxItem,
     Notification,
 )
+from app.services.audit_service import log_audit
 
 router = APIRouter(prefix="/announcements", tags=["Announcements"])
 logger = logging.getLogger(__name__)
@@ -44,26 +46,10 @@ def normalize_role(role: str | None) -> str:
     return (role or "").strip().lower().replace(" ", "_")
 
 
-def current_actor(
-    db: Session,
-    user_id: str | None,
-    user_email: str | None,
-    user_name: str | None,
-):
-    employee = None
-    if user_id:
-        employee = db.query(Employee).filter(Employee.id == user_id).first()
-    if not employee and user_email:
-        employee = db.query(Employee).filter(
-            func.lower(Employee.work_email) == user_email.strip().lower()
-        ).first()
-    if employee and user_email and employee.work_email.lower() != user_email.lower():
-        raise HTTPException(status_code=401, detail="Authenticated user headers do not match.")
-
-    actor_id = employee.id if employee else user_id
-    actor_role = normalize_role(employee.role if employee else None)
-    actor_name = user_email or user_name or (employee.work_email if employee else None) or "unknown"
-    return employee, actor_id, actor_role, actor_name
+def authenticated_employee(
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
+) -> Employee:
+    return authenticated_actor.employee
 
 
 def ensure_can_manage(role: str):
@@ -303,13 +289,11 @@ def create_notifications_for_published(announcement: Announcement, db: Session):
 @router.post("")
 async def create_announcement(
     payload: AnnouncementPayload,
-    current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_email: str = Header(None, alias="x-user-email"),
-    current_user_name: str = Header(None, alias="x-user-name"),
     db: Session = Depends(get_db),
+    actor: Employee = Depends(authenticated_employee),
 ):
-    _, actor_id, actor_role, actor_name = current_actor(db, current_user_id, current_user_email, current_user_name)
-    ensure_can_manage(actor_role)
+    ensure_can_manage(normalize_role(actor.role))
+    actor_name = actor.work_email
     title, message, status, audience_type, publish_at, expires_at = validate_payload(payload)
 
     announcement = Announcement(
@@ -329,13 +313,21 @@ async def create_announcement(
         expiry_date=expires_at.date() if expires_at else None,
         created_by=actor_name,
         updated_by=actor_name,
-        published_by=actor_id,
+        published_by=actor.id,
         is_active=status == "published",
     )
     db.add(announcement)
     db.flush()
     upsert_audiences(announcement.id, audience_type, payload.target_values, db)
     create_notifications_for_published(announcement, db)
+    log_audit(
+        db,
+        actor,
+        action="announcement.created",
+        entity_type="announcement",
+        entity_id=announcement.id,
+        new_values={"status": status, "audience_type": audience_type, "priority": payload.priority},
+    )
     db.commit()
     db.refresh(announcement)
     return {"success": True, "announcement": serialize_announcement(announcement, db, include_stats=True)}
@@ -343,14 +335,9 @@ async def create_announcement(
 
 @router.get("/my")
 async def my_announcements(
-    current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_email: str = Header(None, alias="x-user-email"),
     db: Session = Depends(get_db),
+    employee: Employee = Depends(authenticated_employee),
 ):
-    employee, _, _, _ = current_actor(db, current_user_id, current_user_email, None)
-    if not employee:
-        return {"announcements": []}
-
     announcements = db.query(Announcement).filter(
         Announcement.status == "published",
         or_(Announcement.expires_at.is_(None), Announcement.expires_at > utc_now()),
@@ -365,12 +352,10 @@ async def my_announcements(
 
 @router.get("")
 async def list_announcements(
-    current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_email: str = Header(None, alias="x-user-email"),
     db: Session = Depends(get_db),
+    actor: Employee = Depends(authenticated_employee),
 ):
-    _, _, actor_role, _ = current_actor(db, current_user_id, current_user_email, None)
-    ensure_can_manage(actor_role)
+    ensure_can_manage(normalize_role(actor.role))
 
     announcements = db.query(Announcement).order_by(
         Announcement.is_pinned.desc(),
@@ -383,13 +368,11 @@ async def list_announcements(
 async def update_announcement(
     announcement_id: str,
     payload: AnnouncementPayload,
-    current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_email: str = Header(None, alias="x-user-email"),
-    current_user_name: str = Header(None, alias="x-user-name"),
     db: Session = Depends(get_db),
+    actor: Employee = Depends(authenticated_employee),
 ):
-    _, actor_id, actor_role, actor_name = current_actor(db, current_user_id, current_user_email, current_user_name)
-    ensure_can_manage(actor_role)
+    ensure_can_manage(normalize_role(actor.role))
+    actor_name = actor.work_email
 
     announcement = db.query(Announcement).filter(Announcement.id == announcement_id).first()
     if not announcement:
@@ -412,10 +395,18 @@ async def update_announcement(
     announcement.expiry_date = expires_at.date() if expires_at else None
     announcement.updated_by = actor_name
     announcement.updated_at = utc_now()
-    announcement.published_by = actor_id
+    announcement.published_by = actor.id
     announcement.is_active = status == "published"
     upsert_audiences(announcement.id, audience_type, payload.target_values, db)
     create_notifications_for_published(announcement, db)
+    log_audit(
+        db,
+        actor,
+        action="announcement.updated",
+        entity_type="announcement",
+        entity_id=announcement.id,
+        new_values={"status": status, "audience_type": audience_type, "priority": payload.priority},
+    )
     db.commit()
     db.refresh(announcement)
     return {"success": True, "announcement": serialize_announcement(announcement, db, include_stats=True)}
@@ -424,18 +415,24 @@ async def update_announcement(
 @router.delete("/{announcement_id}")
 async def delete_announcement(
     announcement_id: str,
-    current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_email: str = Header(None, alias="x-user-email"),
     db: Session = Depends(get_db),
+    actor: Employee = Depends(authenticated_employee),
 ):
-    _, _, actor_role, _ = current_actor(db, current_user_id, current_user_email, None)
-    ensure_can_manage(actor_role)
+    ensure_can_manage(normalize_role(actor.role))
     announcement = db.query(Announcement).filter(Announcement.id == announcement_id).first()
     if not announcement:
         raise HTTPException(status_code=404, detail="Announcement not found")
     db.query(AnnouncementAudience).filter(AnnouncementAudience.announcement_id == announcement_id).delete()
     db.query(AnnouncementAcknowledgment).filter(AnnouncementAcknowledgment.announcement_id == announcement_id).delete()
     db.query(AnnouncementRead).filter(AnnouncementRead.announcement_id == announcement_id).delete()
+    log_audit(
+        db,
+        actor,
+        action="announcement.deleted",
+        entity_type="announcement",
+        entity_id=announcement_id,
+        old_values={"status": announcement.status, "audience_type": announcement.audience_type},
+    )
     db.delete(announcement)
     db.commit()
     return {"success": True}
@@ -444,13 +441,11 @@ async def delete_announcement(
 @router.post("/{announcement_id}/acknowledge")
 async def acknowledge_announcement(
     announcement_id: str,
-    current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_email: str = Header(None, alias="x-user-email"),
     db: Session = Depends(get_db),
+    employee: Employee = Depends(authenticated_employee),
 ):
-    employee, _, _, _ = current_actor(db, current_user_id, current_user_email, None)
     announcement = db.query(Announcement).filter(Announcement.id == announcement_id).first()
-    if not employee or not announcement or not employee_can_see(announcement, employee, db):
+    if not announcement or not employee_can_see(announcement, employee, db):
         raise HTTPException(status_code=404, detail="Announcement not found")
 
     existing = db.query(AnnouncementAcknowledgment).filter(
@@ -480,13 +475,11 @@ async def acknowledge_announcement(
 @router.post("/{announcement_id}/read")
 async def mark_read(
     announcement_id: str,
-    current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_email: str = Header(None, alias="x-user-email"),
     db: Session = Depends(get_db),
+    employee: Employee = Depends(authenticated_employee),
 ):
-    employee, _, _, _ = current_actor(db, current_user_id, current_user_email, None)
     announcement = db.query(Announcement).filter(Announcement.id == announcement_id).first()
-    if not employee or not announcement or not employee_can_see(announcement, employee, db):
+    if not announcement or not employee_can_see(announcement, employee, db):
         raise HTTPException(status_code=404, detail="Announcement not found")
     existing = db.query(AnnouncementRead).filter(
         AnnouncementRead.announcement_id == announcement_id,
@@ -505,13 +498,9 @@ async def mark_read(
 
 @router.get("/unread-count")
 async def unread_count(
-    current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_email: str = Header(None, alias="x-user-email"),
     db: Session = Depends(get_db),
+    employee: Employee = Depends(authenticated_employee),
 ):
-    employee, _, _, _ = current_actor(db, current_user_id, current_user_email, None)
-    if not employee:
-        return {"count": 0}
     announcements = db.query(Announcement).filter(
         Announcement.status == "published",
         or_(Announcement.expires_at.is_(None), Announcement.expires_at > utc_now()),
@@ -538,12 +527,10 @@ async def unread_count(
 @router.get("/{announcement_id}/stats")
 async def get_announcement_stats(
     announcement_id: str,
-    current_user_id: str = Header(None, alias="x-user-id"),
-    current_user_email: str = Header(None, alias="x-user-email"),
     db: Session = Depends(get_db),
+    actor: Employee = Depends(authenticated_employee),
 ):
-    _, _, actor_role, _ = current_actor(db, current_user_id, current_user_email, None)
-    ensure_can_manage(actor_role)
+    ensure_can_manage(normalize_role(actor.role))
     announcement = db.query(Announcement).filter(Announcement.id == announcement_id).first()
     if not announcement:
         raise HTTPException(status_code=404, detail="Announcement not found")

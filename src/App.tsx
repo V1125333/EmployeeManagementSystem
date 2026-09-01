@@ -25,7 +25,6 @@ import { StaffingRequestsPage } from '@/pages/StaffingRequestsPage';
 import { RequestsPage } from '@/pages/RequestsPage';
 import { ProjectDetailPage } from '@/pages/ProjectDetailPage';
 import { ProjectsPage } from '@/pages/ProjectsPage';
-import { AskOrbitAIPage } from '@/pages/AskOrbitAIPage';
 import { AuthCallbackPage } from '@/pages/AuthCallbackPage';
 import { EmployeeDocumentsPage } from '@/pages/EmployeeDocumentsPage';
 import {
@@ -72,7 +71,9 @@ export default function App() {
                 <Route path="/organization" element={<OrganizationPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/notifications" element={<EmployeeNotificationsPage />} />
-                <Route path="/ask-orbit-ai" element={<AskOrbitAIPage />} />
+                <Route path="/timesheets" element={<TimesheetsPage />} />
+                <Route path="/ask-orbit-ai" element={<Navigate to="/" replace />} />
+                <Route path="/ai-platform-preview" element={<Navigate to="/" replace />} />
                 <Route path="/bench" element={<BenchPage />} />
                 <Route path="/projects" element={<ProjectsPage />} />
                 <Route path="/projects/:projectId" element={<ProjectDetailPage />} />

@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -43,15 +44,6 @@ const prompts = [
 function isAdminRole(role?: string) {
   const normalized = (role || '').toLowerCase().replace(/\s+/g, '_');
   return ['super_admin', 'admin', 'hr_admin', 'global_access'].includes(normalized);
-}
-
-function authHeaders(user?: { id?: string; email?: string; role?: string }) {
-  return {
-    'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-    'x-user-role': user?.role || '',
-  };
 }
 
 const leaveTypeAliases: Record<string, string[]> = {
@@ -223,9 +215,7 @@ async function getLeaveBalanceReply(
 ): Promise<ChatMessage> {
   const admin = isAdminRole(user?.role);
   try {
-    const response = await fetch(`${API_BASE}/leaves/me/summary`, {
-      headers: authHeaders(user),
-    });
+    const response = await authenticatedFetch(`${API_BASE}/leaves/me/summary`);
     const data = await response.json();
     if (!response.ok) {
       throw new Error(data.detail || data.message || 'Unable to fetch leave balance.');
@@ -257,7 +247,7 @@ export async function getAgentReply(message: string, user?: { id?: string; email
   const text = message.toLowerCase().trim();
   const admin = isAdminRole(user?.role);
   const leavePath = admin ? '/time-off' : '/employee/apply-leave';
-  const timesheetPath = admin ? '/time-off' : '/employee/timesheets';
+  const timesheetPath = admin ? '/timesheets' : '/employee/timesheets';
   const requestsPath = admin ? '/staffing-requests' : '/employee/requests';
 
   if (/^(hi|hello|hey|good morning|good afternoon|good evening)[!. ]*$/.test(text)) {
@@ -292,7 +282,7 @@ export async function getAgentReply(message: string, user?: { id?: string; email
       role: 'agent',
       text: 'I can help with timesheets. Open the Timesheets page, review your work blocks, save hours, and submit the week for manager approval.',
       actions: [
-        { label: admin ? 'Open Time Off' : 'Open Timesheets', path: timesheetPath, icon: <Clock3 size={15} /> },
+        { label: 'Open Timesheets', path: timesheetPath, icon: <Clock3 size={15} /> },
       ],
     };
   }

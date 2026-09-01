@@ -1,7 +1,7 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
-  Check,
   CornerDownLeft,
   History,
   Maximize2,
@@ -12,7 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useAuth, type AuthUser } from '@/hooks/useAuth';
+import { useAuth } from '@/hooks/useAuth';
 import type { ChatMessage } from '@/pages/AskOrbitAIPage';
 import { AIChatResponseContent } from '@/components/ai/AIChatResponseContent';
 import {
@@ -31,25 +31,18 @@ import {
 } from '@/services/aiApi';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
-type Action = { label: string; href?: string; intent?: string };
+type Action = { type: 'navigate'; label: string; href: string };
 type Item = {
-  id: string; severity: 'overdue' | 'due_soon' | 'waiting' | 'advisory';
+  key: string; severity: 'overdue' | 'due_soon' | 'waiting' | 'advisory';
   title: string; urgencyLabel: string; heroValue?: string | null; heroUnit?: string | null;
   weekBars: Array<{ day: string; pct: number; deficient: boolean }>; reasoning: string;
-  primaryAction?: Action | null; secondaryAction?: Action | null; dismissLabel: string;
+  primaryAction?: Action | null; dismissLabel: string;
 };
-type Completion = { confirmation: string; next: string; viewLabel: string; viewHref: string; undoToken: string };
 type Upcoming = { title: string; displayDate: string } | null;
 type StoredConversation = {
   conversationId?: string;
 };
 type PanelView = 'briefing' | 'conversation' | 'history';
-
-const authHeaders = (user: AuthUser | null) => ({
-  'Content-Type': 'application/json',
-  ...(user?.id ? { 'X-User-Id': user.id } : {}),
-  ...(user?.email ? { 'X-User-Email': user.email } : {}),
-});
 
 function routeContext(path: string) {
   if (path.includes('timesheet')) return 'On Timesheets';
@@ -88,7 +81,6 @@ export function OrbitAIBriefing({
   const [upcoming, setUpcoming] = useState<Upcoming>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [busyId, setBusyId] = useState('');
   const dismissalKey = `orbit.ai.dismissed.${user?.id || user?.email || 'anonymous'}`;
   const [dismissed, setDismissed] = useState<string[]>(() => {
     try {
@@ -98,7 +90,6 @@ export function OrbitAIBriefing({
       return [];
     }
   });
-  const [completions, setCompletions] = useState<Record<string, Completion>>({});
   const [question, setQuestion] = useState('');
   const [conversation, setConversation] = useState<ChatMessage[]>([]);
   const [answerLoading, setAnswerLoading] = useState(false);
@@ -122,8 +113,7 @@ export function OrbitAIBriefing({
   const nearMessageBottomRef = useRef(true);
   const previousConversationLengthRef = useRef(0);
   const [newContentWaiting, setNewContentWaiting] = useState(false);
-  const visible = useMemo(() => items.filter((item) => !dismissed.includes(item.id)).slice(0, 2), [items, dismissed]);
-  const outstanding = useMemo(() => visible.filter((item) => !completions[item.id]), [visible, completions]);
+  const visible = useMemo(() => items.filter((item) => !dismissed.includes(item.key)).slice(0, 2), [items, dismissed]);
   const more = Math.max(0, total - visible.length - dismissed.length);
 
   const applyConversationDetail = useCallback((detail: AIConversationDetail) => {
@@ -277,12 +267,12 @@ export function OrbitAIBriefing({
     let active = true;
     setLoading(true);
     Promise.all([
-      fetch(`${API_BASE}/me/action-items`, { headers: authHeaders(user) }).then(async (response) => {
+      authenticatedFetch(`${API_BASE}/me/action-items`, {}, accessToken).then(async (response) => {
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.detail || 'Could not load your briefing.');
         return data;
       }),
-      fetch(`${API_BASE}/me/upcoming`, { headers: authHeaders(user) }).then((response) => response.ok ? response.json() : { item: null }),
+      authenticatedFetch(`${API_BASE}/me/upcoming`, {}, accessToken).then((response) => response.ok ? response.json() : { item: null }),
     ]).then(([actions, horizon]) => {
       if (!active) return;
       setItems(actions.items || []);
@@ -292,16 +282,7 @@ export function OrbitAIBriefing({
     }).catch((requestError) => active && setError(requestError instanceof Error ? requestError.message : 'Could not load your briefing.'))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [user?.id, user?.email]);
-
-  useEffect(() => {
-    const completedIds = Object.keys(completions);
-    if (!completedIds.length) return;
-    const timers = completedIds.map((id) => window.setTimeout(() => {
-      setDismissed((current) => current.includes(id) ? current : [...current, id]);
-    }, 10_000));
-    return () => timers.forEach(window.clearTimeout);
-  }, [completions]);
+  }, [accessToken]);
 
   useEffect(() => {
     try {
@@ -311,41 +292,8 @@ export function OrbitAIBriefing({
     }
   }, [dismissalKey, dismissed]);
 
-  const execute = async (item: Item) => {
-    setBusyId(item.id);
-    try {
-      const response = await fetch(`${API_BASE}/me/action-items/${encodeURIComponent(item.id)}/execute`, {
-        method: 'POST', headers: authHeaders(user),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.detail || 'Orbit could not complete that action.');
-      setCompletions((current) => ({ ...current, [item.id]: data }));
-      setError('');
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Orbit could not complete that action.');
-    } finally { setBusyId(''); }
-  };
-
-  const undo = async (item: Item) => {
-    const result = completions[item.id];
-    if (!result) return;
-    setBusyId(item.id);
-    try {
-      const response = await fetch(`${API_BASE}/me/action-items/${encodeURIComponent(item.id)}/undo`, {
-        method: 'POST', headers: authHeaders(user), body: JSON.stringify({ undoToken: result.undoToken }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.detail || 'This action could not be undone.');
-      setCompletions((current) => { const next = { ...current }; delete next[item.id]; return next; });
-      setError('');
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'This action could not be undone.');
-    } finally { setBusyId(''); }
-  };
-
-  const act = (item: Item, action?: Action | null) => {
-    if (action?.href) navigate(action.href);
-    else if (action?.intent === 'execute') void execute(item);
+  const act = (action?: Action | null) => {
+    if (action?.type === 'navigate') navigate(action.href);
   };
 
   const startNewConversation = async () => {
@@ -786,39 +734,31 @@ export function OrbitAIBriefing({
         ) : empty ? (
           <div className="pb-7 pt-5">
             <h2 className="font-['Instrument_Serif',Georgia,serif] text-[26px] italic leading-[1.26] tracking-[-.4px] text-[#4a4438]">
-              {Object.keys(completions).length ? 'That was the last one.' : new Date().getDay() >= 5 ? "You're clear. Enjoy the weekend." : "You're clear. Nothing needs you today."}
+              {new Date().getDay() >= 5 ? "You're clear. Enjoy the weekend." : "You're clear. Nothing needs you today."}
             </h2>
             <p className="mt-3 text-[12.5px] leading-6 text-[#736b5c]">{upcoming ? `Next thing on your plate is ${upcoming.title} — ${upcoming.displayDate}.` : 'There is nothing dated on your immediate horizon.'}</p>
           </div>
         ) : (
           <>
             <h2 className="pb-6 pt-5 font-['Instrument_Serif',Georgia,serif] text-[26px] leading-[1.26] tracking-[-.4px]">
-              {outstanding.length === 0
-                ? 'Your part is done.'
-                : outstanding.length === 1
+              {visible.length === 1
                   ? 'One thing still needs your attention.'
-                  : `${outstanding.length} things stand between you and being done.`}
+                  : `${visible.length} things need your attention.`}
             </h2>
-            {visible.map((item, index) => {
-              const done = completions[item.id];
-              return (
-                <section key={item.id} className="border-t border-[#e9e1d3] py-5">
-                  {done ? (
-                    <>
-                      <div className="flex items-center gap-2"><span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[#1c7d73] text-white"><Check size={12} /></span><span className="text-[10.5px] font-bold tracking-[1px] text-[#1c7d73]">DONE</span></div>
-                      <h3 className="mt-3 font-['Instrument_Serif',Georgia,serif] text-[22px] leading-tight">{done.confirmation}</h3>
-                      <p className="mt-2 text-[12.5px] leading-5 text-[#736b5c]">{done.next}</p>
-                      <div className="mt-4 flex gap-6 text-[12.5px] font-semibold"><button onClick={() => navigate(done.viewHref)} className="text-[#1c7d73]">{done.viewLabel}</button><button disabled={busyId === item.id} onClick={() => void undo(item)} className="text-[#6b6353] disabled:opacity-50">Undo</button></div>
-                    </>
-                  ) : (
-                    <>
+            {upcoming && (
+              <p className="-mt-3 pb-5 text-[11.5px] leading-5 text-[#736b5c]">
+                Upcoming: {upcoming.title} — {upcoming.displayDate}
+              </p>
+            )}
+            {visible.map((item, index) => (
+                <section key={item.key} className="border-t border-[#e9e1d3] py-5">
                       <div className="flex items-start justify-between gap-4">
                         <h3 className="text-[15px] font-semibold">{item.title}</h3>
                         <div className="flex shrink-0 items-center gap-2">
                           <span className={`text-[10.5px] font-bold uppercase ${item.severity === 'waiting' ? 'text-[#7d6210]' : item.severity === 'advisory' ? 'text-[#6f6757]' : 'text-[#a8442c]'}`}>{item.urgencyLabel}</span>
                           <button
                             type="button"
-                            onClick={() => setDismissed((current) => current.includes(item.id) ? current : [...current, item.id])}
+                            onClick={() => setDismissed((current) => current.includes(item.key) ? current : [...current, item.key])}
                             title="Dismiss this item"
                             aria-label={`Dismiss ${item.title}`}
                             className="flex h-6 w-6 items-center justify-center rounded-full text-[#8a8270] transition-colors hover:bg-[#eee7dc] hover:text-[#221f1a] focus:outline-none focus:ring-2 focus:ring-[#1c7d73]/30"
@@ -834,16 +774,12 @@ export function OrbitAIBriefing({
                       <p className={`${index === 0 ? 'mt-4' : 'mt-2'} text-[12.5px] leading-[1.6] text-[#736b5c]`}>{item.reasoning}</p>
                       <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3 text-[12.5px] font-semibold">
                         {item.primaryAction && (index === 0
-                          ? <button disabled={busyId === item.id} onClick={() => act(item, item.primaryAction)} className="rounded-[13px] bg-[#221f1a] px-5 py-3 text-white disabled:opacity-50">{busyId === item.id ? 'Working…' : item.primaryAction.label}</button>
-                          : <button disabled={busyId === item.id} onClick={() => act(item, item.primaryAction)} className="text-[#1c7d73] disabled:opacity-50">{busyId === item.id ? 'Working…' : item.primaryAction.label}</button>)}
-                        {item.secondaryAction && <button disabled={busyId === item.id} onClick={() => act(item, item.secondaryAction)} className="text-[#1c7d73] disabled:opacity-50">{item.secondaryAction.label}</button>}
-                        {index > 0 && <button onClick={() => setDismissed((current) => [...current, item.id])} className="text-[#6b6353]">{item.dismissLabel}</button>}
+                          ? <button onClick={() => act(item.primaryAction)} className="rounded-[13px] bg-[#221f1a] px-5 py-3 text-white">{item.primaryAction.label}</button>
+                          : <button onClick={() => act(item.primaryAction)} className="text-[#1c7d73]">{item.primaryAction.label}</button>)}
+                        {index > 0 && <button onClick={() => setDismissed((current) => [...current, item.key])} className="text-[#6b6353]">{item.dismissLabel}</button>}
                       </div>
-                    </>
-                  )}
                 </section>
-              );
-            })}
+              ))}
             {more > 0 && <button onClick={() => navigate('/employee/requests')} className="mb-5 text-[12px] font-semibold text-[#1c7d73]">{more} more →</button>}
           </>
         )}

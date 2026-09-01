@@ -25,6 +25,10 @@ class UserSettingsResponse(BaseModel):
     sidebar_mode: str
     dashboard_density: str
     mfa_enabled: bool
+    mfa_globally_enabled: bool = True
+    mfa_user_opt_out_allowed: bool = True
+    mfa_effective: bool = False
+    mfa_configured: bool = False
     notification_company_announcements: bool
     notification_leave_updates: bool
     notification_attendance_reminders: bool
@@ -50,6 +54,18 @@ class GeneralSettingsUpdate(BaseModel):
 
 class SecuritySettingsUpdate(BaseModel):
     mfa_enabled: bool
+
+
+class OrganizationSecurityPolicyUpdate(BaseModel):
+    mfa_enabled: bool
+    allow_user_mfa_opt_out: bool
+
+
+class OrganizationSecurityPolicyResponse(BaseModel):
+    mfa_enabled: bool
+    allow_user_mfa_opt_out: bool
+    updated_at: datetime | None = None
+    updated_by: str | None = None
 
 
 class NotificationSettingsUpdate(BaseModel):

@@ -3,16 +3,17 @@ Dashboard API — pulls real KPI data from database.
 """
 
 from datetime import date, datetime, timedelta
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, exists, func, or_
 from app.core.database import get_db
+from app.core.authentication import AuthenticatedActor, get_authenticated_actor
 from app.models.employee import Employee
 from app.models.allocation import Allocation
 from app.models.leave_attendance import LeaveRequest, Attendance, AttendanceCorrection
 from app.models.operations import Announcement
 from app.models.training import TrainingEnrollment
-from app.services.settings_service import get_current_employee
+from app.core.authorization import ADMIN_ROLES, normalize_role
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
@@ -31,14 +32,42 @@ def employee_name(employee: Employee) -> str:
     return f"{employee.first_name} {employee.last_name}".strip()
 
 
+def _workforce_scope(db: Session, actor: Employee) -> list[str] | None:
+    """Return None for organization-wide admins or manager-scoped employee IDs."""
+    role = normalize_role(actor.role)
+    if role in ADMIN_ROLES:
+        return None
+    if role != "manager":
+        raise HTTPException(status_code=403, detail="Not authorized to view workforce dashboard data.")
+    actor_name = employee_name(actor)
+    return [
+        employee_id
+        for (employee_id,) in db.query(Employee.id).filter(
+            Employee.id != actor.id,
+            Employee.is_active.is_(True),
+            or_(Employee.manager_id == actor.id, Employee.reporting_manager == actor_name),
+        ).all()
+    ]
+
+
+def _scoped_employee_query(db: Session, employee_ids: list[str] | None):
+    query = db.query(Employee).filter(Employee.work_email != "superadmin@reknew.ai")
+    if employee_ids is not None:
+        query = query.filter(Employee.id.in_(employee_ids))
+    return query
+
+
+def _scope_by_employee(query, column, employee_ids: list[str] | None):
+    return query if employee_ids is None else query.filter(column.in_(employee_ids))
+
+
 @router.get("/employee-context")
 async def get_employee_dashboard_context(
     db: Session = Depends(get_db),
-    current_user_id: str | None = Header(None, alias="x-user-id"),
-    current_user_email: str | None = Header(None, alias="x-user-email"),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
     """Return the signed-in employee's reporting context and direct-report status."""
-    actor = get_current_employee(db, current_user_id, current_user_email)
+    actor = authenticated_actor.employee
     manager = db.query(Employee).filter(Employee.id == actor.manager_id).first() if actor.manager_id else None
     if not manager and actor.reporting_manager:
         manager_reference = actor.reporting_manager.strip().lower()
@@ -104,14 +133,18 @@ async def get_employee_dashboard_context(
 
 
 @router.get("/kpis")
-async def get_kpis(db: Session = Depends(get_db)):
+async def get_kpis(
+    db: Session = Depends(get_db),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
+):
     """Get all dashboard KPI metrics from real data."""
 
     today = date.today()
     now = datetime.utcnow()
 
     # Employee counts (exclude super admin)
-    base = db.query(Employee).filter(Employee.work_email != "superadmin@reknew.ai")
+    employee_ids = _workforce_scope(db, authenticated_actor.employee)
+    base = _scoped_employee_query(db, employee_ids)
     total = base.count()
     active = base.filter(Employee.employment_status == "active").count()
     inactive = base.filter(Employee.employment_status != "active").count()
@@ -151,13 +184,18 @@ async def get_kpis(db: Session = Depends(get_db)):
     ).order_by(Employee.first_name.asc(), Employee.last_name.asc()).all()
 
     # Pending leave requests
-    pending_leave = db.query(LeaveRequest).filter(LeaveRequest.status == "pending").count()
+    pending_leave = _scope_by_employee(
+        db.query(LeaveRequest).filter(LeaveRequest.status == "pending"),
+        LeaveRequest.employee_id,
+        employee_ids,
+    ).count()
 
     # Today's attendance rate
-    today_present = db.query(Attendance).filter(
+    today_present_query = db.query(Attendance).filter(
         Attendance.date == today,
         Attendance.status.in_(["present", "wfh", "late"])
-    ).count()
+    )
+    today_present = _scope_by_employee(today_present_query, Attendance.employee_id, employee_ids).count()
     rate = round((today_present / active * 100)) if active > 0 else 0
     attendance_rate = rate
 
@@ -214,21 +252,31 @@ async def get_kpis(db: Session = Depends(get_db)):
 
 
 @router.get("/pending-tasks")
-async def get_pending_tasks(db: Session = Depends(get_db)):
+async def get_pending_tasks(
+    db: Session = Depends(get_db),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
+):
     """Get pending task counts for dashboard widgets."""
 
-    pending_leave = db.query(LeaveRequest).filter(LeaveRequest.status == "pending").count()
-    pending_corrections = db.query(AttendanceCorrection).filter(AttendanceCorrection.status == "pending").count()
+    employee_ids = _workforce_scope(db, authenticated_actor.employee)
+    pending_leave = _scope_by_employee(
+        db.query(LeaveRequest).filter(LeaveRequest.status == "pending"),
+        LeaveRequest.employee_id,
+        employee_ids,
+    ).count()
+    pending_corrections = _scope_by_employee(
+        db.query(AttendanceCorrection).filter(AttendanceCorrection.status == "pending"),
+        AttendanceCorrection.employee_id,
+        employee_ids,
+    ).count()
 
     # Onboarding = employees who haven't completed first-time setup
-    pending_onboarding = db.query(Employee).filter(
+    pending_onboarding = _scoped_employee_query(db, employee_ids).filter(
         Employee.is_first_login == True,
-        Employee.work_email != "superadmin@reknew.ai",
     ).count()
 
     # Profile updates = employees missing key fields (DOB, gender, emergency contact)
-    missing_profiles = db.query(Employee).filter(
-        Employee.work_email != "superadmin@reknew.ai",
+    missing_profiles = _scoped_employee_query(db, employee_ids).filter(
         Employee.employment_status == "active",
     ).filter(
         (Employee.date_of_birth.is_(None)) |
@@ -247,7 +295,10 @@ async def get_pending_tasks(db: Session = Depends(get_db)):
 
 
 @router.get("/announcements")
-async def get_dashboard_announcements(db: Session = Depends(get_db)):
+async def get_dashboard_announcements(
+    db: Session = Depends(get_db),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
+):
     """Get active announcements for the compact dashboard widget."""
 
     now = datetime.utcnow()
@@ -279,15 +330,22 @@ async def get_dashboard_announcements(db: Session = Depends(get_db)):
 
 
 @router.get("/department-chart")
-async def get_department_chart(db: Session = Depends(get_db)):
+async def get_department_chart(
+    db: Session = Depends(get_db),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
+):
     """Get employee count per department."""
 
-    results = db.query(
+    employee_ids = _workforce_scope(db, authenticated_actor.employee)
+    query = db.query(
         Employee.department, func.count(Employee.id)
     ).filter(
         Employee.work_email != "superadmin@reknew.ai",
         Employee.employment_status == "active",
-    ).group_by(Employee.department).all()
+    )
+    if employee_ids is not None:
+        query = query.filter(Employee.id.in_(employee_ids))
+    results = query.group_by(Employee.department).all()
 
     return {
         "departments": [{"dept": dept, "count": count} for dept, count in results if dept]
@@ -295,12 +353,15 @@ async def get_department_chart(db: Session = Depends(get_db)):
 
 
 @router.get("/attendance-trend")
-async def get_attendance_trend(db: Session = Depends(get_db)):
+async def get_attendance_trend(
+    db: Session = Depends(get_db),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
+):
     """Get daily attendance rate for last 10 working days."""
 
     today = date.today()
-    active_count = db.query(Employee).filter(
-        Employee.work_email != "superadmin@reknew.ai",
+    employee_ids = _workforce_scope(db, authenticated_actor.employee)
+    active_count = _scoped_employee_query(db, employee_ids).filter(
         Employee.employment_status == "active",
     ).count()
 
@@ -313,10 +374,11 @@ async def get_attendance_trend(db: Session = Depends(get_db)):
 
     while days_collected < 10:
         if check_date.weekday() < 5:  # weekdays only
-            present = db.query(Attendance).filter(
+            present_query = db.query(Attendance).filter(
                 Attendance.date == check_date,
                 Attendance.status.in_(["present", "wfh", "late"])
-            ).count()
+            )
+            present = _scope_by_employee(present_query, Attendance.employee_id, employee_ids).count()
             rate = round((present / active_count) * 100, 1)
             trend.append({
                 "day": check_date.strftime("%d %b"),
@@ -330,15 +392,20 @@ async def get_attendance_trend(db: Session = Depends(get_db)):
 
 
 @router.get("/on-leave-today")
-async def get_on_leave_today(db: Session = Depends(get_db)):
+async def get_on_leave_today(
+    db: Session = Depends(get_db),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
+):
     """Get employees on approved leave today."""
 
     today = date.today()
-    on_leave = db.query(LeaveRequest).filter(
+    employee_ids = _workforce_scope(db, authenticated_actor.employee)
+    on_leave_query = db.query(LeaveRequest).filter(
         LeaveRequest.status == "approved",
         LeaveRequest.start_date <= today,
         LeaveRequest.end_date >= today,
-    ).all()
+    )
+    on_leave = _scope_by_employee(on_leave_query, LeaveRequest.employee_id, employee_ids).all()
 
     result = []
     for lr in on_leave:
@@ -355,7 +422,10 @@ async def get_on_leave_today(db: Session = Depends(get_db)):
 
 
 @router.get("/leave-calendar")
-async def get_leave_calendar(db: Session = Depends(get_db)):
+async def get_leave_calendar(
+    db: Session = Depends(get_db),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
+):
     """Get leave count per day for current month."""
 
     today = date.today()
@@ -365,14 +435,16 @@ async def get_leave_calendar(db: Session = Depends(get_db)):
     else:
         last_day = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
 
+    employee_ids = _workforce_scope(db, authenticated_actor.employee)
     calendar = []
     for day_num in range(1, last_day.day + 1):
         d = date(today.year, today.month, day_num)
-        count = db.query(LeaveRequest).filter(
+        count_query = db.query(LeaveRequest).filter(
             LeaveRequest.status == "approved",
             LeaveRequest.start_date <= d,
             LeaveRequest.end_date >= d,
-        ).count()
+        )
+        count = _scope_by_employee(count_query, LeaveRequest.employee_id, employee_ids).count()
         calendar.append({"day": day_num, "count": count})
 
     return {"calendar": calendar, "month": today.strftime("%B %Y")}

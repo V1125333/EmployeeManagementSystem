@@ -32,6 +32,10 @@ class Settings:
     # App
     APP_NAME: str = os.getenv("APP_NAME", "Reknew Orbit")
     APP_ENV: str = os.getenv("APP_ENV", "development")
+    MIGRATION_CHECK_ENABLED: bool = os.getenv(
+        "MIGRATION_CHECK_ENABLED",
+        "true" if APP_ENV.strip().lower() == "production" else "false",
+    ).lower() == "true"
     CERTIFICATE_VERIFY_BASE_URL: str = os.getenv(
         "CERTIFICATE_VERIFY_BASE_URL",
         "https://reknew.ai/verify",
@@ -45,12 +49,21 @@ class Settings:
     AUTH_JWT_ISSUER: str = os.getenv("AUTH_JWT_ISSUER", "reknew-orbit-api")
     AUTH_JWT_AUDIENCE: str = os.getenv("AUTH_JWT_AUDIENCE", "reknew-orbit-web")
     AUTH_ACCESS_TOKEN_MINUTES: int = int(os.getenv("AUTH_ACCESS_TOKEN_MINUTES", "15"))
+    # Orbit is currently a single-organization application. This value is
+    # server-controlled context, not multi-tenant isolation, and is never read
+    # from a request header or other client-supplied identity field.
+    AUTH_ORGANIZATION_SCOPE: str = os.getenv(
+        "AUTH_ORGANIZATION_SCOPE", "reknew"
+    )
     AI_CHAT_REQUESTS_PER_MINUTE: int = int(os.getenv("AI_CHAT_REQUESTS_PER_MINUTE", "10"))
     AI_CHAT_REQUESTS_PER_DAY: int = int(os.getenv("AI_CHAT_REQUESTS_PER_DAY", "100"))
     AI_CHAT_TIMEOUT_SECONDS: float = float(os.getenv("AI_CHAT_TIMEOUT_SECONDS", "15"))
     AI_CHAT_MAX_REQUEST_BYTES: int = int(os.getenv("AI_CHAT_MAX_REQUEST_BYTES", "4096"))
     AI_CHAT_MAX_RESPONSE_BYTES: int = int(os.getenv("AI_CHAT_MAX_RESPONSE_BYTES", "24576"))
     AI_CHAT_MAX_BALANCES: int = int(os.getenv("AI_CHAT_MAX_BALANCES", "20"))
+    AI_PLATFORM_PREVIEW_ENABLED: bool = (
+        os.getenv("AI_PLATFORM_PREVIEW_ENABLED", "false").lower() == "true"
+    )
     AI_CONVERSATION_RETENTION_DAYS: int = int(
         os.getenv("AI_CONVERSATION_RETENTION_DAYS", "90")
     )
@@ -92,6 +105,25 @@ class Settings:
         "CONTEXTUAL_LLM_PROMPT_VERSION",
         "contextual_leave_interpreter_v2",
     )
+    ORBIT_CLASSIFIER_PROVIDER: str = os.getenv("ORBIT_CLASSIFIER_PROVIDER", "")
+    ORBIT_CLASSIFIER_MODEL: str = os.getenv("ORBIT_CLASSIFIER_MODEL", "")
+    ORBIT_CLASSIFIER_API_KEY: str = os.getenv("ORBIT_CLASSIFIER_API_KEY", "")
+    ORBIT_CLASSIFIER_BASE_URL: str = os.getenv("ORBIT_CLASSIFIER_BASE_URL", "")
+    ORBIT_CLASSIFIER_TIMEOUT_SECONDS: float = float(
+        os.getenv("ORBIT_CLASSIFIER_TIMEOUT_SECONDS", "2.5")
+    )
+    ORBIT_CLASSIFIER_RETRY_COUNT: int = int(
+        os.getenv("ORBIT_CLASSIFIER_RETRY_COUNT", "0")
+    )
+    ORBIT_CLASSIFIER_CONFIDENCE_THRESHOLD: float = float(
+        os.getenv("ORBIT_CLASSIFIER_CONFIDENCE_THRESHOLD", "0.9")
+    )
+    ORBIT_CLASSIFIER_MAX_OUTPUT_TOKENS: int = int(
+        os.getenv("ORBIT_CLASSIFIER_MAX_OUTPUT_TOKENS", "80")
+    )
+    ORBIT_CONTEXT_MAX_MESSAGES: int = int(
+        os.getenv("ORBIT_CONTEXT_MAX_MESSAGES", "8")
+    )
     COMPLIANCE_COMPLIANT_THRESHOLD_HOURS: float = float(os.getenv("COMPLIANCE_COMPLIANT_THRESHOLD_HOURS", "2.0"))
     COMPLIANCE_WARNING_THRESHOLD_HOURS: float = float(os.getenv("COMPLIANCE_WARNING_THRESHOLD_HOURS", "5.0"))
 
@@ -122,6 +154,9 @@ class Settings:
     MAX_LOGIN_ATTEMPTS: int = int(os.getenv("MAX_LOGIN_ATTEMPTS", "3"))
     LOGIN_CHALLENGE_EXPIRY_MINUTES: int = int(os.getenv("LOGIN_CHALLENGE_EXPIRY_MINUTES", "5"))
     UNLOCK_REQUEST_RATE_LIMIT_PER_HOUR: int = int(os.getenv("UNLOCK_REQUEST_RATE_LIMIT_PER_HOUR", "3"))
+    PUBLIC_AUTH_ATTEMPTS_PER_HOUR: int = int(os.getenv("PUBLIC_AUTH_ATTEMPTS_PER_HOUR", "10"))
+    PUBLIC_AUTH_CHALLENGE_ATTEMPTS_PER_HOUR: int = int(os.getenv("PUBLIC_AUTH_CHALLENGE_ATTEMPTS_PER_HOUR", "5"))
+    CERTIFICATE_VERIFY_RATE_LIMIT_PER_HOUR: int = int(os.getenv("CERTIFICATE_VERIFY_RATE_LIMIT_PER_HOUR", "60"))
 
     # Server-side transactional email (never expose these as VITE_* variables)
     TRANSACTIONAL_EMAIL_ENABLED: bool = os.getenv("TRANSACTIONAL_EMAIL_ENABLED", "false").lower() == "true"
@@ -143,6 +178,8 @@ class Settings:
     GRAPH_CERTIFICATE_PATH: str = os.getenv("GRAPH_CERTIFICATE_PATH", "")
     GRAPH_CERTIFICATE_PASSWORD: str = os.getenv("GRAPH_CERTIFICATE_PASSWORD", "")
     GRAPH_MANAGED_IDENTITY_CLIENT_ID: str = os.getenv("GRAPH_MANAGED_IDENTITY_CLIENT_ID", "")
+    HERMES_API_URL: str = os.getenv("HERMES_API_URL", "")
+    HERMES_API_KEY: str = os.getenv("HERMES_API_KEY", "")
 
 
 settings = Settings()

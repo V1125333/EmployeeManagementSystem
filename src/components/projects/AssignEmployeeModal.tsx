@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useEffect, useMemo, useState } from 'react';
 import { X, UserPlus } from 'lucide-react';
 import { Badge, Button, Card, Avatar } from '@/components/ui';
@@ -54,13 +55,10 @@ interface AssignEmployeeModalProps {
   mode?: 'assign' | 'edit' | 'change' | 'extend';
   initialEmployeeId?: string;
   initialAllocationPercentage?: number;
+  initialStartDate?: string;
   lockEmployee?: boolean;
   onClose: () => void;
   onAssigned: () => void;
-}
-
-function normalizeRole(role?: string) {
-  return (role || '').toLowerCase().replace(/\s+/g, '_');
 }
 
 function initials(name: string) {
@@ -106,6 +104,7 @@ export function AssignEmployeeModal({
   mode = allocation ? 'edit' : 'assign',
   initialEmployeeId = '',
   initialAllocationPercentage = 100,
+  initialStartDate = '',
   lockEmployee = false,
   onClose,
   onAssigned,
@@ -135,15 +134,12 @@ export function AssignEmployeeModal({
 
   const headers = useMemo(() => ({
     'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-    'x-user-role': normalizeRole(user?.role),
-  }), [user]);
+  }), []);
 
   useEffect(() => {
     if (!open) return;
     setError('');
-    fetch(`${API_BASE}/projects/assignable-employees?limit=250`, { headers })
+    authenticatedFetch(`${API_BASE}/projects/assignable-employees?limit=250`, { headers })
       .then((res) => res.ok ? res.json() : Promise.reject(new Error('Could not load employees.')))
       .then((data) => {
         const nextEmployees = data.employees || [];
@@ -168,14 +164,14 @@ export function AssignEmployeeModal({
       setAllocationPercentage(allocation?.allocation_percentage || Math.min(100, Math.max(1, initialAllocationPercentage)));
       setBillingType(allocation?.billing_type || 'billable');
       setStatus(allocation?.status || 'active');
-      setStartDate(allocation?.start_date || new Date().toISOString().slice(0, 10));
+      setStartDate(allocation?.start_date || initialStartDate || new Date().toISOString().slice(0, 10));
       setEndDate(allocation?.end_date || '');
       setNotes(allocation?.notes || '');
       setError('');
       setCapacityMessage('');
       setCapacityWarning(false);
     }
-  }, [allocation, initialAllocationPercentage, initialEmployeeId, open, project?.id, user?.id]);
+  }, [allocation, initialAllocationPercentage, initialEmployeeId, initialStartDate, open, project?.id, user?.id]);
 
   useEffect(() => {
     if (!open || !employeeId || !startDate || !allocationPercentage) {
@@ -191,7 +187,7 @@ export function AssignEmployeeModal({
         });
         if (endDate) params.set('end_date', endDate);
         if (allocation?.id) params.set('exclude_allocation_id', allocation.id);
-        const res = await fetch(`${API_BASE}/allocations/employee/${employeeId}/capacity-check?${params.toString()}`, {
+        const res = await authenticatedFetch(`${API_BASE}/allocations/employee/${employeeId}/capacity-check?${params.toString()}`, {
           headers,
           signal: controller.signal,
         });
@@ -254,7 +250,7 @@ export function AssignEmployeeModal({
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${API_BASE}/allocations/${allocation ? allocation.id : ''}`, {
+      const res = await authenticatedFetch(`${API_BASE}/allocations/${allocation ? allocation.id : ''}`, {
         method: allocation ? 'PATCH' : 'POST',
         headers,
         body: JSON.stringify({

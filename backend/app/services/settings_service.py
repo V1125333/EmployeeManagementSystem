@@ -20,6 +20,7 @@ from app.schemas.settings import (
     SecuritySettingsUpdate,
     SupportTicketCreate,
 )
+from app.services.mfa_policy_service import update_user_mfa_preference
 
 
 def utc_now() -> datetime:
@@ -123,8 +124,7 @@ def update_general_settings(db: Session, employee: Employee, payload: GeneralSet
 
 
 def update_security_settings(db: Session, employee: Employee, payload: SecuritySettingsUpdate) -> UserSettings:
-    settings = get_or_create_user_settings(db, employee)
-    settings.mfa_enabled = payload.mfa_enabled
+    settings = update_user_mfa_preference(db, employee, payload.mfa_enabled)
     mark_updated(settings, employee)
     db.commit()
     db.refresh(settings)

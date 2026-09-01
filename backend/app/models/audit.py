@@ -5,11 +5,14 @@ Centralized append-only audit trail.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, JSON, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+
+
+AUDIT_JSON_TYPE = JSONB().with_variant(JSON(), "sqlite")
 
 
 class AuditLog(Base):
@@ -29,11 +32,11 @@ class AuditLog(Base):
     action: Mapped[str] = mapped_column(String(120), nullable=False)
     entity_type: Mapped[str] = mapped_column(String(80), nullable=False)
     entity_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    old_values: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    new_values: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    changed_fields: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    old_values: Mapped[dict | None] = mapped_column(AUDIT_JSON_TYPE, nullable=True)
+    new_values: Mapped[dict | None] = mapped_column(AUDIT_JSON_TYPE, nullable=True)
+    changed_fields: Mapped[dict | None] = mapped_column(AUDIT_JSON_TYPE, nullable=True)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    metadata_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(AUDIT_JSON_TYPE, nullable=True)
     source: Mapped[str] = mapped_column(String(30), default="api")
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)

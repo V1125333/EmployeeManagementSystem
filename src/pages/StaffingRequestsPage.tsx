@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useEffect, useMemo, useState, type ElementType } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BriefcaseBusiness, Filter, Plus, SearchX, UsersRound } from 'lucide-react';
@@ -81,13 +82,10 @@ export function StaffingRequestsPage() {
 
   const headers = useMemo(() => ({
     'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-    'x-user-role': normalizeRole(user?.role),
-  }), [user]);
+  }), []);
 
   const loadOptions = async () => {
-    const res = await fetch(`${API_BASE}/staffing-requests/options`, { headers });
+    const res = await authenticatedFetch(`${API_BASE}/staffing-requests/options`, { headers });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Unable to load staffing options.');
     setOptions(data);
@@ -103,7 +101,7 @@ export function StaffingRequestsPage() {
       if (priority !== 'all') params.set('priority', priority);
       if (department !== 'all') params.set('department', department);
       if (search.trim()) params.set('project_name', search.trim());
-      const res = await fetch(`${API_BASE}/staffing-requests?${params.toString()}`, { headers });
+      const res = await authenticatedFetch(`${API_BASE}/staffing-requests?${params.toString()}`, { headers });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Unable to load staffing requests.');
       setRows(data.items || []);
@@ -137,7 +135,7 @@ export function StaffingRequestsPage() {
   const submitRequest = async (payload: StaffingRequestPayload) => {
     setSaving(true);
     try {
-      const res = await fetch(`${API_BASE}/staffing-requests`, { method: 'POST', headers, body: JSON.stringify(payload) });
+      const res = await authenticatedFetch(`${API_BASE}/staffing-requests`, { method: 'POST', headers, body: JSON.stringify(payload) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Unable to create staffing request.');
       showToast({ message: 'Staffing request created.' });
@@ -153,7 +151,7 @@ export function StaffingRequestsPage() {
   const cancelRequest = async (requestId: string) => {
     if (!window.confirm('Cancel this staffing request?')) return;
     try {
-      const res = await fetch(`${API_BASE}/staffing-requests/${requestId}`, { method: 'DELETE', headers });
+      const res = await authenticatedFetch(`${API_BASE}/staffing-requests/${requestId}`, { method: 'DELETE', headers });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.detail || 'Unable to cancel staffing request.');
       showToast({ message: 'Staffing request cancelled.' });

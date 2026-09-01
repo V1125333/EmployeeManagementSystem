@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, ArrowLeft, CheckCircle2, RefreshCw, UserCheck, UserRoundX } from 'lucide-react';
@@ -187,7 +188,7 @@ function CreateAllocationDrawer({
           start_date: startDate,
         });
         if (!openEnded && endDate) params.set('end_date', endDate);
-        const res = await fetch(`${API_BASE}/allocations/employee/${candidate.employee_id}/capacity-check?${params.toString()}`, { headers });
+        const res = await authenticatedFetch(`${API_BASE}/allocations/employee/${candidate.employee_id}/capacity-check?${params.toString()}`, { headers });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Unable to check capacity.');
         setCapacity(data);
@@ -217,7 +218,7 @@ function CreateAllocationDrawer({
     setSubmitting(true);
     setInlineError('');
     try {
-      const res = await fetch(`${API_BASE}/staffing-requests/${request.id}/create-allocation`, {
+      const res = await authenticatedFetch(`${API_BASE}/staffing-requests/${request.id}/create-allocation`, {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -362,25 +363,22 @@ export function StaffingRequestDetailPage() {
 
   const headers = useMemo(() => ({
     'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-    'x-user-role': normalizeRole(user?.role),
-  }), [user]);
+  }), []);
 
   const load = async () => {
     if (!requestId) return;
     setLoading(true);
     try {
       const [requestRes, optionsRes] = await Promise.all([
-        fetch(`${API_BASE}/staffing-requests/${requestId}`, { headers }),
-        fetch(`${API_BASE}/staffing-requests/options`, { headers }),
+        authenticatedFetch(`${API_BASE}/staffing-requests/${requestId}`, { headers }),
+        authenticatedFetch(`${API_BASE}/staffing-requests/options`, { headers }),
       ]);
       const requestData = await requestRes.json();
       if (!requestRes.ok) throw new Error(requestData.detail || 'Unable to load staffing request.');
       setRequest(requestData);
       if (optionsRes.ok) setOptions(await optionsRes.json());
       setLoadingAllocations(true);
-      const allocationsRes = await fetch(`${API_BASE}/staffing-requests/${requestId}/allocations`, { headers });
+      const allocationsRes = await authenticatedFetch(`${API_BASE}/staffing-requests/${requestId}/allocations`, { headers });
       if (allocationsRes.ok) setAllocations(await allocationsRes.json());
     } catch (err) {
       showToast({ message: err instanceof Error ? err.message : 'Unable to load staffing request.' });
@@ -397,7 +395,7 @@ export function StaffingRequestDetailPage() {
   const action = async (path: string, method = 'POST', body?: Record<string, unknown>) => {
     setSaving(true);
     try {
-      const res = await fetch(`${API_BASE}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+      const res = await authenticatedFetch(`${API_BASE}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Action failed.');
       setRequest(data);
@@ -414,7 +412,7 @@ export function StaffingRequestDetailPage() {
     if (!requestId) return;
     setSaving(true);
     try {
-      const res = await fetch(`${API_BASE}/staffing-requests/${requestId}`, { method: 'PATCH', headers, body: JSON.stringify(payload) });
+      const res = await authenticatedFetch(`${API_BASE}/staffing-requests/${requestId}`, { method: 'PATCH', headers, body: JSON.stringify(payload) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Unable to update staffing request.');
       setRequest(data);

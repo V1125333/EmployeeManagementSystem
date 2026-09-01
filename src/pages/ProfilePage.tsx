@@ -1,3 +1,4 @@
+import { authenticatedFetch, publicFetch } from '@/services/apiClient';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -419,14 +420,8 @@ export function ProfilePage() {
     setError('');
     try {
       const res = employeeIdParam
-        ? await fetch(`${API_BASE}/employees/${encodeURIComponent(employeeIdParam)}`, {
-          headers: {
-            'x-user-id': user?.id || '',
-            'x-user-role': normalizeRole(user?.role),
-            'x-user-email': user?.email || '',
-          },
-        })
-        : await fetch(`${API_BASE}/auth/me/${encodeURIComponent(user?.email || '')}`);
+        ? await authenticatedFetch(`${API_BASE}/employees/${encodeURIComponent(employeeIdParam)}`)
+        : await authenticatedFetch(`${API_BASE}/auth/me`);
       const data = await res.json();
       const nextProfile = employeeIdParam ? data : data.employee;
       if (res.ok && nextProfile && (employeeIdParam || data.success)) {
@@ -456,13 +451,7 @@ export function ProfilePage() {
     setAllocationsLoading(true);
     setAllocationsError('');
     try {
-      const res = await fetch(`${API_BASE}/allocations/employee/${employeeId}`, {
-        headers: {
-          'x-user-id': user?.id || employeeId,
-          'x-user-role': normalizeRole(user?.role),
-          'x-user-email': user?.email || profile?.work_email || '',
-        },
-      });
+      const res = await authenticatedFetch(`${API_BASE}/allocations/employee/${employeeId}`);
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.detail || 'Unable to load allocations');
@@ -617,7 +606,7 @@ export function ProfilePage() {
     if (!profile || !isOwnProfile) return;
     setPasswordResetLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/forgot-password/initiate`, {
+      const res = await publicFetch(`${API_BASE}/auth/forgot-password/initiate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: profile.work_email.toLowerCase() }),
@@ -689,10 +678,6 @@ export function ProfilePage() {
 
     const headers = {
       'Content-Type': 'application/json',
-      'x-user-id': user?.id || profile.id,
-      'x-user-role': normalizeRole(user?.role),
-      'x-user-email': user?.email || profile.work_email,
-      'x-user-name': user?.name || form.full_name,
     };
 
     setSaving(true);
@@ -709,7 +694,7 @@ export function ProfilePage() {
         ...(removeImage ? { profile_image_url: null } : {}),
       };
 
-      const res = await fetch(`${API_BASE}/employees/${profile.id}`, {
+      const res = await authenticatedFetch(`${API_BASE}/employees/${profile.id}`, {
         method: 'PUT',
         headers,
         body: JSON.stringify(body),
@@ -722,14 +707,8 @@ export function ProfilePage() {
       if (imageFile) {
         const imageData = new FormData();
         imageData.append('file', imageFile);
-        const uploadRes = await fetch(`${API_BASE}/employees/${profile.id}/upload-profile-picture`, {
+        const uploadRes = await authenticatedFetch(`${API_BASE}/employees/${profile.id}/upload-profile-picture`, {
           method: 'POST',
-          headers: {
-            'x-user-id': user?.id || profile.id,
-            'x-user-role': normalizeRole(user?.role),
-            'x-user-email': user?.email || profile.work_email,
-            'x-user-name': user?.name || form.full_name,
-          },
           body: imageData,
         });
         const uploadResult = await uploadRes.json();
@@ -738,7 +717,7 @@ export function ProfilePage() {
         }
       }
 
-      const refreshedRes = await fetch(`${API_BASE}/auth/me/${encodeURIComponent(profile.work_email)}`);
+      const refreshedRes = await authenticatedFetch(`${API_BASE}/auth/me`);
       const refreshed = await refreshedRes.json();
       const nextProfile = refreshed.employee || result.employee;
       setProfile(nextProfile);
@@ -776,15 +755,11 @@ export function ProfilePage() {
 
     const headers = {
       'Content-Type': 'application/json',
-      'x-user-id': user?.id || profile.id,
-      'x-user-role': normalizeRole(user?.role),
-      'x-user-email': user?.email || profile.work_email,
-      'x-user-name': user?.name || form.full_name,
     };
 
     setSaving(true);
     try {
-      const res = await fetch(`${API_BASE}/employees/${profile.id}`, {
+      const res = await authenticatedFetch(`${API_BASE}/employees/${profile.id}`, {
         method: 'PUT',
         headers,
         body: JSON.stringify({

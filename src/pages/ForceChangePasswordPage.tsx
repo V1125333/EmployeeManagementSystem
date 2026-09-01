@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Loader2, Lock, ShieldCheck } from 'lucide-react';
@@ -8,7 +9,7 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
 export function ForceChangePasswordPage() {
   const navigate = useNavigate();
-  const { user, isAuthenticated, updateUser, logout } = useAuth();
+  const { user, isAuthenticated, updateUser, refreshCurrentUser, logout } = useAuth();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -37,12 +38,10 @@ export function ForceChangePasswordPage() {
     }
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/auth/force-change-password`, {
+      const response = await authenticatedFetch(`${API_BASE}/auth/force-change-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user.id || '',
-          'x-user-email': user.email,
         },
         body: JSON.stringify({
           new_password: newPassword,
@@ -55,6 +54,7 @@ export function ForceChangePasswordPage() {
         return;
       }
       updateUser({ forcePasswordChange: false });
+      await refreshCurrentUser().catch(() => null);
       navigate('/', { replace: true });
     } catch {
       setError('Cannot connect to server. Please try again.');

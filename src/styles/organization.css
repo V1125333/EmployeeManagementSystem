@@ -13,8 +13,14 @@
 .org-search-results button:hover { background:#fff7ef; }
 .org-search-results strong { font-size:13px; }
 .org-search-results span { color:#8a8371; font-size:11px; }
+.org-zoom-controls { display:inline-flex; height:44px; align-items:center; gap:4px; padding:0 8px; border:1px solid #ece5d8; border-radius:12px; background:#fff; color:#1f2430; }
+.org-zoom-controls button { display:inline-flex; width:30px; height:30px; align-items:center; justify-content:center; border:0; border-radius:9px; background:transparent; color:#7a7263; cursor:pointer; }
+.org-zoom-controls button:hover:not(:disabled) { background:#fff7ef; color:#d97a34; }
+.org-zoom-controls button:disabled { opacity:.4; cursor:not-allowed; }
+.org-zoom-controls span { min-width:44px; text-align:center; font-size:12px; font-weight:700; }
 .org-export { display:inline-flex; height:44px; align-items:center; gap:7px; padding:0 16px; border:1px solid #ece5d8; border-radius:12px; background:#fff; color:#1f2430; font-size:13px; font-weight:700; cursor:pointer; }
 .org-chart-canvas { overflow-x:auto; border:1px solid #ece5d8; border-radius:18px; background-color:#fff; background-image:radial-gradient(#f0e8d8 1px,transparent 1px); background-size:22px 22px; }
+.org-chart-zoom-layer { min-width:max-content; }
 .org-tree-inner { display:flex; justify-content:center; min-width:min-content; padding:32px 32px 52px; }
 .org-tree,.org-tree ul { display:flex; justify-content:center; margin:0; padding:0; list-style:none; position:relative; }
 .org-tree ul { padding-top:24px; }
@@ -61,4 +67,4 @@
 .org-state,.org-empty { display:flex; min-height:260px; align-items:center; justify-content:center; gap:8px; border:1px solid #ece5d8; border-radius:18px; background:#fff; color:#8a8371; }
 .org-state-error { color:#b42318; }
 @media (max-width:900px) { .org-chart-header { flex-direction:column; } .org-chart-controls { width:100%; justify-content:flex-start; } }
-@media (max-width:640px) { .org-search-wrap { width:100%; order:3; } .org-chart-controls { display:grid; grid-template-columns:1fr auto; } .org-segmented { grid-column:1/-1; } .org-tier-row { gap:14px; } }
+@media (max-width:640px) { .org-search-wrap { width:100%; order:3; } .org-chart-controls { display:grid; grid-template-columns:1fr auto auto; } .org-segmented { grid-column:1/-1; } .org-tier-row { gap:14px; } }

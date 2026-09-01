@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ArrowRight, Download, FileText, Loader2, Search, Upload, X } from 'lucide-react';
 
@@ -140,14 +141,12 @@ export function EmployeeDocumentsPage() {
   const [uploadError, setUploadError] = useState('');
 
   const admin = ['super_admin', 'admin', 'hr_admin', 'global_access'].includes(roleKey(user?.role));
-  const headers = useMemo(() => ({ 'x-user-id': user?.id || '', 'x-user-email': user?.email || '' }), [user]);
-
   const loadDocuments = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     setError('');
     try {
-      const response = await fetch(`${API_BASE}/documents`, { headers });
+      const response = await authenticatedFetch(`${API_BASE}/documents`);
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.detail || 'Could not load documents.');
       setDocuments(Array.isArray(body) ? body : body?.items || []);
@@ -156,7 +155,7 @@ export function EmployeeDocumentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [headers, user]);
+  }, [user]);
 
   useEffect(() => { loadDocuments(); }, [loadDocuments]);
 
@@ -175,7 +174,7 @@ export function EmployeeDocumentsPage() {
       formData.append('file', file);
       formData.append('category', category);
       const target = updateDocument ? `${API_BASE}/documents/${updateDocument.id}` : `${API_BASE}/documents`;
-      const response = await fetch(target, { method: updateDocument ? 'PUT' : 'POST', headers, body: formData });
+      const response = await authenticatedFetch(target, { method: updateDocument ? 'PUT' : 'POST', body: formData });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.detail || 'Could not save document.');
       setShowUpload(false);
@@ -191,7 +190,7 @@ export function EmployeeDocumentsPage() {
 
   const downloadDocument = async (document: EmployeeDocument) => {
     try {
-      const response = await fetch(`${API_BASE}/documents/${document.id}/download`, { headers });
+      const response = await authenticatedFetch(`${API_BASE}/documents/${document.id}/download`);
       if (!response.ok) {
         const body = await response.json().catch(() => null);
         throw new Error(body?.detail || 'Could not download document.');

@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -101,17 +102,9 @@ function formatDate(value?: string | null) {
   return new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-function authHeaders(user: ReturnType<typeof useAuth>['user']) {
-  const role = (user?.role || '').toLowerCase().replace(/\s+/g, '_') === 'global_access'
-    ? 'super_admin'
-    : user?.role || '';
-
+function authHeaders() {
   return {
     'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-role': role,
-    'x-user-email': user?.email || '',
-    'x-user-name': user?.name || '',
   };
 }
 
@@ -291,7 +284,7 @@ function CreateAnnouncementDrawer({
 
   useEffect(() => {
     if (!open || form.audience_type !== 'employee') return;
-    fetch(`${API_BASE}/employees/`, { headers: authHeaders(user) })
+    authenticatedFetch(`${API_BASE}/employees/`, { headers: authHeaders() })
       .then((res) => res.json())
       .then((data) => setEmployees(data.employees || []))
       .catch(() => setEmployees([]));
@@ -345,9 +338,9 @@ function CreateAnnouncementDrawer({
     setError('');
     try {
       const url = form.id ? `${API_BASE}/announcements/${form.id}` : `${API_BASE}/announcements`;
-      const res = await fetch(url, {
+      const res = await authenticatedFetch(url, {
         method: form.id ? 'PUT' : 'POST',
-        headers: authHeaders(user),
+        headers: authHeaders(),
         body: JSON.stringify(toApiPayload(form, status)),
       });
       if (!res.ok) {
@@ -611,12 +604,12 @@ export function AnnouncementsPanel({
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Announcement | null>(null);
 
-  const headers = useMemo(() => authHeaders(user), [user]);
+  const headers = useMemo(() => authHeaders(), []);
 
   const loadAnnouncements = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/dashboard/announcements`, { headers });
+      const res = await authenticatedFetch(`${API_BASE}/dashboard/announcements`, { headers });
       const data = await res.json();
       setAnnouncements(data.announcements || []);
     } catch {
@@ -636,13 +629,13 @@ export function AnnouncementsPanel({
       .filter((announcement) => !announcement.requires_acknowledgment && !announcement.read)
       .slice(0, 5)
       .forEach((announcement) => {
-        fetch(`${API_BASE}/announcements/${announcement.id}/read`, { method: 'POST', headers }).catch(() => {});
+        authenticatedFetch(`${API_BASE}/announcements/${announcement.id}/read`, { method: 'POST', headers }).catch(() => {});
       });
   }, [announcements, canManage, headers]);
 
   const acknowledge = async (announcement: Announcement) => {
     try {
-      const res = await fetch(`${API_BASE}/announcements/${announcement.id}/acknowledge`, {
+      const res = await authenticatedFetch(`${API_BASE}/announcements/${announcement.id}/acknowledge`, {
         method: 'POST',
         headers,
       });
@@ -656,7 +649,7 @@ export function AnnouncementsPanel({
 
   const remove = async (announcement: Announcement) => {
     try {
-      const res = await fetch(`${API_BASE}/announcements/${announcement.id}`, {
+      const res = await authenticatedFetch(`${API_BASE}/announcements/${announcement.id}`, {
         method: 'DELETE',
         headers,
       });

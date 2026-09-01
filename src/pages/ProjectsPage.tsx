@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -219,10 +220,7 @@ export function ProjectsPage() {
 
   const headers = useMemo(() => ({
     'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-    'x-user-role': normalizeRole(user?.role),
-  }), [user]);
+  }), []);
   const isProjectAdmin = canManageProjects(user?.role);
   const isProjectManager = normalizeRole(user?.role) === 'manager';
   const isEmployeeAllocationsView = !isProjectAdmin && !isProjectManager;
@@ -260,8 +258,8 @@ export function ProjectsPage() {
     try {
       if (isEmployeeAllocationsView) {
         const allocationsRes = user?.id
-          ? await fetch(`${API_BASE}/allocations/employee/${user.id}`, { headers })
-          : await fetch(`${API_BASE}/projects/my-allocations`, { headers });
+          ? await authenticatedFetch(`${API_BASE}/allocations/employee/${user.id}`, { headers })
+          : await authenticatedFetch(`${API_BASE}/projects/my-allocations`, { headers });
         const allocationsPayload = await allocationsRes.json().catch(() => []);
         if (!allocationsRes.ok) throw new Error(allocationsPayload.detail || 'Could not load your allocations.');
         setProjects([]);
@@ -272,7 +270,7 @@ export function ProjectsPage() {
       const params = new URLSearchParams();
       if (search.trim()) params.set('search', search.trim());
       if (status !== 'all') params.set('status', status);
-      const res = await fetch(`${API_BASE}/projects/?${params.toString()}`, { headers });
+      const res = await authenticatedFetch(`${API_BASE}/projects/?${params.toString()}`, { headers });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload.detail || 'Could not load projects.');
       const rows = payload.projects || [];
@@ -292,7 +290,7 @@ export function ProjectsPage() {
   const loadAllocations = useCallback(async (projectId: string) => {
     setDetailLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/projects/${projectId}/allocations`, { headers });
+      const res = await authenticatedFetch(`${API_BASE}/projects/${projectId}/allocations`, { headers });
       const payload = await res.json().catch(() => []);
       if (!res.ok) throw new Error(payload.detail || 'Could not load assignments.');
       setAllocations(payload);
@@ -309,7 +307,7 @@ export function ProjectsPage() {
       return;
     }
     try {
-      const res = await fetch(`${API_BASE}/projects/client-options`, { headers });
+      const res = await authenticatedFetch(`${API_BASE}/projects/client-options`, { headers });
       const payload = await res.json().catch(() => []);
       if (!res.ok) throw new Error(payload.detail || 'Could not load clients.');
       setClientOptions(Array.isArray(payload) ? payload : []);
@@ -377,7 +375,7 @@ export function ProjectsPage() {
         end_date: form.end_date || null,
         status: form.status,
       };
-      const res = await fetch(`${API_BASE}/projects/${editingProject ? editingProject.id : ''}`, {
+      const res = await authenticatedFetch(`${API_BASE}/projects/${editingProject ? editingProject.id : ''}`, {
         method: editingProject ? 'PATCH' : 'POST',
         headers,
         body: JSON.stringify(body),
@@ -423,7 +421,7 @@ export function ProjectsPage() {
     setAllocationActionSaving(true);
     try {
       const today = new Date().toISOString().slice(0, 10);
-      const res = await fetch(`${API_BASE}/allocations/${allocation.id}`, {
+      const res = await authenticatedFetch(`${API_BASE}/allocations/${allocation.id}`, {
         method: type === 'remove' ? 'DELETE' : 'PATCH',
         headers,
         body: type === 'remove'

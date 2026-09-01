@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useState, useEffect, useCallback, useMemo, useRef, type DragEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -365,12 +366,7 @@ function ExecutiveEmployeeDetail({
     setLoadingPreview(true);
     setPreviewError('');
     setTemporaryPassword('');
-    fetch(`${API_BASE}/employees/${employee.id}/preview`, {
-      headers: {
-        'x-user-id': user?.id || '',
-        'x-user-email': user?.email || '',
-      },
-    })
+    authenticatedFetch(`${API_BASE}/employees/${employee.id}/preview`)
       .then(async (res) => {
         if (!res.ok) throw new Error('Preview data is not available');
         const data = await res.json();
@@ -425,12 +421,8 @@ function ExecutiveEmployeeDetail({
   const sendEmergencyReminder = async () => {
     setSendingEmergencyReminder(true);
     try {
-      const res = await fetch(`${API_BASE}/employees/${data.id}/remind-emergency-contact`, {
+      const res = await authenticatedFetch(`${API_BASE}/employees/${data.id}/remind-emergency-contact`, {
         method: 'POST',
-        headers: {
-          'x-user-id': user?.id || '',
-          'x-user-email': user?.email || '',
-        },
       });
       const result = await res.json().catch(() => ({}));
       if (!res.ok || result.success === false) {
@@ -451,12 +443,10 @@ function ExecutiveEmployeeDetail({
     }
     setResettingPassword(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/admin-reset-password`, {
+      const res = await authenticatedFetch(`${API_BASE}/auth/admin-reset-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user?.id || '',
-          'x-user-email': user?.email || '',
         },
         body: JSON.stringify({ employee_id: data.id, reason }),
       });
@@ -892,19 +882,14 @@ function EditEmployeeDrawer({
       return;
     }
 
-    const currentUserRole = user?.role === 'Global Access' ? 'super_admin' : user?.role || '';
 
     setSaving(true);
     setError('');
     try {
-      const res = await fetch(`${API_BASE}/employees/${employee.id}`, {
+      const res = await authenticatedFetch(`${API_BASE}/employees/${employee.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user?.id || '',
-          'x-user-role': currentUserRole,
-          'x-user-email': user?.email || '',
-          'x-user-name': user?.name || '',
         },
         body: JSON.stringify({
           ...form,
@@ -1035,12 +1020,10 @@ function EditEmployeeDrawer({
 function BulkEmployeeUploadModal({
   open,
   onClose,
-  headers,
   onImported,
 }: {
   open: boolean;
   onClose: () => void;
-  headers: Record<string, string>;
   onImported: (count: number) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1050,12 +1033,6 @@ function BulkEmployeeUploadModal({
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-
-  const uploadHeaders = useMemo(() => ({
-    'x-user-id': headers['x-user-id'] || '',
-    'x-user-email': headers['x-user-email'] || '',
-    'x-user-name': headers['x-user-name'] || '',
-  }), [headers]);
 
   useEffect(() => {
     if (!open) {
@@ -1075,7 +1052,7 @@ function BulkEmployeeUploadModal({
     try {
       const formData = new FormData();
       formData.append('file', nextFile);
-      const res = await fetch(`${API_BASE}/employees/bulk/validate`, { method: 'POST', headers: uploadHeaders, body: formData });
+      const res = await authenticatedFetch(`${API_BASE}/employees/bulk/validate`, { method: 'POST', body: formData });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.detail || 'Could not validate the employee file.');
       setRows(data?.rows || []);
@@ -1089,7 +1066,7 @@ function BulkEmployeeUploadModal({
   const downloadTemplate = async () => {
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/employees/bulk-template.csv`, { headers: uploadHeaders });
+      const res = await authenticatedFetch(`${API_BASE}/employees/bulk-template.csv`);
       const data = !res.ok ? await res.json().catch(() => null) : null;
       if (!res.ok) throw new Error(data?.detail || 'Could not download the template.');
       const blob = await res.blob();
@@ -1113,7 +1090,7 @@ function BulkEmployeeUploadModal({
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch(`${API_BASE}/employees/bulk`, { method: 'POST', headers: uploadHeaders, body: formData });
+      const res = await authenticatedFetch(`${API_BASE}/employees/bulk`, { method: 'POST', body: formData });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.detail || 'Could not import employees.');
       onImported(Number(data?.imported || 0));
@@ -1207,10 +1184,7 @@ export function EmployeesPage() {
   const [exportLevel, setExportLevel] = useState<'basic' | 'hr' | 'payroll'>('basic');
   const authHeaders = useMemo(() => ({
     'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-    'x-user-name': user?.name || '',
-  }), [user]);
+  }), []);
 
   const fetchEmployees = useCallback(async () => {
     if (!user?.email && !user?.id) {
@@ -1230,7 +1204,7 @@ export function EmployeesPage() {
       if (projectStatusFilter !== 'All') params.set('project_status', projectStatusFilter.toLowerCase().replace(/ /g, '_'));
       if (reportingManagerFilter !== 'All') params.set('reporting_manager', reportingManagerFilter);
 
-      const res = await fetch(`${API_BASE}/employees/?${params.toString()}`, { headers: authHeaders });
+      const res = await authenticatedFetch(`${API_BASE}/employees/?${params.toString()}`, { headers: authHeaders });
       if (!res.ok) throw new Error(`Unable to load employees (${res.status})`);
       const data: EmployeeListResponse = await res.json();
 
@@ -1313,7 +1287,7 @@ export function EmployeesPage() {
       if (reportingManagerFilter !== 'All') params.set('reporting_manager', reportingManagerFilter);
       params.set('level', exportLevel);
 
-      const res = await fetch(`${API_BASE}/employees/export?${params.toString()}`, { headers: authHeaders });
+      const res = await authenticatedFetch(`${API_BASE}/employees/export?${params.toString()}`, { headers: authHeaders });
       if (!res.ok) throw new Error(`Unable to export employees (${res.status})`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -1591,7 +1565,6 @@ export function EmployeesPage() {
       <BulkEmployeeUploadModal
         open={showBulkUpload}
         onClose={() => setShowBulkUpload(false)}
-        headers={authHeaders}
         onImported={(count) => {
           setShowBulkUpload(false);
           showToast({ message: `${count} ${count === 1 ? 'employee' : 'employees'} added.` });

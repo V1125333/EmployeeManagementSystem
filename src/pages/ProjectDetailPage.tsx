@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '@/services/apiClient';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -169,22 +170,13 @@ export function ProjectDetailPage() {
 
   const headers = useMemo(() => ({
     'Content-Type': 'application/json',
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-    'x-user-role': normalizeRole(user?.role),
-  }), [user]);
-
-  const fileHeaders = useMemo(() => ({
-    'x-user-id': user?.id || '',
-    'x-user-email': user?.email || '',
-    'x-user-role': normalizeRole(user?.role),
-  }), [user]);
+  }), []);
 
   const loadProject = useCallback(async () => {
     if (!projectId) return;
     setError('');
     try {
-      const res = await fetch(`${API_BASE}/projects/${projectId}`, { headers });
+      const res = await authenticatedFetch(`${API_BASE}/projects/${projectId}`, { headers });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload.detail || 'Could not load project.');
       setProject(payload);
@@ -196,7 +188,7 @@ export function ProjectDetailPage() {
 
   const loadAllocations = useCallback(async () => {
     if (!projectId) return;
-    const res = await fetch(`${API_BASE}/projects/${projectId}/allocations`, { headers });
+    const res = await authenticatedFetch(`${API_BASE}/projects/${projectId}/allocations`, { headers });
     const payload = await res.json().catch(() => []);
     if (!res.ok) throw new Error(payload.detail || 'Could not load assignments.');
     setAllocations(payload);
@@ -204,7 +196,7 @@ export function ProjectDetailPage() {
 
   const loadDocuments = useCallback(async () => {
     if (!projectId) return;
-    const res = await fetch(`${API_BASE}/projects/${projectId}/documents`, { headers });
+    const res = await authenticatedFetch(`${API_BASE}/projects/${projectId}/documents`, { headers });
     const payload = await res.json().catch(() => []);
     if (!res.ok) throw new Error(payload.detail || 'Could not load documents.');
     setDocuments(payload);
@@ -212,11 +204,11 @@ export function ProjectDetailPage() {
 
   const loadAudit = useCallback(async () => {
     if (!projectId || !canManageProjects(user?.role)) return;
-    const res = await fetch(`${API_BASE}/audit-logs/entity/project/${projectId}`, { headers });
+    const res = await authenticatedFetch(`${API_BASE}/audit-logs/entity/project/${projectId}`);
     const payload = await res.json().catch(() => []);
     if (!res.ok) throw new Error(payload.detail || 'Could not load audit history.');
     setAuditLogs(Array.isArray(payload) ? payload : payload.items || []);
-  }, [headers, projectId, user?.role]);
+  }, [projectId, user?.role]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -249,7 +241,7 @@ export function ProjectDetailPage() {
 
   const loadManagers = async () => {
     try {
-      const res = await fetch(`${API_BASE}/projects/assignable-employees?limit=250`, { headers });
+      const res = await authenticatedFetch(`${API_BASE}/projects/assignable-employees?limit=250`, { headers });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload.detail || 'Could not load managers.');
       setManagerOptions(payload.managers || []);
@@ -262,7 +254,7 @@ export function ProjectDetailPage() {
   const saveManager = async () => {
     if (!projectId) return;
     try {
-      const res = await fetch(`${API_BASE}/projects/${projectId}/manager`, {
+      const res = await authenticatedFetch(`${API_BASE}/projects/${projectId}/manager`, {
         method: 'PATCH',
         headers,
         body: JSON.stringify({ manager_employee_id: selectedManagerId || null }),
@@ -280,7 +272,7 @@ export function ProjectDetailPage() {
   const deleteAllocation = async (allocation: AllocationRecord) => {
     if (!window.confirm(`Remove ${allocation.employee_name || 'this employee'} from ${project?.name}?`)) return;
     try {
-      const res = await fetch(`${API_BASE}/allocations/${allocation.id}`, { method: 'DELETE', headers });
+      const res = await authenticatedFetch(`${API_BASE}/allocations/${allocation.id}`, { method: 'DELETE', headers });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload.detail || 'Could not remove assignment.');
       showToast({ message: 'Assignment removed' });
@@ -299,9 +291,8 @@ export function ProjectDetailPage() {
       const formData = new FormData();
       formData.append('document_type', uploadType);
       formData.append('file', file);
-      const res = await fetch(`${API_BASE}/projects/${projectId}/documents`, {
+      const res = await authenticatedFetch(`${API_BASE}/projects/${projectId}/documents`, {
         method: 'POST',
-        headers: fileHeaders,
         body: formData,
       });
       const payload = await res.json().catch(() => ({}));
@@ -318,7 +309,7 @@ export function ProjectDetailPage() {
   const downloadDocument = async (doc: ProjectDocument) => {
     if (!projectId) return;
     try {
-      const res = await fetch(`${API_BASE}/projects/${projectId}/documents/${doc.id}/download`, { headers: fileHeaders });
+      const res = await authenticatedFetch(`${API_BASE}/projects/${projectId}/documents/${doc.id}/download`);
       if (!res.ok) {
         const payload = await res.json().catch(() => ({}));
         throw new Error(payload.detail || 'Could not download document.');
@@ -338,7 +329,7 @@ export function ProjectDetailPage() {
   const deleteDocument = async (doc: ProjectDocument) => {
     if (!projectId || !window.confirm(`Delete ${doc.original_file_name}?`)) return;
     try {
-      const res = await fetch(`${API_BASE}/projects/${projectId}/documents/${doc.id}`, { method: 'DELETE', headers });
+      const res = await authenticatedFetch(`${API_BASE}/projects/${projectId}/documents/${doc.id}`, { method: 'DELETE', headers });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload.detail || 'Could not delete document.');
       showToast({ message: 'Document deleted' });

@@ -7,19 +7,19 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.authentication import AuthenticatedActor, get_authenticated_actor
 from app.models.employee import Employee
 from app.models.leave_attendance import LeaveRequest, LeaveType
 from app.models.operations import Allocation, Notification, Project, TimesheetEntry
 from app.schemas.compliance import ComplianceReport
 from app.services.audit_service import log_audit, log_authorization_failure
 from app.services.compliance_service import calculate_compliance
-from app.services.settings_service import get_current_employee
 from app.services.work_calendar_service import (
     company_holiday_dates,
     is_employee_working_day,
@@ -129,6 +129,7 @@ class TimesheetWeekResponse(BaseModel):
     reviewer_notes: str | None
     entries: list[TimesheetEntryResponse]
     leave_days: list[LeaveDayResponse]
+    non_working_days: list[date] = Field(default_factory=list)
 
 
 class TimesheetSummaryResponse(BaseModel):
@@ -144,10 +145,6 @@ class TimesheetSummaryResponse(BaseModel):
     working_hours: float = 0
     break_hours: float = 0
     leave_hours: float = 0
-
-
-def get_employee(db: Session, user_id: str | None, user_email: str | None):
-    return get_current_employee(db, user_id, user_email)
 
 
 def employee_name(employee: Employee | None) -> str:
@@ -281,13 +278,7 @@ def serialize_employee_week(
     entries: list[TimesheetEntry],
     requested_time_zone: str = "UTC",
 ) -> TimesheetWeekResponse:
-    target_week_end = week_end(week_start)
-    non_working_dates = {
-        week_start + timedelta(days=offset)
-        for offset in range(7)
-        if not is_employee_working_day(employee, week_start + timedelta(days=offset))
-    }
-    non_working_dates.update(company_holiday_dates(db, employee, week_start, target_week_end, {"public", "company"}))
+    _, non_working_dates = employee_week_policy(db, employee, week_start, requested_time_zone)
     return serialize_week(
         week_start,
         entries,
@@ -377,6 +368,29 @@ def work_policy(workforce_type: str, time_zone: str) -> dict:
     }
 
 
+def employee_week_policy(
+    db: Session,
+    employee: Employee,
+    target_week_start: date,
+    time_zone: str,
+) -> tuple[dict, set[date]]:
+    target_week_end = week_end(target_week_start)
+    non_working_dates = {
+        target_week_start + timedelta(days=offset)
+        for offset in range(7)
+        if not is_employee_working_day(employee, target_week_start + timedelta(days=offset))
+    }
+    non_working_dates.update(
+        company_holiday_dates(db, employee, target_week_start, target_week_end, {"public", "company"})
+    )
+    policy = work_policy(employee.workforce_type, time_zone)
+    working_days = max(0, 7 - len(non_working_dates))
+    return {
+        **policy,
+        "weekly_limit_hours": min(policy["weekly_limit_hours"], working_days * 8.0),
+    }, non_working_dates
+
+
 def week_warnings(total_work_hours: float, overtime_hours: float, policy: dict) -> list[str]:
     if overtime_hours <= 0:
         return []
@@ -415,6 +429,9 @@ def serialize_week(
         status = "draft"
     time_zone = entries[0].time_zone if entries else requested_time_zone
     policy = work_policy(workforce_type, time_zone)
+    available_working_days = max(0, 7 - len(non_working_dates))
+    weekly_target_hours = min(policy["weekly_limit_hours"], available_working_days * 8.0)
+    policy = {**policy, "weekly_limit_hours": weekly_target_hours}
     total_hours = round(sum(float(entry.hours) for entry in entries), 2)
     break_hours = round(sum(float(entry.hours) for entry in entries if entry.entry_code == "BRK"), 2)
     working_hours = round(sum(float(entry.hours) for entry in entries if entry.entry_code != "BRK"), 2)
@@ -461,6 +478,7 @@ def serialize_week(
         reviewer_notes=reviewer_notes,
         entries=[serialize_entry(entry, overtime_map.get(index, 0.0)) for index, entry in enumerate(entries)],
         leave_days=leave_days,
+        non_working_days=sorted(non_working_dates),
     )
 
 
@@ -558,17 +576,24 @@ def leave_days_for_week(db: Session, employee: Employee, target_week_start: date
     return leave_days
 
 
-def locked_leave_dates(db: Session, employee: Employee, target_week_start: date) -> set[date]:
-    return {item.date for item in leave_days_for_week(db, employee, target_week_start)}
+def leave_hours_by_date(db: Session, employee: Employee, target_week_start: date) -> dict[date, float]:
+    return {item.date: item.hours for item in leave_days_for_week(db, employee, target_week_start)}
 
 
-def assert_no_leave_conflicts(entries: list[TimesheetEntryPayload], leave_dates: set[date]) -> None:
-    blocked = sorted({entry.work_date for entry in entries if entry.work_date in leave_dates})
+def assert_no_leave_conflicts(entries: list[TimesheetEntryPayload], leave_hours: dict[date, float]) -> None:
+    work_hours: dict[date, float] = {}
+    for entry in entries:
+        work_hours[entry.work_date] = work_hours.get(entry.work_date, 0.0) + entry_hours(entry)
+    blocked = sorted({
+        work_date
+        for work_date, logged_hours in work_hours.items()
+        if leave_hours.get(work_date, 0.0) + logged_hours > 8.0
+    })
     if blocked:
         formatted = ", ".join(day.isoformat() for day in blocked)
         raise HTTPException(
             status_code=400,
-            detail=f"Timesheet entries cannot be added on pending or approved leave dates: {formatted}.",
+            detail=f"Work and leave exceed 8 hours on: {formatted}.",
         )
 
 
@@ -602,10 +627,9 @@ def load_week_entries(db: Session, employee_id: str, target_week_start: date) ->
 async def my_timesheet_options(
     week_start: date | None = Query(default=None),
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = get_employee(db, x_user_id, x_user_email)
+    employee = actor.employee
     window_start = week_start or date.today()
     window_end = week_end(window_start)
     project_options: list[dict] = []
@@ -621,13 +645,10 @@ async def my_timesheet_options(
         Project.status.in_(["active", "planning"]),
     ).order_by(Project.name.asc(), Allocation.allocation_percentage.desc()).all()
 
-    seen_project_ids: set[str] = set()
     for project, allocation in assigned_rows:
-        if project.id in seen_project_ids:
-            continue
-        seen_project_ids.add(project.id)
         project_options.append({
             "id": project.id,
+            "allocation_id": allocation.id,
             "name": project.name,
             "code": project.code,
             "group": "PROJECTS",
@@ -638,6 +659,7 @@ async def my_timesheet_options(
         })
 
     if can_view_all_projects(employee.role):
+        seen_project_ids = {item[0].id for item in assigned_rows}
         active_projects = db.query(Project).filter(
             Project.status.in_(["active", "planning"]),
         ).order_by(Project.name.asc()).all()
@@ -664,10 +686,9 @@ async def my_timesheet_options(
 async def my_timesheet_week(
     week_start: date = Query(...),
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = get_employee(db, x_user_id, x_user_email)
+    employee = actor.employee
     return serialize_employee_week(db, employee, week_start, load_week_entries(db, employee.id, week_start))
 
 
@@ -675,10 +696,9 @@ async def my_timesheet_week(
 async def save_my_timesheet_week(
     payload: TimesheetSaveRequest,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = get_employee(db, x_user_id, x_user_email)
+    employee = actor.employee
     existing = load_week_entries(db, employee.id, payload.week_start)
     if any(entry.status in {"submitted", "approved"} for entry in existing):
         raise HTTPException(status_code=400, detail="Submitted or approved timesheets cannot be edited.")
@@ -702,8 +722,8 @@ async def save_my_timesheet_week(
     for entry in payload.entries:
         validate_entry_payload(db, employee, entry)
     assert_no_non_working_entries(db, employee, payload.entries)
-    assert_no_leave_conflicts(payload.entries, locked_leave_dates(db, employee, payload.week_start))
-    policy = work_policy(employee.workforce_type, payload.time_zone)
+    assert_no_leave_conflicts(payload.entries, leave_hours_by_date(db, employee, payload.week_start))
+    policy, _ = employee_week_policy(db, employee, payload.week_start, payload.time_zone)
     overtime_map = overtime_by_payload(payload.entries, policy)
 
     db.query(TimesheetEntry).filter(
@@ -760,11 +780,10 @@ async def save_my_timesheet_week(
 async def submit_my_timesheet_week(
     payload: TimesheetSaveRequest,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    await save_my_timesheet_week(payload, db, x_user_id, x_user_email)
-    employee = get_employee(db, x_user_id, x_user_email)
+    await save_my_timesheet_week(payload, db, actor)
+    employee = actor.employee
     entries = load_week_entries(db, employee.id, payload.week_start)
     if not entries:
         raise HTTPException(status_code=400, detail="Add at least one timesheet entry before submitting.")
@@ -813,10 +832,9 @@ async def recall_my_timesheet_week(
     week_start: date = Query(...),
     time_zone: str = Query("UTC"),
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = get_employee(db, x_user_id, x_user_email)
+    employee = actor.employee
     entries = load_week_entries(db, employee.id, week_start)
     if not entries:
         raise HTTPException(status_code=404, detail="Timesheet not found.")
@@ -860,10 +878,9 @@ async def recall_my_timesheet_week(
 async def copy_my_timesheet_week(
     payload: TimesheetCopyRequest,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = get_employee(db, x_user_id, x_user_email)
+    employee = actor.employee
     target_existing = load_week_entries(db, employee.id, payload.target_week_start)
     if any(entry.status in {"submitted", "approved"} for entry in target_existing):
         raise HTTPException(status_code=400, detail="Recall the submitted target week before copying into it. Approved weeks cannot be changed.")
@@ -886,7 +903,7 @@ async def copy_my_timesheet_week(
         for entry in source_entries
     ]
     assert_no_non_working_entries(db, employee, copied_payloads)
-    assert_no_leave_conflicts(copied_payloads, locked_leave_dates(db, employee, payload.target_week_start))
+    assert_no_leave_conflicts(copied_payloads, leave_hours_by_date(db, employee, payload.target_week_start))
 
     db.query(TimesheetEntry).filter(
         TimesheetEntry.employee_id == employee.id,
@@ -895,7 +912,7 @@ async def copy_my_timesheet_week(
     ).delete(synchronize_session=False)
 
     now = datetime.utcnow()
-    policy = work_policy(employee.workforce_type, payload.time_zone)
+    policy, _ = employee_week_policy(db, employee, payload.target_week_start, payload.time_zone)
     overtime_map = overtime_by_payload(copied_payloads, policy)
     for index, entry in enumerate(copied_payloads):
         hours = entry_hours(entry)
@@ -941,10 +958,9 @@ async def delete_my_timesheet_week(
     week_start: date = Query(...),
     time_zone: str = Query("UTC"),
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = get_employee(db, x_user_id, x_user_email)
+    employee = actor.employee
     existing = load_week_entries(db, employee.id, week_start)
     if any(entry.status in {"submitted", "approved"} for entry in existing):
         raise HTTPException(status_code=400, detail="Submitted or approved timesheets cannot be deleted.")
@@ -968,10 +984,9 @@ async def delete_my_timesheet_week(
 @router.get("/me/summary", response_model=TimesheetSummaryResponse)
 async def my_timesheet_summary(
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = get_employee(db, x_user_id, x_user_email)
+    employee = actor.employee
     latest_week = db.query(
         TimesheetEntry.week_start,
         func.max(TimesheetEntry.updated_at).label("latest_updated_at"),
@@ -1008,10 +1023,9 @@ async def my_timesheet_summary(
 async def timesheet_allocation_compliance(
     timesheet_id: str,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    actor = get_employee(db, x_user_id, x_user_email)
+    actor = authenticated_actor.employee
     seed_entry = db.query(TimesheetEntry).filter(TimesheetEntry.id == timesheet_id).first()
     if not seed_entry:
         raise HTTPException(status_code=404, detail="Timesheet not found.")
@@ -1074,6 +1088,7 @@ def serialize_timesheet_approval(db: Session, employee: Employee, week_start: da
         "leave_hours": week.leave_hours,
         "regular_hours": week.regular_hours,
         "overtime_hours": week.overtime_hours,
+        "weekly_limit_hours": week.weekly_limit_hours,
         "submitted_at": submitted_at,
         "reviewed_by": employee_name(reviewer) if reviewer else None,
         "reviewer_notes": entries[0].reviewer_notes if entries else None,
@@ -1085,10 +1100,9 @@ def serialize_timesheet_approval(db: Session, employee: Employee, week_start: da
 @router.get("/approvals")
 async def timesheet_approvals(
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    reviewer = get_employee(db, x_user_id, x_user_email)
+    reviewer = authenticated_actor.employee
     query = db.query(TimesheetEntry.employee_id, TimesheetEntry.week_start).join(
         Employee,
         Employee.id == TimesheetEntry.employee_id,
@@ -1111,10 +1125,9 @@ async def decide_timesheet(
     week_start: date,
     payload: TimesheetDecisionRequest,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    reviewer = get_employee(db, x_user_id, x_user_email)
+    reviewer = authenticated_actor.employee
     employee = db.query(Employee).filter(Employee.id == employee_id).first()
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found.")
@@ -1205,16 +1218,15 @@ async def decide_timesheet(
             },
         )
     db.commit()
-    return await timesheet_approvals(db, x_user_id, x_user_email)
+    return await timesheet_approvals(db, authenticated_actor)
 
 
 @router.get("/me/history", response_model=list[TimesheetWeekResponse])
 async def my_timesheet_history(
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = get_employee(db, x_user_id, x_user_email)
+    employee = actor.employee
     week_rows = db.query(
         TimesheetEntry.week_start,
         func.max(TimesheetEntry.updated_at).label("latest_updated_at"),

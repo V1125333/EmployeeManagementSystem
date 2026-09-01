@@ -1,0 +1,362 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+.bench-plus-jakarta {
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+
+.bench-multi-row {
+  display: grid;
+  gap: 16px;
+  border-top: 1px solid #f3eee4;
+  padding: 18px 20px;
+}
+
+.bench-multi-person {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 14px;
+}
+
+.bench-multi-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #23241f;
+}
+
+.bench-multi-role {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  line-height: 1.25;
+  color: #8f8878;
+}
+
+.bench-multi-allocations {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+}
+
+.bench-multi-allocation {
+  min-width: 0;
+}
+
+.bench-multi-allocation-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.bench-multi-project {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.2;
+  color: #6b6658;
+}
+
+.bench-multi-percent {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  color: #23241f;
+}
+
+.bench-multi-bar-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #eee6d7;
+}
+
+.bench-multi-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #4e4a99;
+}
+
+.bench-multi-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.bench-multi-more {
+  font-size: 11px;
+  font-weight: 600;
+  color: #8f8878;
+}
+
+.bench-multi-button {
+  display: inline-flex;
+  min-width: 96px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #f3eee4;
+  padding: 8px 18px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  color: #5b584d;
+}
+
+.bench-multi-button:hover {
+  background: #ece4d4;
+}
+
+.bench-open-header {
+  display: none;
+}
+
+.bench-open-scroll {
+  max-height: 390px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.bench-open-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.bench-open-scroll::-webkit-scrollbar-track {
+  background: #f6f1e7;
+}
+
+.bench-open-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid #f6f1e7;
+  border-radius: 999px;
+  background: #c9beaa;
+}
+
+.bench-open-row {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid #f3eee4;
+  padding: 16px 20px;
+}
+
+.bench-open-person {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.bench-open-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #23241f;
+}
+
+.bench-open-role {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  line-height: 1.25;
+  color: #96917f;
+}
+
+.bench-open-cell {
+  font-size: 12.5px;
+  line-height: 1.25;
+  color: #5b584d;
+}
+
+.bench-open-available {
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #146b5d;
+}
+
+.bench-open-button {
+  display: inline-flex;
+  min-width: 72px;
+  justify-content: center;
+  justify-self: start;
+  border-radius: 999px;
+  background: #146b5d;
+  padding: 7px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: #fff;
+}
+
+.bench-project-row {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid #f3eee4;
+  padding: 16px 20px;
+}
+
+.bench-project-header {
+  display: none;
+}
+
+.bench-project-scroll {
+  max-height: 286px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.bench-project-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.bench-project-scroll::-webkit-scrollbar-track {
+  background: #f6f1e7;
+}
+
+.bench-project-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid #f6f1e7;
+  border-radius: 999px;
+  background: #c9beaa;
+}
+
+.bench-project-person {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.bench-project-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #23241f;
+}
+
+.bench-project-role {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  line-height: 1.25;
+  color: #96917f;
+}
+
+.bench-project-cell {
+  font-size: 12.5px;
+  line-height: 1.25;
+  color: #5b584d;
+}
+
+.bench-project-percent {
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #23241f;
+}
+
+.bench-project-available {
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #146b5d;
+}
+
+.bench-project-end {
+  font-size: 12px;
+  line-height: 1.25;
+  color: #96917f;
+}
+
+@media (min-width: 960px) {
+  .bench-open-header {
+    display: grid;
+    grid-template-columns: minmax(280px, 1.45fr) minmax(140px, 0.9fr) minmax(170px, 1fr) minmax(90px, 0.55fr) minmax(110px, 0.65fr);
+    gap: 16px;
+    padding: 12px 20px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #96917f;
+  }
+
+  .bench-open-header > :last-child {
+    text-align: right;
+  }
+
+  .bench-open-row {
+    grid-template-columns: minmax(280px, 1.45fr) minmax(140px, 0.9fr) minmax(170px, 1fr) minmax(90px, 0.55fr) minmax(110px, 0.65fr);
+    align-items: center;
+    gap: 16px;
+    padding: 14px 20px;
+  }
+
+  .bench-open-scroll {
+    max-height: 286px;
+  }
+
+  .bench-open-button {
+    justify-self: end;
+  }
+
+  .bench-project-row {
+    grid-template-columns: minmax(280px, 1.25fr) minmax(260px, 1.7fr) minmax(90px, 0.42fr) minmax(90px, 0.42fr) minmax(120px, 0.58fr);
+    align-items: center;
+    gap: 16px;
+    padding: 14px 20px;
+  }
+
+  .bench-project-scroll {
+    max-height: 286px;
+  }
+
+  .bench-project-header {
+    display: grid;
+    grid-template-columns: minmax(280px, 1.25fr) minmax(260px, 1.7fr) minmax(90px, 0.42fr) minmax(90px, 0.42fr) minmax(120px, 0.58fr);
+    gap: 16px;
+    padding: 12px 20px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #96917f;
+  }
+}
+
+@media (min-width: 960px) {
+  .bench-multi-row {
+    grid-template-columns: 520px minmax(0, 1fr) 132px;
+    align-items: center;
+    gap: 18px;
+    padding: 16px 20px;
+  }
+
+  .bench-multi-allocations {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    align-items: center;
+  }
+
+  .bench-multi-actions {
+    justify-content: flex-end;
+    gap: 10px;
+    white-space: nowrap;
+  }
+
+  .bench-multi-button {
+    min-width: 92px;
+    padding: 8px 14px;
+  }
+}

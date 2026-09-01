@@ -232,7 +232,11 @@ def log_authorization_failure(
     entity_id: str | None = None,
     reason: str | None = None,
     request: Request | None = None,
+    correlation_id: str | None = None,
 ) -> AuditLog:
+    safe_metadata = {"security_event": True}
+    if correlation_id:
+        safe_metadata["correlation_id"] = str(correlation_id)[:120]
     return log_audit(
         db=db,
         actor=actor,
@@ -240,7 +244,7 @@ def log_authorization_failure(
         entity_type=entity_type,
         entity_id=entity_id,
         reason=reason or "Authorization failed",
-        metadata={"security_event": True},
+        metadata=safe_metadata,
         source="api",
         request=request,
     )

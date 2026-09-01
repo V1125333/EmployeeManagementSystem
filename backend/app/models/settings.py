@@ -43,7 +43,7 @@ class UserSettings(Base):
     sidebar_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="expanded")
     dashboard_density: Mapped[str] = mapped_column(String(20), nullable=False, default="comfortable")
 
-    mfa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    mfa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     notification_company_announcements: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     notification_leave_updates: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -56,6 +56,24 @@ class UserSettings(Base):
     phone_visibility: Mapped[str] = mapped_column(String(30), nullable=False, default="Managers Only")
     birthday_visibility: Mapped[str] = mapped_column(String(30), nullable=False, default="Everyone")
 
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("employees.id"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    updated_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("employees.id"), nullable=True)
+
+
+class OrganizationSecurityPolicy(Base):
+    """Singleton organization authentication policy.
+
+    User preferences never delete authenticator secrets, so MFA can be
+    re-enabled without silently weakening or rebuilding credentials.
+    """
+
+    __tablename__ = "organization_security_policy"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default="organization")
+    mfa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    allow_user_mfa_opt_out: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     created_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("employees.id"), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())

@@ -20,7 +20,7 @@ describe('sendAIChat', () => {
     vi.stubGlobal('fetch', fetchMock);
     await sendAIChat('hello', 'signed-token', 'conv-1');
     const [, options] = fetchMock.mock.calls[0];
-    expect(options.headers.Authorization).toBe('Bearer signed-token');
+    expect(new Headers(options.headers).get('Authorization')).toBe('Bearer signed-token');
     expect(JSON.parse(options.body)).toEqual({ message: 'hello', conversation_id: 'conv-1' });
   });
 

@@ -6,22 +6,17 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.models.employee import Employee
+from app.core.authentication import AuthenticatedActor, get_authenticated_actor
 from app.models.leave_attendance import LeaveRequest, LeaveType
 from app.models.operations import CompanyHoliday
-from app.services.settings_service import get_current_employee
 from app.services.work_calendar_service import employee_region
 
 router = APIRouter(prefix="/holidays", tags=["Holidays"])
-
-
-def get_employee(db: Session, user_id: str | None, user_email: str | None) -> Employee:
-    return get_current_employee(db, user_id, user_email)
 
 
 def region_visible(regions: str | None, region: str) -> bool:
@@ -55,10 +50,9 @@ async def holidays(
     from_date: date | None = Query(default=None),
     to_date: date | None = Query(default=None),
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = get_employee(db, x_user_id, x_user_email)
+    employee = actor.employee
     selected_region = (region or employee_region(employee)).upper()
     start = from_date or date.today()
     end = to_date or start + timedelta(days=365)
@@ -73,10 +67,9 @@ async def holidays(
 @router.get("/available-floating")
 async def available_floating_holidays(
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = get_employee(db, x_user_id, x_user_email)
+    employee = actor.employee
     region = employee_region(employee)
     taken_holiday_ids = {
         item.holiday_id
@@ -107,12 +100,11 @@ async def working_days(
     end_date: date = Query(...),
     region: str | None = Query(default=None),
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
     if end_date < start_date:
         raise HTTPException(status_code=400, detail="End date must be on or after start date.")
-    employee = get_employee(db, x_user_id, x_user_email)
+    employee = actor.employee
     selected_region = (region or employee_region(employee)).upper()
     rows = visible_holidays_query(db, selected_region).filter(
         CompanyHoliday.holiday_date >= start_date,

@@ -124,6 +124,7 @@ class SetPasswordRequest(BaseModel):
 class SetPasswordResponse(BaseModel):
     success: bool
     message: str
+    mfa_setup_required: bool = True
     totp_qr_base64: Optional[str] = None
     totp_secret: Optional[str] = None  # manual entry fallback
 
@@ -158,6 +159,51 @@ class LoginResponse(BaseModel):
     token: Optional[str] = None
     employee: Optional[dict] = None
     force_password_change: bool = False
+
+
+class CurrentUserProfile(BaseModel):
+    """Bounded owner-only profile returned from the authenticated subject."""
+
+    id: str
+    first_name: str
+    last_name: str
+    work_email: EmailStr
+    personal_email: Optional[EmailStr] = None
+    phone: str
+    country_code: str
+    date_of_birth: Optional[str] = None
+    gender: Optional[str] = None
+    department: str
+    designation: Optional[str] = None
+    role: str
+    workforce_type: str
+    employment_status: str
+    work_location: str
+    work_city: Optional[str] = None
+    work_state: Optional[str] = None
+    work_country: Optional[str] = None
+    joining_date: Optional[str] = None
+    reporting_manager: str
+    manager_id: Optional[str] = None
+    profile_image_url: Optional[str] = None
+    emergency_contact_name: Optional[str] = None
+    emergency_contact_phone: Optional[str] = None
+    emergency_contact_relation: Optional[str] = None
+    current_address: Optional[str] = None
+    is_active: bool
+    account_locked: bool
+    access_level: str
+    mfa_enabled: bool
+    force_password_change: bool
+    last_login_at: Optional[str] = None
+    last_active_at: Optional[str] = None
+    created_at: str
+    last_updated_at: Optional[str] = None
+
+
+class CurrentUserProfileResponse(BaseModel):
+    success: bool = True
+    employee: CurrentUserProfile
 
 
 # ═══════════════════════════════════════

@@ -124,11 +124,15 @@ class AIConversation(Base):
     owner_employee_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("employees.id"), nullable=False, index=True
     )
+    organization_scope: Mapped[str] = mapped_column(
+        String(80), nullable=False, default="reknew", index=True
+    )
     title: Mapped[str] = mapped_column(
         String(160), nullable=False, default="Orbit AI Conversation"
     )
     domain: Mapped[str] = mapped_column(String(40), nullable=False, default="leave")
     capability: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    last_resolved_intent: Mapped[str | None] = mapped_column(String(80), nullable=True)
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="active", index=True
     )

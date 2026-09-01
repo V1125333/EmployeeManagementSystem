@@ -7,10 +7,14 @@ Bonus: activity_log — System-wide audit trail
 """
 
 import uuid
-from datetime import datetime, date, time
-from sqlalchemy import String, Boolean, Date, DateTime, Time, Text, Numeric, ForeignKey, Integer
-from sqlalchemy.orm import Mapped, mapped_column
+from datetime import datetime, date, time, timezone
+from sqlalchemy import (
+    String, Boolean, CheckConstraint, Date, DateTime, Time, Text, Numeric,
+    ForeignKey, Index, Integer, UniqueConstraint, text,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
+from app.domain.timesheet import TimesheetIdempotencyStatus, TimesheetWeekState
 from app.models.allocation import Allocation
 
 
@@ -66,11 +70,105 @@ class CompanyHoliday(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class TimesheetWeek(Base):
+    """Additive aggregate boundary; legacy routes do not use this model yet."""
+
+    __tablename__ = "timesheet_weeks"
+    __table_args__ = (
+        UniqueConstraint("employee_id", "week_start", name="uq_timesheet_weeks_employee_week"),
+        CheckConstraint(
+            "state IN ('draft', 'submitted', 'approved', 'rejected', 'mixed_legacy')",
+            name="ck_timesheet_weeks_state",
+        ),
+        CheckConstraint("version >= 1", name="ck_timesheet_weeks_version_positive"),
+        CheckConstraint(
+            "review_decision IS NULL OR review_decision IN ('approve', 'reject')",
+            name="ck_timesheet_weeks_review_decision",
+        ),
+        Index("ix_timesheet_weeks_employee_week", "employee_id", "week_start"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id: Mapped[str] = mapped_column(String(36), ForeignKey("employees.id"), nullable=False)
+    week_start: Mapped[date] = mapped_column(Date, nullable=False)
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default=TimesheetWeekState.DRAFT.value)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
+    timezone: Mapped[str] = mapped_column(String(80), nullable=False, default="UTC", server_default="UTC")
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    submitted_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("employees.id"), nullable=True)
+    review_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("employees.id"), nullable=True)
+    review_decision: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
+
+    entries: Mapped[list["TimesheetEntry"]] = relationship(back_populates="timesheet_week")
+
+
+class TimesheetIdempotencyRecord(Base):
+    """Future write replay record. It stores hashes/references, never request bodies."""
+
+    __tablename__ = "timesheet_idempotency_records"
+    __table_args__ = (
+        UniqueConstraint(
+            "actor_employee_id", "operation", "idempotency_key",
+            name="uq_timesheet_idempotency_actor_operation_key",
+        ),
+        CheckConstraint(
+            "status IN ('in_progress', 'completed', 'failed', 'abandoned')",
+            name="ck_timesheet_idempotency_status",
+        ),
+        Index("ix_timesheet_idempotency_aggregate", "aggregate_type", "aggregate_id"),
+        Index("ix_timesheet_idempotency_expires_at", "expires_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    actor_employee_id: Mapped[str] = mapped_column(String(36), ForeignKey("employees.id"), nullable=False)
+    operation: Mapped[str] = mapped_column(String(80), nullable=False)
+    aggregate_type: Mapped[str] = mapped_column(String(50), nullable=False, default="timesheet_week")
+    aggregate_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=TimesheetIdempotencyStatus.IN_PROGRESS.value,
+    )
+    result_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TimesheetMigrationAnomaly(Base):
+    """Bounded, content-free record of legacy state anomalies found by backfill."""
+
+    __tablename__ = "timesheet_migration_anomalies"
+    __table_args__ = (
+        UniqueConstraint("timesheet_week_id", "anomaly_type", name="uq_timesheet_anomaly_week_type"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    timesheet_week_id: Mapped[str] = mapped_column(String(36), ForeignKey("timesheet_weeks.id"), nullable=False)
+    employee_id: Mapped[str] = mapped_column(String(36), ForeignKey("employees.id"), nullable=False)
+    week_start: Mapped[date] = mapped_column(Date, nullable=False)
+    anomaly_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    status_summary: Mapped[str] = mapped_column(String(255), nullable=False)
+    entry_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
 class TimesheetEntry(Base):
     __tablename__ = "timesheet_entries"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     employee_id: Mapped[str] = mapped_column(String(36), ForeignKey("employees.id"), nullable=False)
+    timesheet_week_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("timesheet_weeks.id"), nullable=True, index=True,
+    )
     work_date: Mapped[date] = mapped_column(Date, nullable=False)
     week_start: Mapped[date] = mapped_column(Date, nullable=False)
     entry_code: Mapped[str] = mapped_column(String(10), nullable=False)
@@ -91,6 +189,8 @@ class TimesheetEntry(Base):
     time_zone: Mapped[str] = mapped_column(String(80), default="UTC")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    timesheet_week: Mapped[TimesheetWeek | None] = relationship(back_populates="entries")
 
 
 class Announcement(Base):
@@ -152,15 +252,29 @@ class Notification(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("employees.id"), nullable=False)
+    actor_employee_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("employees.id"), nullable=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
     type: Mapped[str] = mapped_column(String(30), default="system")  # leave, attendance, training, announcement, chat, system
     notification_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    origin_domain: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    event_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
     related_entity_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     related_entity_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    deduplication_key: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    priority: Mapped[str | None] = mapped_column(String(20), nullable=True)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     link_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "deduplication_key", name="uq_notifications_recipient_deduplication"),
+        Index("ix_notifications_origin_event", "origin_domain", "event_type"),
+    )
 
 
 class ActionInboxItem(Base):

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.authentication import AuthenticatedActor, get_authenticated_actor
 from app.models.employee import Employee
 from app.models.leave_attendance import LeaveRequest, LeaveType
 from app.schemas.leave import (
@@ -37,7 +38,6 @@ from app.services.leave_service import (
     update_my_leave_request as update_leave,
     withdraw_my_leave_request as withdraw_leave,
 )
-from app.services.settings_service import get_current_employee
 
 
 router = APIRouter(prefix="/leaves", tags=["Leaves"])
@@ -47,10 +47,6 @@ ERROR_RESPONSES = {
     404: {"model": StructuredErrorResponse},
     409: {"model": StructuredErrorResponse},
 }
-
-
-def _employee(db: Session, user_id: str | None, user_email: str | None) -> Employee:
-    return get_current_employee(db, user_id, user_email)
 
 
 def _raise_http(error: LeaveServiceError) -> None:
@@ -88,21 +84,19 @@ def _is_admin(role: str | None) -> bool:
 @router.get("/me/context", response_model=LeaveContextResponse)
 async def my_leave_context(
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    return get_my_leave_context(db, _employee(db, x_user_id, x_user_email))
+    return get_my_leave_context(db, actor.employee)
 
 
 @router.post("/me/assess", response_model=LeaveEligibilityResponse, responses=ERROR_RESPONSES)
 async def assess_leave_request(
     payload: LeaveAssessmentInput,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
     try:
-        return assess_my_leave_request(db, _employee(db, x_user_id, x_user_email), payload)
+        return assess_my_leave_request(db, actor.employee, payload)
     except LeaveServiceError as error:
         _raise_http(error)
 
@@ -116,14 +110,13 @@ async def assess_leave_request(
 async def submit_leave_request(
     payload: LeaveSubmissionInput,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
     x_correlation_id: str | None = Header(default=None),
 ):
     try:
         return submit_my_leave_request(
             db,
-            _employee(db, x_user_id, x_user_email),
+            actor.employee,
             LeaveRequestInput(**payload.model_dump(), action="submit"),
             correlation_id=x_correlation_id,
         )
@@ -139,12 +132,11 @@ async def submit_leave_request(
 async def my_leave_request_status(
     request_id: str,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
     try:
         return get_my_leave_request_by_id(
-            db, _employee(db, x_user_id, x_user_email), request_id
+            db, actor.employee, request_id
         )
     except LeaveServiceError as error:
         _raise_http(error)
@@ -153,10 +145,9 @@ async def my_leave_request_status(
 @router.get("/me/summary")
 async def my_leave_summary(
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    context = get_my_leave_context(db, _employee(db, x_user_id, x_user_email))
+    context = get_my_leave_context(db, actor.employee)
     return _legacy_summary(context)
 
 
@@ -164,10 +155,9 @@ async def my_leave_summary(
 async def create_my_leave_request(
     payload: LeaveRequestInput,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = _employee(db, x_user_id, x_user_email)
+    employee = actor.employee
     try:
         create_leave(db, employee, payload)
         return _legacy_summary(get_my_leave_context(db, employee))
@@ -180,10 +170,9 @@ async def update_my_leave_request(
     request_id: str,
     payload: LeaveRequestInput,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = _employee(db, x_user_id, x_user_email)
+    employee = actor.employee
     try:
         update_leave(db, employee, request_id, payload)
         return _legacy_summary(get_my_leave_context(db, employee))
@@ -195,10 +184,9 @@ async def update_my_leave_request(
 async def delete_my_leave_request(
     request_id: str,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = _employee(db, x_user_id, x_user_email)
+    employee = actor.employee
     try:
         delete_my_leave_draft(db, employee, request_id)
         return _legacy_summary(get_my_leave_context(db, employee))
@@ -210,10 +198,9 @@ async def delete_my_leave_request(
 async def withdraw_my_leave_request(
     request_id: str,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    employee = _employee(db, x_user_id, x_user_email)
+    employee = actor.employee
     try:
         withdraw_leave(db, employee, request_id)
         return _legacy_summary(get_my_leave_context(db, employee))
@@ -224,10 +211,9 @@ async def withdraw_my_leave_request(
 @router.get("/approvals")
 async def leave_approvals(
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    reviewer = _employee(db, x_user_id, x_user_email)
+    reviewer = actor.employee
     query = db.query(LeaveRequest, LeaveType, Employee).join(
         LeaveType, LeaveType.id == LeaveRequest.leave_type_id
     ).join(Employee, Employee.id == LeaveRequest.employee_id).filter(
@@ -251,10 +237,9 @@ async def decide_leave_request(
     request_id: str,
     payload: LeaveDecisionInput,
     db: Session = Depends(get_db),
-    x_user_id: str | None = Header(default=None),
-    x_user_email: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
-    reviewer = _employee(db, x_user_id, x_user_email)
+    reviewer = actor.employee
     request = db.query(LeaveRequest).filter(LeaveRequest.id == request_id).first()
     if not request:
         raise HTTPException(status_code=404, detail="Leave request not found.")
@@ -314,4 +299,4 @@ async def decide_leave_request(
         metadata={"employee_id": employee.id, "employee_name": employee_name(employee)},
     )
     db.commit()
-    return await leave_approvals(db, x_user_id, x_user_email)
+    return await leave_approvals(db, actor)

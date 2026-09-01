@@ -1,3 +1,4 @@
+import { publicFetch } from '@/services/apiClient';
 import { useEffect, useState } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import {
@@ -109,7 +110,7 @@ export function LoginPage() {
     else if (step === 'forgot_new_password') setStep(resetHasMfa ? 'forgot_mfa' : 'forgot_email');
   };
 
-  // ─── Step 1: Check Email ───
+  // ─── Step 1: Continue to staged login ───
   const handleCheckEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim()) { setError('Please enter your email'); return; }
@@ -117,38 +118,12 @@ export function LoginPage() {
     setLoading(true);
     const normalizedEmail = email.trim().toLowerCase();
 
-    try {
-      const res = await fetch(`${API_BASE}/auth/check-email`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: normalizedEmail }),
-      });
-      const data = await res.json();
-
-      if (!data.exists) {
-        setError('Account not found. Contact your administrator.');
-      } else if (data.is_first_login) {
-        setEmail(normalizedEmail);
-        setIsFirstLogin(true);
-        setStep('setup_code');
-      } else {
-        setEmail(normalizedEmail);
-        setIsFirstLogin(false);
-        setRequiresTemporaryPassword(Boolean(data.force_password_change));
-        setStep('login_password');
-      }
-    } catch {
-      // Backend not available — try admin fallback
-      if (normalizedEmail === 'superadmin@reknew.ai') {
-        setEmail(normalizedEmail);
-        setIsFirstLogin(false);
-        setStep('login_password');
-      } else {
-        setError('Cannot connect to server. Please try again.');
-      }
-    } finally {
-      setLoading(false);
-    }
+    // Activation links enter first-time setup directly. A manually entered
+    // address always proceeds to the non-enumerating staged login flow.
+    setEmail(normalizedEmail);
+    setIsFirstLogin(false);
+    setStep('login_password');
+    setLoading(false);
   };
 
   // ─── Step 2: Verify Setup Code ───
@@ -159,7 +134,7 @@ export function LoginPage() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE}/auth/verify-setup-code`, {
+      const res = await publicFetch(`${API_BASE}/auth/verify-setup-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim().toLowerCase(), setup_code: setupCode }),
@@ -187,7 +162,7 @@ export function LoginPage() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE}/auth/set-password`, {
+      const res = await publicFetch(`${API_BASE}/auth/set-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim().toLowerCase(), setup_code: setupCode, password }),
@@ -195,6 +170,10 @@ export function LoginPage() {
       const data = await res.json();
 
       if (data.success) {
+        if (data.mfa_setup_required === false) {
+          setStep('setup_complete');
+          return;
+        }
         setQrBase64(data.totp_qr_base64 || '');
         setTotpSecret(data.totp_secret || '');
         setStep('scan_qr');
@@ -216,7 +195,7 @@ export function LoginPage() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE}/auth/confirm-totp`, {
+      const res = await publicFetch(`${API_BASE}/auth/confirm-totp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim().toLowerCase(), totp_code: totpCode }),
@@ -247,7 +226,7 @@ export function LoginPage() {
     // receive a signed token directly from the backend.
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/login/verify-password`, {
+      const res = await publicFetch(`${API_BASE}/auth/login/verify-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: normalizedEmail, password }),
@@ -292,7 +271,7 @@ export function LoginPage() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE}/auth/login/verify-mfa`, {
+      const res = await publicFetch(`${API_BASE}/auth/login/verify-mfa`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ login_challenge_token: loginChallengeToken, totp_code: totpCode }),
@@ -329,7 +308,7 @@ export function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/forgot-password/initiate`, {
+      const res = await publicFetch(`${API_BASE}/auth/forgot-password/initiate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim().toLowerCase() }),
@@ -357,7 +336,7 @@ export function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/request-unlock`, {
+      const res = await publicFetch(`${API_BASE}/auth/request-unlock`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim().toLowerCase(), reason: unlockReason.trim() }),
@@ -383,7 +362,7 @@ export function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/forgot-password/initiate`, {
+      const res = await publicFetch(`${API_BASE}/auth/forgot-password/initiate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim().toLowerCase() }),
@@ -408,7 +387,7 @@ export function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/forgot-password/verify-mfa`, {
+      const res = await publicFetch(`${API_BASE}/auth/forgot-password/verify-mfa`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reset_token: resetToken, totp_code: totpCode }),
@@ -434,7 +413,7 @@ export function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/forgot-password/reset`, {
+      const res = await publicFetch(`${API_BASE}/auth/forgot-password/reset`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -666,7 +645,7 @@ export function LoginPage() {
               </div>
               <h2 className="text-xl font-bold text-[var(--color-brand-navy)] tracking-tight mb-2">You're all set!</h2>
               <p className="text-sm text-gray-500 mb-8 leading-relaxed">
-                Your account is ready. You can now sign in with your email, password, and authenticator code.
+                Your account is ready. You can now sign in with your email and password{qrBase64 ? ', plus your authenticator code' : ''}.
               </p>
               <button
                 onClick={handleSetupComplete}
