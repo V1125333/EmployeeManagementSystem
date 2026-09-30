@@ -10,14 +10,15 @@ from app.models.employee import Employee
 from app.models.unlock_request import AccountUnlockRequest
 from app.schemas.employee import ReviewUnlockRequest
 from app.services.auth_service import approve_unlock, direct_unlock, reject_unlock
-from app.services.settings_service import is_admin_role
+from app.core.authorization import employee_can
+from app.core.rbac import Permission, Scope
 
 router = APIRouter(prefix="/admin/security", tags=["Admin Security"])
 
 
 def require_security_admin(actor: Employee) -> Employee:
-    if not is_admin_role(actor.role):
-        raise HTTPException(status_code=403, detail="Only Super Admin, Admin, and HR can access security administration.")
+    if not employee_can(actor, Permission.SECURITY_ACCOUNT_MANAGE, Scope.ORGANIZATION):
+        raise HTTPException(status_code=403, detail="security.account.manage permission is required.")
     return actor
 
 

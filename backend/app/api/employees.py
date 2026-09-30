@@ -22,7 +22,12 @@ from app.models.training import TrainingEnrollment
 from app.schemas.employee import AddEmployeeRequest, AddEmployeeResponse, UpdateEmployeeRequest
 from app.services.employee_service import create_employee
 from app.services.audit_service import changed_fields, log_audit, log_authorization_failure
-from app.services.settings_service import is_admin_role, normalize_role
+from app.services.settings_service import normalize_role
+from app.core.authorization import employee_can
+from app.core.rbac import (
+    EmploymentType, Permission, Scope, UserRole, can_assign_role,
+    canonical_employment_type, canonical_role, role_has_permission,
+)
 from app.services.security_service import (
     export_employee_csv,
     log_sensitive_access,
@@ -42,9 +47,37 @@ def authenticated_employee(
 
 
 def require_admin_actor(actor: Employee) -> Employee:
-    if not is_admin_role(actor.role):
-        raise HTTPException(status_code=403, detail="Admin access is required.")
+    try:
+        allowed = role_has_permission(actor.role, Permission.EMPLOYEE_CREATE)
+    except ValueError:
+        allowed = False
+    if not allowed:
+        raise HTTPException(status_code=403, detail="employee.create permission is required.")
     return actor
+
+
+def require_employee_read_organization(actor: Employee) -> Employee:
+    if not employee_can(actor, Permission.EMPLOYEE_READ, Scope.ORGANIZATION):
+        raise HTTPException(status_code=403, detail="employee.read organization permission is required.")
+    return actor
+
+
+def require_hr_employee_access(actor: Employee) -> Employee:
+    if not employee_can(actor, Permission.EMPLOYEE_READ_SENSITIVE, Scope.ORGANIZATION):
+        raise HTTPException(status_code=403, detail="employee.read_sensitive organization permission is required.")
+    return actor
+
+
+def require_role_assignment(actor: Employee, requested_role: str | UserRole) -> None:
+    try:
+        allowed = can_assign_role(actor.role, requested_role)
+    except ValueError:
+        allowed = False
+    if not allowed:
+        raise HTTPException(
+            status_code=403,
+            detail="This role assignment requires a Super Admin or is not permitted for your role.",
+        )
 
 BULK_EMPLOYEE_HEADERS = (
     "first_name", "last_name", "work_email", "phone", "country_code",
@@ -56,7 +89,7 @@ BULK_REQUIRED_FIELDS = (
     "first_name", "last_name", "work_email", "phone", "department", "role",
     "reporting_manager", "workforce_type", "work_arrangement", "joining_date",
 )
-BULK_ALLOWED_ROLES = {"super_admin", "hr_admin", "manager", "employee", "trainee"}
+BULK_ALLOWED_ROLES = {role.value for role in UserRole}
 BULK_ALLOWED_ARRANGEMENTS = {"remote", "hybrid", "office", "onshore", "offshore"}
 
 
@@ -134,6 +167,10 @@ def _validate_bulk_employee_rows(db: Session, rows: list[dict[str, str]]) -> lis
         row = {header: (raw.get(header) or "").strip() for header in BULK_EMPLOYEE_HEADERS}
         row["work_email"] = row["work_email"].lower()
         row["role"] = row["role"].lower().replace(" ", "_").replace("-", "_")
+        try:
+            row["workforce_type"] = canonical_employment_type(row["workforce_type"]).value
+        except ValueError:
+            pass
         errors: list[str] = []
         missing = [field for field in BULK_REQUIRED_FIELDS if not row[field]]
         if missing:
@@ -147,7 +184,9 @@ def _validate_bulk_employee_rows(db: Session, rows: list[dict[str, str]]) -> lis
         if row["department"] and departments and row["department"].lower() not in departments:
             errors.append("Unknown department")
         if row["role"] and row["role"] not in BULK_ALLOWED_ROLES:
-            errors.append("Unknown role")
+            errors.append(f"Invalid role '{row['role']}'. Use one of: {', '.join(sorted(BULK_ALLOWED_ROLES))}")
+        if row["workforce_type"] and row["workforce_type"] not in {item.value for item in EmploymentType}:
+            errors.append("Invalid employment type")
         if row["reporting_manager"] and row["reporting_manager"].lower() not in managers:
             errors.append("Manager not found")
         arrangement = row["work_arrangement"].lower()
@@ -209,6 +248,7 @@ ADMIN_EMPLOYEE_FIELDS = SELF_PROFILE_FIELDS | {
     "designation",
     "role",
     "workforce_type",
+    "employment_type",
     "workforce_status",
     "employment_status",
     "work_location",
@@ -258,6 +298,7 @@ def serialize_employee(emp: Employee) -> dict:
         "designation": emp.designation,
         "role": emp.role,
         "workforce_type": emp.workforce_type,
+        "employment_type": emp.employment_type or emp.workforce_type,
         "workforce_status": emp.workforce_status,
         "employment_status": emp.employment_status,
         "work_location": emp.work_location,
@@ -286,6 +327,88 @@ def serialize_employee(emp: Employee) -> dict:
         "last_updated_at": str(emp.last_updated_at) if emp.last_updated_at else None,
         "updated_by": emp.updated_by,
     }
+
+
+DIRECTORY_EMPLOYEE_FIELDS = {
+    "id",
+    "first_name",
+    "last_name",
+    "work_email",
+    "department",
+    "designation",
+    "role",
+    "workforce_type",
+    "employment_type",
+    "employment_status",
+    "work_location",
+    "work_city",
+    "work_state",
+    "work_country",
+    "reporting_manager",
+    "profile_image_url",
+    "is_active",
+}
+
+TEAM_EMPLOYEE_FIELDS = DIRECTORY_EMPLOYEE_FIELDS | {
+    "phone",
+    "country_code",
+    "joining_date",
+    "last_active_at",
+}
+
+SECURITY_EMPLOYEE_FIELDS = DIRECTORY_EMPLOYEE_FIELDS | {
+    "is_first_login",
+    "last_login_at",
+    "last_active_at",
+    "access_level",
+    "mfa_enabled",
+    "device_assigned",
+    "setup_code",
+    "created_at",
+    "last_updated_at",
+    "updated_by",
+}
+
+
+def is_direct_report(actor: Employee, target: Employee) -> bool:
+    actor_name = employee_name(actor)
+    return bool(
+        target.manager_id == actor.id
+        or target.reporting_manager == actor_name
+        or target.reporting_manager == actor.work_email
+    )
+
+
+def employee_detail_level(actor: Employee, target: Employee) -> str | None:
+    if actor.id == target.id:
+        return "self"
+    if employee_can(actor, Permission.EMPLOYEE_READ_SENSITIVE, Scope.ORGANIZATION):
+        return "hr"
+    if employee_can(actor, Permission.SECURITY_ACCOUNT_MANAGE, Scope.ORGANIZATION):
+        return "security"
+    if is_direct_report(actor, target) and employee_can(actor, Permission.EMPLOYEE_READ, Scope.DIRECT_REPORTS):
+        return "team"
+    if employee_can(actor, Permission.EMPLOYEE_READ, Scope.ORGANIZATION):
+        return "directory"
+    return None
+
+
+def serialize_employee_for_actor(emp: Employee, actor: Employee, *, project_status_value: str | None = None) -> dict:
+    level = employee_detail_level(actor, emp)
+    if not level:
+        raise HTTPException(status_code=403, detail="Not authorized to view this employee.")
+    payload = serialize_employee(emp)
+    if project_status_value is not None:
+        payload["project_status"] = project_status_value
+    if level in {"self", "hr"}:
+        return payload
+    if level == "security":
+        allowed_fields = SECURITY_EMPLOYEE_FIELDS
+    elif level == "team":
+        allowed_fields = TEAM_EMPLOYEE_FIELDS
+    else:
+        allowed_fields = DIRECTORY_EMPLOYEE_FIELDS
+    return {field: payload.get(field) for field in allowed_fields}
 
 
 def employee_name(emp: Employee) -> str:
@@ -371,16 +494,7 @@ def stabilize_manager_map(employees: list[Employee], manager_ids: dict[str, str 
 
 
 def can_view_employee_detail(actor: Employee, target: Employee) -> bool:
-    if actor.id == target.id or is_admin_role(actor.role):
-        return True
-    if normalize_role(actor.role) != "manager":
-        return False
-    actor_name = employee_name(actor)
-    return bool(
-        target.manager_id == actor.id
-        or target.reporting_manager == actor_name
-        or target.reporting_manager == actor.work_email
-    )
+    return employee_detail_level(actor, target) is not None
 
 
 def changed_by_value(email: str | None, name: str | None, user_id: str | None) -> str:
@@ -453,7 +567,7 @@ async def list_employees(
     actor: Employee = Depends(authenticated_employee),
 ):
     """List employees with search, filters, and pagination."""
-    require_admin_actor(actor)
+    require_employee_read_organization(actor)
     query = db.query(Employee).filter(Employee.work_email != "superadmin@reknew.ai")
     organization_employees = query.all()
     organization_total = len(organization_employees)
@@ -607,35 +721,14 @@ async def list_employees(
             return "trainee"
         return "in_project" if employee.id in allocated_employee_ids else "bench"
 
+    employee_rows = []
+    for emp in employees:
+        row = serialize_employee_for_actor(emp, actor, project_status_value=project_status(emp))
+        row["reporting_manager"] = manager_names.get(emp.manager_id) or emp.reporting_manager or "Not assigned"
+        employee_rows.append(row)
+
     return {
-        "employees": [
-            {
-                "id": emp.id,
-                "first_name": emp.first_name,
-                "last_name": emp.last_name,
-                "work_email": emp.work_email,
-                "phone": emp.phone,
-                "country_code": emp.country_code,
-                "department": emp.department,
-                "designation": emp.designation,
-                "role": emp.role,
-                "workforce_type": emp.workforce_type,
-                "employment_status": emp.employment_status,
-                "work_location": emp.work_location,
-                "work_city": emp.work_city,
-                "work_state": emp.work_state,
-                "work_country": emp.work_country,
-                "joining_date": str(emp.joining_date) if emp.joining_date else None,
-                "reporting_manager": manager_names.get(emp.manager_id) or emp.reporting_manager or "Not assigned",
-                "project_status": project_status(emp),
-                "profile_image_url": emp.profile_image_url,
-                "is_active": emp.is_active,
-                "is_first_login": emp.is_first_login,
-                "setup_code": emp.setup_code,
-                "created_at": str(emp.created_at),
-            }
-            for emp in employees
-        ],
+        "employees": employee_rows,
         "total": total,
         "organization_total": organization_total,
         "stats": organization_stats,
@@ -660,7 +753,7 @@ async def export_employees(
     actor: Employee = Depends(authenticated_employee),
 ):
     """Export employees with server-side role checks and sensitive-access audit."""
-    require_admin_actor(actor)
+    require_employee_read_organization(actor)
     require_export_level(actor, level)
 
     query = db.query(Employee).filter(Employee.work_email != "superadmin@reknew.ai")
@@ -831,6 +924,7 @@ async def import_bulk_employees(
             skipped.append({"row": row["row"], "email": row["email"], "error": row["error"]})
             continue
         try:
+            require_role_assignment(actor, row["payload"]["role"])
             data = AddEmployeeRequest(**row["payload"])
             result = create_employee(db, data)
             if not result.success or not result.employee_id:
@@ -922,7 +1016,7 @@ async def get_employee(
         )
         db.commit()
 
-    return serialize_employee(emp)
+    return serialize_employee_for_actor(emp, actor)
 
 
 @router.get("/{employee_id}/preview")
@@ -932,7 +1026,7 @@ async def get_employee_preview(
     actor: Employee = Depends(authenticated_employee),
 ):
     """Executive employee preview drawer data."""
-    require_admin_actor(actor)
+    require_hr_employee_access(actor)
     emp = db.query(Employee).filter(Employee.id == employee_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -1010,7 +1104,7 @@ async def get_employee_preview(
         mfa_status = "pending_setup"
 
     return {
-        "employee": serialize_employee(emp),
+        "employee": serialize_employee_for_actor(emp, actor),
         "account_activation": {
             "account_status": "pending_activation" if emp.is_first_login else ("active" if emp.is_active else "inactive"),
             "activation_code": emp.setup_code if emp.is_first_login else None,
@@ -1171,6 +1265,7 @@ async def add_employee(
 ):
     """Add an employee and queue a secure activation email."""
     require_admin_actor(actor)
+    require_role_assignment(actor, data.role)
     try:
         result = create_employee(db, data)
         if result.success and result.employee_id:
@@ -1203,7 +1298,7 @@ async def update_employee(
         raise HTTPException(status_code=404, detail="Employee not found")
 
     is_self = actor.id == employee_id
-    is_admin = is_admin_role(actor.role)
+    is_admin = employee_can(actor, Permission.EMPLOYEE_UPDATE, Scope.ORGANIZATION)
 
     if not (is_self or is_admin):
         log_authorization_failure(
@@ -1219,6 +1314,16 @@ async def update_employee(
 
     updates = data.model_dump(exclude_unset=True)
     change_reason = (updates.pop("change_reason", None) or "").strip()
+    if "role" in updates:
+        require_role_assignment(actor, updates["role"])
+        updates["role"] = canonical_role(updates["role"], allow_safe_legacy=False).value
+    for employment_field in ("workforce_type", "employment_type"):
+        if employment_field in updates and updates[employment_field] is not None:
+            updates[employment_field] = canonical_employment_type(updates[employment_field]).value
+    if "employment_type" in updates and "workforce_type" not in updates:
+        updates["workforce_type"] = updates["employment_type"]
+    elif "workforce_type" in updates and "employment_type" not in updates:
+        updates["employment_type"] = updates["workforce_type"]
     if is_self and not is_admin:
         blocked_fields = sorted(set(updates) - SELF_PROFILE_FIELDS)
         if blocked_fields:
@@ -1278,7 +1383,10 @@ async def update_employee(
                 raise HTTPException(status_code=422, detail="The selected reporting manager was not found.")
             if manager.id == emp.id:
                 raise HTTPException(status_code=422, detail="An employee cannot report to themselves.")
-            if normalize_role(manager.role) not in {"manager", "super_admin", "admin", "hr_admin", "global_access"}:
+            if canonical_role(manager.role) not in {
+                UserRole.MANAGER, UserRole.PROJECT_MANAGER, UserRole.RESOURCE_MANAGER,
+                UserRole.HR_ADMIN, UserRole.SYSTEM_ADMIN, UserRole.SUPER_ADMIN,
+            }:
                 raise HTTPException(status_code=422, detail="The selected employee is not eligible to be a reporting manager.")
             if creates_reporting_cycle(db, emp.id, manager.id):
                 raise HTTPException(status_code=422, detail="This reporting-manager change would create a circular reporting line.")
@@ -1401,7 +1509,7 @@ async def upload_profile_picture(
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
 
-    if actor.id != employee_id and not is_admin_role(actor.role):
+    if actor.id != employee_id and not employee_can(actor, Permission.EMPLOYEE_UPDATE, Scope.ORGANIZATION):
         raise HTTPException(status_code=403, detail="Not authorized to upload profile picture for this employee")
 
     # Validate file type

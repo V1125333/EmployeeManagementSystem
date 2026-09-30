@@ -9,7 +9,7 @@ from app.core.config import settings
 engine = create_engine(settings.DATABASE_URL, echo=False)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
-REQUIRED_MIGRATION_HEAD = "20260816_0003"
+REQUIRED_MIGRATION_HEAD = "20260905_0004"
 TASK8B_REQUIRED_TABLES = {
     "timesheet_weeks",
     "timesheet_idempotency_records",

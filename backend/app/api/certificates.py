@@ -34,17 +34,18 @@ from app.services.certificate_service import (
     validate_certificate_type,
     certificate_verify_url,
 )
-from app.services.settings_service import is_admin_role
 from app.services.audit_service import log_audit
 from app.services.rate_limit_service import consume_rate_limit
 from app.core.config import settings
+from app.core.authorization import employee_can
+from app.core.rbac import Permission, Scope
 
 router = APIRouter(prefix="/certificates", tags=["Certificates"])
 
 
 def require_certificate_admin(user: Employee):
-    if not is_admin_role(user.role):
-        raise HTTPException(status_code=403, detail="Only Super Admin/Admin can manage certificates.")
+    if not employee_can(user, Permission.CERTIFICATE_MANAGE, Scope.ORGANIZATION):
+        raise HTTPException(status_code=403, detail="certificate.manage permission is required.")
     return user
 
 

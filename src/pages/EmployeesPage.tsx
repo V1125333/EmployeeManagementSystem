@@ -14,6 +14,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/hooks/useAuth';
 import { CareerProfilePanel } from '@/components/career/CareerProfilePanel';
 import { cn } from '@/utils/cn';
+import { USER_ROLES, ROLE_LABELS, assignableRoles, hasPermission } from '@/auth/rbac';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
@@ -23,19 +24,20 @@ interface EmployeeRecord {
   first_name: string;
   last_name: string;
   work_email: string;
-  phone: string;
+  phone?: string | null;
   country_code?: string | null;
   department: string;
   designation: string | null;
   role: string;
   workforce_type: string;
-  employment_status: string;
-  work_location: string;
+  employment_type?: string | null;
+  employment_status?: string | null;
+  work_location?: string | null;
   work_city?: string | null;
   work_state?: string | null;
   work_country?: string | null;
   joining_date: string | null;
-  reporting_manager: string;
+  reporting_manager?: string | null;
   project_status?: 'in_project' | 'bench' | 'trainee';
   profile_image_url: string | null;
   workforce_status?: string;
@@ -45,9 +47,9 @@ interface EmployeeRecord {
   last_login_at?: string | null;
   last_active_at?: string | null;
   is_active: boolean;
-  is_first_login: boolean;
-  setup_code: string | null;
-  created_at: string;
+  is_first_login?: boolean;
+  setup_code?: string | null;
+  created_at?: string;
   emergency_contact_name?: string | null;
   emergency_contact_phone?: string | null;
   emergency_contact_relation?: string | null;
@@ -150,10 +152,18 @@ interface EmployeePreview {
 // ─── Filter Options ───
 const DEPARTMENTS = ['All', 'Engineering', 'Product', 'Design', 'Marketing', 'Sales', 'Operations', 'People', 'Finance'];
 const STATUSES = ['All', 'active', 'inactive', 'onboarding', 'offboarding'];
-const ROLES = ['All', 'super_admin', 'hr_admin', 'manager', 'employee', 'trainee'];
+const ROLES = ['All', ...USER_ROLES];
 const WORK_ARRANGEMENTS = ['All', 'Remote', 'Hybrid', 'Office', 'Onshore', 'Offshore'];
 const PROJECT_STATUSES = ['All', 'In Project', 'Bench', 'Trainee'];
-const WORKFORCE_TYPES = ['Full-Time Employee', 'Paid Intern', 'Unpaid Intern', 'Trainee', 'Guest'];
+const EMPLOYMENT_TYPES = ['full_time', 'part_time', 'contractor', 'intern', 'trainee', 'consultant'];
+const EMPLOYMENT_TYPE_LABELS: Record<string, string> = {
+  full_time: 'Full Time',
+  part_time: 'Part Time',
+  contractor: 'Contractor',
+  intern: 'Intern',
+  trainee: 'Trainee',
+  consultant: 'Consultant',
+};
 const DESIGNATIONS = [
   'AI Developer',
   'Backend Engineer',
@@ -182,13 +192,7 @@ const projectStatusPresentation: Record<string, { label: string; variant: 'succe
   trainee: { label: 'Trainee', variant: 'info' },
 };
 
-const roleLabels: Record<string, string> = {
-  super_admin: 'Super Admin',
-  hr_admin: 'HR Admin',
-  manager: 'Manager',
-  employee: 'Employee',
-  trainee: 'Trainee',
-};
+const roleLabels: Record<string, string> = { ...ROLE_LABELS };
 
 function employeeWorkLocation(employee: Pick<EmployeeRecord, 'work_city' | 'work_state' | 'work_country'>) {
   return [employee.work_city?.trim(), employee.work_state?.trim()].filter(Boolean).join(', ')
@@ -283,8 +287,8 @@ function EmployeeDetail({
           <div className="text-lg font-bold text-[var(--color-brand-navy)]">{fullName}</div>
           <div className="text-[13px] text-gray-500">{employee.designation || employee.role}</div>
           <div className="flex gap-2 mt-2">
-            <Badge variant={statusVariant[employee.employment_status] || 'neutral'}>
-              {employee.employment_status}
+            <Badge variant={statusVariant[employee.employment_status || ''] || 'neutral'}>
+              {employee.employment_status || 'unknown'}
             </Badge>
             {employee.is_first_login && (
               <Badge variant="warning">Setup pending</Badge>
@@ -308,7 +312,7 @@ function EmployeeDetail({
       {/* Contact */}
       <div className="text-[11px] font-bold text-gray-400 tracking-widest uppercase mb-3">Contact</div>
       <InfoRow icon={<Mail size={15} />} label="Email" value={employee.work_email} />
-      <InfoRow icon={<Phone size={15} />} label="Phone" value={employee.phone} />
+      <InfoRow icon={<Phone size={15} />} label="Phone" value={employee.phone || null} />
 
       <div className="h-px bg-[var(--color-border)] my-4" />
 
@@ -318,8 +322,8 @@ function EmployeeDetail({
       <InfoRow icon={<Briefcase size={15} />} label="Designation" value={employee.designation} />
       <InfoRow icon={<Shield size={15} />} label="Role" value={roleLabels[employee.role] || employee.role} />
       <InfoRow icon={<User size={15} />} label="Workforce Type" value={employee.workforce_type} />
-      <InfoRow icon={<User size={15} />} label="Reporting Manager" value={employee.reporting_manager} />
-      <InfoRow icon={<MapPin size={15} />} label="Work Arrangement" value={employee.work_location} />
+      <InfoRow icon={<User size={15} />} label="Reporting Manager" value={employee.reporting_manager || null} />
+      <InfoRow icon={<MapPin size={15} />} label="Work Arrangement" value={employee.work_location || null} />
       <InfoRow icon={<MapPin size={15} />} label="Work Location" value={employeeWorkLocation(employee)} />
       <InfoRow icon={<Calendar size={15} />} label="Joining Date" value={employee.joining_date} />
     </Drawer>
@@ -390,8 +394,7 @@ function ExecutiveEmployeeDetail({
   const activationCode = preview?.account_activation?.activation_code || (data.is_first_login ? data.setup_code : null);
   const inviteStatus = preview?.account_activation?.invite_status || (data.is_first_login ? 'pending' : 'accepted');
   const accessRole = preview?.it_access?.access_level || data.role;
-  const currentRole = (user?.role || '').toLowerCase().replace(/\s+/g, '_');
-  const canResetPassword = ['super_admin', 'hr_admin', 'admin'].includes(currentRole) && user?.id !== data.id;
+  const canResetPassword = hasPermission(user, 'security.account.manage') && user?.id !== data.id;
   const hasEmergencyDetails = Boolean(
     data.emergency_contact_name?.trim()
     || data.emergency_contact_phone?.trim()
@@ -519,7 +522,7 @@ function ExecutiveEmployeeDetail({
                 <Button variant="ghost" size="sm" icon={<Pencil size={13} />} onClick={() => onEdit(employee)}>Edit</Button>
               </div>
               <div className="flex flex-wrap gap-2 mt-2">
-                <Badge variant={statusVariant[data.employment_status] || 'neutral'}>{titleCase(data.employment_status)}</Badge>
+                <Badge variant={statusVariant[data.employment_status || ''] || 'neutral'}>{titleCase(data.employment_status)}</Badge>
                 {preview?.workforce_status?.availability && (
                   <Badge variant="olive">{titleCase(preview.workforce_status.availability)}</Badge>
                 )}
@@ -817,9 +820,11 @@ function EditEmployeeDrawer({
 
   const uniqueOptions = (values: Array<string | null | undefined>) => Array.from(new Set(values.filter((value): value is string => !!value?.trim())));
   const optionWithCurrent = (options: string[], current: string) => current && !options.includes(current) ? [current, ...options] : options;
+  const eligibleManagerRoles = new Set(['manager', 'project_manager', 'resource_manager', 'hr_admin', 'system_admin', 'super_admin']);
+  const editableRoleOptions = optionWithCurrent(assignableRoles(user), form.role);
   const managerOptions = optionWithCurrent(
     ['Not assigned', ...uniqueOptions(employees
-      .filter((item) => item.id !== employee?.id && ['super_admin', 'hr_admin', 'manager'].includes(item.role))
+      .filter((item) => item.id !== employee?.id && eligibleManagerRoles.has(item.role))
       .map((item) => `${item.first_name} ${item.last_name}`))],
     form.reporting_manager
   );
@@ -830,17 +835,17 @@ function EditEmployeeDrawer({
     setForm({
       first_name: employee.first_name,
       last_name: employee.last_name,
-      phone: employee.phone,
+      phone: employee.phone || '',
       department: employee.department,
       designation: employee.designation || '',
       role: employee.role,
       workforce_type: employee.workforce_type,
-      employment_status: employee.employment_status,
-      work_location: employee.work_location,
+      employment_status: employee.employment_status || '',
+      work_location: employee.work_location || '',
       work_city: employee.work_city || '',
       work_state: employee.work_state || '',
       work_country: employee.work_country || '',
-      reporting_manager: employee.reporting_manager,
+      reporting_manager: employee.reporting_manager || '',
       joining_date: employee.joining_date || '',
       change_reason: '',
     });
@@ -868,12 +873,12 @@ function EditEmployeeDrawer({
       designation: employee.designation || '',
       role: employee.role,
       workforce_type: employee.workforce_type,
-      employment_status: employee.employment_status,
-      work_location: employee.work_location,
+      employment_status: employee.employment_status || '',
+      work_location: employee.work_location || '',
       work_city: employee.work_city || '',
       work_state: employee.work_state || '',
       work_country: employee.work_country || '',
-      reporting_manager: employee.reporting_manager,
+      reporting_manager: employee.reporting_manager || '',
       joining_date: employee.joining_date || '',
     };
     const hasEmploymentChanges = employmentFields.some((field) => form[field] !== originalValues[field]);
@@ -937,7 +942,9 @@ function EditEmployeeDrawer({
           className="w-full px-3.5 py-2.5 rounded-xl text-[14px] font-medium bg-warm-bg border border-[var(--color-border)] text-[var(--color-brand-navy)] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10"
         >
           {options.map((option) => (
-            <option key={option} value={option}>{option}</option>
+            <option key={option} value={option}>
+              {roleLabels[option] || EMPLOYMENT_TYPE_LABELS[option] || option}
+            </option>
           ))}
         </select>
       ) : (
@@ -989,8 +996,8 @@ function EditEmployeeDrawer({
         <Field label="Phone" value={form.phone} onChange={(v) => update('phone', v)} />
         <Field label="Department" value={form.department} onChange={(v) => update('department', v)} options={DEPARTMENTS.slice(1)} />
         <Field label="Designation" value={form.designation} onChange={(v) => update('designation', v)} options={designationOptions} />
-        <Field label="Role" value={form.role} onChange={(v) => update('role', v)} options={optionWithCurrent(ROLES.slice(1), form.role)} />
-        <Field label="Workforce Type" value={form.workforce_type} onChange={(v) => update('workforce_type', v)} options={optionWithCurrent(WORKFORCE_TYPES, form.workforce_type)} />
+        <Field label="Role" value={form.role} onChange={(v) => update('role', v)} options={editableRoleOptions} />
+        <Field label="Employment Type" value={form.workforce_type} onChange={(v) => update('workforce_type', v)} options={optionWithCurrent(EMPLOYMENT_TYPES, form.workforce_type)} />
         <Field label="Status" value={form.employment_status} onChange={(v) => update('employment_status', v)} options={STATUSES.slice(1)} />
         <Field label="Work Arrangement" value={form.work_location} onChange={(v) => update('work_location', v)} options={optionWithCurrent(WORK_ARRANGEMENTS.slice(1), form.work_location)} />
         <Field label="Work City" value={form.work_city} onChange={(v) => update('work_city', v)} />
@@ -1557,6 +1564,7 @@ export function EmployeesPage() {
       {/* Add Employee Drawer — same component used on Dashboard */}
       <AddEmployeeDrawer
         open={showAddEmployee}
+        currentUser={user}
         onClose={() => {
           setShowAddEmployee(false);
           fetchEmployees(); // Refresh list after adding

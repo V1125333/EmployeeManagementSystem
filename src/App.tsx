@@ -2,7 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from '@/hooks/useAuth';
 import { ThemeProvider } from '@/hooks/useTheme';
 import { ToastProvider } from '@/components/ui/Toast';
-import { AdminRoute, EmployeeRoute, ProtectedRoute, RoleHomeRedirect } from '@/components/layout/ProtectedRoute';
+import { PermissionRoute, ProtectedRoute, RoleHomeRedirect } from '@/components/layout/ProtectedRoute';
 import { AppLayout } from '@/layouts/AppLayout';
 import { LoginPage } from '@/pages/LoginPage';
 import { BrandPreviewPage } from '@/pages/BrandPreviewPage';
@@ -67,27 +67,13 @@ export default function App() {
             <Route element={<ProtectedRoute />}>
               <Route element={<AppLayout />}>
                 <Route path="/" element={<RoleHomeRedirect />} />
-                <Route path="/profile" element={<ProfilePage />} />
-                <Route path="/organization" element={<OrganizationPage />} />
-                <Route path="/settings" element={<SettingsPage />} />
-                <Route path="/notifications" element={<EmployeeNotificationsPage />} />
-                <Route path="/timesheets" element={<TimesheetsPage />} />
-                <Route path="/ask-orbit-ai" element={<Navigate to="/" replace />} />
-                <Route path="/ai-platform-preview" element={<Navigate to="/" replace />} />
-                <Route path="/bench" element={<BenchPage />} />
-                <Route path="/projects" element={<ProjectsPage />} />
-                <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
-                <Route path="/staffing-requests" element={<StaffingRequestsPage />} />
-                <Route path="/staffing-requests/:requestId" element={<StaffingRequestDetailPage />} />
-                <Route path="/forecasting" element={<WorkforceForecastPage />} />
-                <Route path="/talent-profiles" element={<TalentProfilesPage />} />
-
-                <Route element={<EmployeeRoute />}>
+                <Route element={<PermissionRoute permission="portal.access" />}>
+                  <Route path="/profile" element={<ProfilePage />} />
+                  <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/notifications" element={<EmployeeNotificationsPage />} />
                   <Route path="/employee" element={<EmployeeDashboardPage />} />
                   <Route path="/employee/apply-leave" element={<ApplyLeavePage />} />
                   <Route path="/employee/leave-balance" element={<Navigate to="/employee/apply-leave" replace />} />
-                  <Route path="/employee/approvals" element={<LeaveApprovalsPage />} />
-                  <Route path="/employee/timesheets" element={<TimesheetsPage />} />
                   <Route path="/employee/check-in" element={<CheckInOutPage />} />
                   <Route path="/employee/attendance" element={<Navigate to="/employee/check-in" replace />} />
                   <Route path="/employee/requests" element={<RequestsPage />} />
@@ -97,22 +83,72 @@ export default function App() {
                   <Route path="/employee/career-profile" element={<MyCareerProfilePage />} />
                   <Route path="/employee/notifications" element={<Navigate to="/notifications" replace />} />
                 </Route>
-
-                <Route element={<AdminRoute />}>
+                <Route element={<PermissionRoute permission="employee.read" scopes={['direct_reports', 'organization']} />}>
+                  <Route path="/organization" element={<OrganizationPage />} />
+                </Route>
+                <Route element={<PermissionRoute permission="timesheet.manage" />}>
+                  <Route path="/timesheets" element={<TimesheetsPage />} />
+                  <Route path="/employee/timesheets" element={<TimesheetsPage />} />
+                </Route>
+                <Route path="/ask-orbit-ai" element={<Navigate to="/" replace />} />
+                <Route path="/ai-platform-preview" element={<Navigate to="/" replace />} />
+                <Route element={<PermissionRoute permission="allocation.read" scopes={['direct_reports', 'organization']} />}>
+                  <Route path="/bench" element={<BenchPage />} />
+                </Route>
+                <Route element={<PermissionRoute permission="project.read" />}>
+                  <Route path="/projects" element={<ProjectsPage />} />
+                  <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
+                </Route>
+                <Route element={<PermissionRoute permission="staffing.request" />}>
+                  <Route path="/staffing-requests" element={<StaffingRequestsPage />} />
+                  <Route path="/staffing-requests/:requestId" element={<StaffingRequestDetailPage />} />
+                </Route>
+                <Route element={<PermissionRoute permission="forecast.read" />}>
+                  <Route path="/forecasting" element={<WorkforceForecastPage />} />
+                </Route>
+                <Route element={<PermissionRoute permission="talent.read" />}>
+                  <Route path="/talent-profiles" element={<TalentProfilesPage />} />
+                </Route>
+                <Route element={<PermissionRoute permission="leave.approve" />}>
+                  <Route path="/employee/approvals" element={<LeaveApprovalsPage />} />
+                </Route>
+                <Route element={<PermissionRoute permission="employee.read" scopes={['organization']} />}>
                   <Route path="/dashboard" element={<DashboardPage />} />
                   <Route path="/employees" element={<EmployeesPage />} />
+                </Route>
+                <Route element={<PermissionRoute permission="onboarding.manage" />}>
                   <Route path="/onboarding" element={<OnboardingPage />} />
+                </Route>
+                <Route element={<PermissionRoute permission="client.manage" />}>
                   <Route path="/client-onboarding" element={<ClientOnboardingPage />} />
+                </Route>
+                <Route element={<PermissionRoute permission="leave.manage" scopes={['organization']} />}>
                   <Route path="/time-off" element={<TimeOffPage />} />
+                </Route>
+                <Route element={<PermissionRoute permission="allocation.manage" />}>
                   <Route path="/team-allocation" element={<TeamAllocationPage />} />
+                </Route>
+                <Route element={<PermissionRoute permission="asset.manage" />}>
                   <Route path="/assets" element={<AssetsPage />} />
+                </Route>
+                <Route element={<PermissionRoute permission="security.account.manage" />}>
                   <Route path="/admin/users" element={<UserManagementPage />} />
-                  <Route path="/admin/roles" element={<RolesPage />} />
-                  <Route path="/admin/policies" element={<PoliciesPage />} />
-                  <Route path="/admin/certificates" element={<CertificateGeneratorPage />} />
-                  <Route path="/admin/hr-documents" element={<HRDocumentsPage />} />
-                  <Route path="/admin/audit-trail" element={<AuditTrailPage />} />
                   <Route path="/admin/security" element={<SecurityCenterPage />} />
+                </Route>
+                <Route element={<PermissionRoute permission="role.manage" />}>
+                  <Route path="/admin/roles" element={<RolesPage />} />
+                </Route>
+                <Route element={<PermissionRoute permission="hr_policy.manage" />}>
+                  <Route path="/admin/policies" element={<PoliciesPage />} />
+                </Route>
+                <Route element={<PermissionRoute permission="certificate.manage" />}>
+                  <Route path="/admin/certificates" element={<CertificateGeneratorPage />} />
+                </Route>
+                <Route element={<PermissionRoute permission="document.manage_hr" />}>
+                  <Route path="/admin/hr-documents" element={<HRDocumentsPage />} />
+                </Route>
+                <Route element={<PermissionRoute anyOf={['audit.read_hr', 'audit.read_security']} />}>
+                  <Route path="/admin/audit-trail" element={<AuditTrailPage />} />
                 </Route>
               </Route>
             </Route>

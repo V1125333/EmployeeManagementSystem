@@ -2082,10 +2082,10 @@ export function EmployeeDashboardPage() {
       {error && <div className="mb-5 rounded-xl border border-[#d64545]/20 bg-[#fcecec] px-4 py-3 text-sm text-[#d64545]">{error}</div>}
 
       <section className="mb-6 overflow-hidden rounded-[18px] border border-[#e8dfd1] bg-white shadow-[0_4px_14px_rgba(60,40,10,.035)] lg:grid lg:grid-cols-[266px_minmax(0,1fr)]">
-        <div className="bg-[#12433f] px-7 py-6 text-white">
-          <div className="text-[11px] font-bold uppercase tracking-[.08em] text-[#82e0d4]">Your day</div>
+        <div className="bg-[#fff1e6] px-7 py-6 text-[#1f2430]">
+          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[.08em] text-[#c2410c]"><span aria-hidden="true" className="h-3 w-1 rounded-full bg-[#f97316]" />Your day</div>
           <div className="mt-3 text-[21px] font-bold leading-[1.35]">{visibleBriefingItems.length ? `${visibleBriefingItems.length} ${visibleBriefingItems.length === 1 ? 'thing' : 'things'} before you log off.` : 'You’re all caught up.'}</div>
-          <p className="mt-3 text-[12.5px] leading-relaxed text-[#c9e4df]">{visibleBriefingItems.length ? 'Here is what needs your attention today.' : 'Nothing else needs you today.'}</p>
+          <p className="mt-3 text-[12.5px] leading-relaxed text-[#6b6359]">{visibleBriefingItems.length ? 'Here is what needs your attention today.' : 'Nothing else needs you today.'}</p>
         </div>
         <div className="px-7 py-4">
           {visibleBriefingItems.length === 0 ? (

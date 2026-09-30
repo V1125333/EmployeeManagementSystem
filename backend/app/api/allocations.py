@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.authentication import AuthenticatedActor, get_authenticated_actor
+from app.core.authorization import employee_can
+from app.core.rbac import Permission, Scope
 from app.models.allocation import Allocation
 from app.models.employee import Employee
 from app.models.operations import Project
@@ -33,7 +35,6 @@ from app.services.allocation_service import (
     update_allocation,
 )
 from app.services.audit_service import log_authorization_failure
-from app.services.settings_service import normalize_role
 from app.services.staffing_allocation_service import capacity_check_payload
 from app.services.project_service import require_project_access
 
@@ -41,11 +42,11 @@ router = APIRouter(prefix="/allocations", tags=["Allocations"])
 
 
 def _is_hr_admin(actor: Employee) -> bool:
-    return normalize_role(actor.role) in {"super_admin", "hr_admin", "admin", "global_access"}
+    return employee_can(actor, Permission.ALLOCATION_MANAGE, Scope.ORGANIZATION)
 
 
 def _is_manager(actor: Employee) -> bool:
-    return normalize_role(actor.role) == "manager"
+    return employee_can(actor, Permission.ALLOCATION_READ, Scope.DIRECT_REPORTS)
 
 
 def _is_direct_manager(db: Session, actor: Employee, employee_id: str) -> bool:
@@ -79,7 +80,7 @@ def _require_write_access(db: Session, actor: Employee, employee_id: str) -> Non
     if _is_hr_admin(actor):
         return
 
-    if normalize_role(actor.role) == "manager" and _is_direct_manager(db, actor, employee_id):
+    if employee_can(actor, Permission.ALLOCATION_MANAGE, Scope.DIRECT_REPORTS) and _is_direct_manager(db, actor, employee_id):
         return
 
     log_authorization_failure(

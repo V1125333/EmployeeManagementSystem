@@ -2,9 +2,10 @@
 Pydantic schemas for API validation.
 """
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from typing import Optional
 from datetime import date
+from app.core.rbac import EmploymentType, UserRole, canonical_employment_type, canonical_role
 
 
 # ═══════════════════════════════════════
@@ -19,8 +20,9 @@ class AddEmployeeRequest(BaseModel):
     phone: str = Field(..., min_length=1, max_length=20)
     date_of_birth: Optional[date] = None  # needed for setup code
 
-    workforce_type: str
-    role: str
+    workforce_type: EmploymentType
+    employment_type: Optional[EmploymentType] = None
+    role: UserRole
     department: str
     designation: Optional[str] = None
     reporting_manager: str
@@ -29,6 +31,22 @@ class AddEmployeeRequest(BaseModel):
     work_city: Optional[str] = Field(default=None, max_length=120)
     work_state: Optional[str] = Field(default=None, max_length=120)
     work_country: Optional[str] = Field(default=None, max_length=120)
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def validate_role(cls, value):
+        return canonical_role(value, allow_safe_legacy=False)
+
+    @field_validator("workforce_type", "employment_type", mode="before")
+    @classmethod
+    def validate_employment_type(cls, value):
+        return None if value is None else canonical_employment_type(value)
+
+    @model_validator(mode="after")
+    def align_employment_type(self):
+        if self.employment_type is None:
+            self.employment_type = self.workforce_type
+        return self
 
 
 class AddEmployeeResponse(BaseModel):
@@ -52,8 +70,9 @@ class UpdateEmployeeRequest(BaseModel):
     gender: Optional[str] = None
     department: Optional[str] = Field(default=None, max_length=100)
     designation: Optional[str] = None
-    role: Optional[str] = Field(default=None, max_length=50)
-    workforce_type: Optional[str] = None
+    role: Optional[UserRole] = None
+    workforce_type: Optional[EmploymentType] = None
+    employment_type: Optional[EmploymentType] = None
     workforce_status: Optional[str] = None
     employment_status: Optional[str] = None
     work_location: Optional[str] = None
@@ -77,6 +96,16 @@ class UpdateEmployeeRequest(BaseModel):
     device_assigned: Optional[bool] = None
     notes: Optional[str] = None
     change_reason: Optional[str] = Field(default=None, max_length=500)
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def validate_role(cls, value):
+        return None if value is None else canonical_role(value, allow_safe_legacy=False)
+
+    @field_validator("workforce_type", "employment_type", mode="before")
+    @classmethod
+    def validate_employment_type(cls, value):
+        return None if value is None else canonical_employment_type(value)
 
 
 # ═══════════════════════════════════════
@@ -176,7 +205,10 @@ class CurrentUserProfile(BaseModel):
     department: str
     designation: Optional[str] = None
     role: str
+    permissions: list[str] = Field(default_factory=list)
+    scopes: dict[str, list[str]] = Field(default_factory=dict)
     workforce_type: str
+    employment_type: Optional[str] = None
     employment_status: str
     work_location: str
     work_city: Optional[str] = None

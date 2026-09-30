@@ -21,6 +21,8 @@ export interface AuthUser {
   initials: string;
   profileImageUrl?: string | null;
   forcePasswordChange?: boolean;
+  permissions?: string[];
+  scopes?: Record<string, string[]>;
 }
 
 interface AuthContextType {
@@ -48,6 +50,8 @@ interface CurrentUserProfile {
   role: string;
   profile_image_url?: string | null;
   force_password_change?: boolean;
+  permissions?: string[];
+  scopes?: Record<string, string[]>;
 }
 
 function currentProfileToAuthUser(profile: CurrentUserProfile): AuthUser {
@@ -56,10 +60,12 @@ function currentProfileToAuthUser(profile: CurrentUserProfile): AuthUser {
     id: profile.id,
     name,
     email: profile.work_email,
-    role: profile.role || 'Employee',
+    role: profile.role || 'employee',
     initials: makeInitials(name),
     profileImageUrl: profile.profile_image_url || null,
     forcePasswordChange: Boolean(profile.force_password_change),
+    permissions: Array.isArray(profile.permissions) ? profile.permissions : [],
+    scopes: profile.scopes || {},
   };
 }
 
@@ -124,16 +130,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           id: result.employee.id,
           name: result.employee.name,
           email: result.employee.email,
-          role: result.employee.role || 'Employee',
+          role: result.employee.role || 'employee',
           initials: makeInitials(result.employee.name),
           profileImageUrl: result.employee.profile_image_url || null,
           forcePasswordChange: Boolean(result.force_password_change),
+          permissions: result.employee.permissions || [],
+          scopes: result.employee.scopes || {},
         };
         const token = typeof result.token === 'string' ? result.token.trim() : '';
         if (!token) return { success: false, message: 'Login did not return a valid session.' };
         const nextSession = { user: authUser, token };
-        setSession(nextSession);
         writeOrbitSession(nextSession);
+        setSession(nextSession);
         return { success: true, message: result.message };
       }
       return { success: false, message: result.message || 'Login failed' };
@@ -148,10 +156,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       id: employee.id,
       name,
       email: employee.email || employee.work_email,
-      role: employee.role || 'Employee',
+      role: employee.role || 'employee',
       initials: makeInitials(name),
       profileImageUrl: employee.profile_image_url || null,
       forcePasswordChange: Boolean(employee.force_password_change),
+      permissions: employee.permissions || [],
+      scopes: employee.scopes || {},
     };
     const orbitAccessToken = token?.trim() || '';
     if (!orbitAccessToken) {
@@ -160,8 +170,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     const nextSession = { user: authUser, token: orbitAccessToken };
-    setSession(nextSession);
     writeOrbitSession(nextSession);
+    setSession(nextSession);
   };
 
   const logout = () => {

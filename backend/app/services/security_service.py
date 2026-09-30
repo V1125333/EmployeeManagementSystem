@@ -21,7 +21,8 @@ from app.core.config import settings
 from app.models.employee import Employee
 from app.models.security import SensitiveAccessAuditLog
 from app.services.audit_service import log_audit
-from app.services.settings_service import normalize_role
+from app.core.authorization import employee_can
+from app.core.rbac import Permission, Scope
 
 
 PUBLIC_EMPLOYEE_EXPORT_FIELDS = [
@@ -117,13 +118,12 @@ def mask_phone(value: str | None) -> str | None:
 
 
 def can_access_export_level(actor: Employee, level: str) -> bool:
-    role = normalize_role(actor.role)
     if level == "basic":
-        return role in {"super_admin", "admin", "hr_admin", "global_access", "manager"}
+        return employee_can(actor, Permission.EMPLOYEE_READ, Scope.ORGANIZATION)
     if level == "hr":
-        return role in {"super_admin", "admin", "hr_admin", "global_access"}
+        return employee_can(actor, Permission.HR_REPORT_EXPORT, Scope.ORGANIZATION)
     if level == "payroll":
-        return role in {"super_admin", "hr_admin", "global_access"}
+        return employee_can(actor, Permission.PAYROLL_EXPORT, Scope.ORGANIZATION)
     return False
 
 

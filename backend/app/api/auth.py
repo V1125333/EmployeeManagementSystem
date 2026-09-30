@@ -329,8 +329,8 @@ async def api_request_unlock_for_colleague(
     )
 
 
-def _safe_current_profile(employee: Employee) -> dict:
-    return {
+def _safe_current_profile(employee: Employee, principal=None) -> dict:
+    profile = {
         "id": employee.id,
         "first_name": employee.first_name,
         "last_name": employee.last_name,
@@ -342,8 +342,9 @@ def _safe_current_profile(employee: Employee) -> dict:
         "gender": employee.gender,
         "department": employee.department,
         "designation": employee.designation,
-        "role": employee.role,
+        "role": principal.role if principal else employee.role,
         "workforce_type": employee.workforce_type,
+        "employment_type": employee.employment_type or employee.workforce_type,
         "employment_status": employee.employment_status,
         "work_location": employee.work_location,
         "work_city": employee.work_city,
@@ -367,6 +368,10 @@ def _safe_current_profile(employee: Employee) -> dict:
         "created_at": str(employee.created_at),
         "last_updated_at": str(employee.last_updated_at) if employee.last_updated_at else None,
     }
+    if principal:
+        profile["permissions"] = sorted(principal.permissions)
+        profile["scopes"] = {key: sorted(values) for key, values in principal.scopes.items()}
+    return profile
 
 
 @router.get("/me", response_model=CurrentUserProfileResponse)
@@ -374,7 +379,7 @@ async def get_my_profile(
     actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
     """Return the current database profile for the JWT subject only."""
-    return {"success": True, "employee": _safe_current_profile(actor.employee)}
+    return {"success": True, "employee": _safe_current_profile(actor.employee, actor.principal)}
 
 
 @router.get("/me/{email}", status_code=410)

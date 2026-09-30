@@ -34,9 +34,10 @@ class Employee(Base):
     manager_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("employees.id"), nullable=True)
 
     # ─── Workforce Info ───
-    workforce_type: Mapped[str] = mapped_column(String(50), nullable=False)  # full_time, part_time, contract, intern, trainee
+    workforce_type: Mapped[str] = mapped_column(String(50), nullable=False)  # legacy API/storage compatibility
+    employment_type: Mapped[str | None] = mapped_column(String(50), nullable=True)  # canonical employee classification
     workforce_status: Mapped[str] = mapped_column(String(50), default="internal")
-    role: Mapped[str] = mapped_column(String(50), nullable=False)  # super_admin, hr_admin, manager, employee, trainee
+    role: Mapped[str] = mapped_column(String(50), nullable=False)  # canonical UserRole value
     employment_status: Mapped[str] = mapped_column(String(30), default="active")  # active, inactive, onboarding, offboarding
     inactive_reason: Mapped[str | None] = mapped_column(String(50), nullable=True)
     location: Mapped[str] = mapped_column(String(200), default="Onshore")

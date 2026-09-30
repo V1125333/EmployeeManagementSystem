@@ -4,7 +4,7 @@ import type { ElementType } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Bell, HelpCircle, Inbox, InboxIcon,
-  Megaphone, Search, ShieldQuestion, UserCog, X,
+  LogIn, Megaphone, Search, ShieldQuestion, Sparkles, UserCog, X,
 } from 'lucide-react';
 import { Badge, Button } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
@@ -424,8 +424,9 @@ export function TopNav() {
   );
 
   return (
-    <header className="h-14 flex items-center justify-between px-7 bg-warm-card border-b border-[var(--color-border)] sticky top-0 z-30">
-      <div ref={searchRef} className="relative flex items-center">
+    <header className="h-16 flex items-center justify-between gap-4 px-7 bg-warm-card border-b border-[var(--color-border)] sticky top-0 z-30">
+      <div className="flex min-w-0 items-center gap-3">
+      <div ref={searchRef} className="relative flex min-w-0 items-center">
         <div className={cn('flex items-center gap-2 bg-warm-bg border rounded-btn px-3.5 py-[7px] w-[340px] transition-colors', searchOpen ? 'border-olive shadow-sm' : 'border-[var(--color-border)]')}>
           <Search size={16} className="text-gray-400 shrink-0" />
           <input
@@ -509,8 +510,26 @@ export function TopNav() {
           </div>
         )}
       </div>
+      <button
+        type="button"
+        onClick={() => window.dispatchEvent(new CustomEvent('reknew:open-orbit'))}
+        className="hidden h-10 shrink-0 items-center gap-2 rounded-xl border border-[var(--color-border)] bg-warm-card px-4 text-[13px] font-semibold text-[var(--color-brand-navy)] shadow-sm transition-colors hover:bg-hover-bg md:inline-flex"
+      >
+        <Sparkles size={15} className="text-[var(--color-nav-active-bar)]" />
+        Ask Orbit
+      </button>
+      </div>
 
       <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => navigate('/employee/check-in')}
+          className="hidden h-10 items-center gap-2 rounded-xl bg-[#f4f0e9] px-3 text-[12px] font-semibold text-[#555866] transition-colors hover:bg-[#ece5db] lg:inline-flex"
+        >
+          <span className="h-2 w-2 rounded-full bg-[#b9bbc2]" />
+          Attendance
+          <span className="inline-flex h-7 items-center gap-1 rounded-lg bg-[#202431] px-3 font-bold text-white"><LogIn size={13} /> Check in</span>
+        </button>
         <div ref={wrapperRef} className="flex items-center gap-2">
           <div className="relative">
             <IconButton type="inbox" Icon={Inbox} badge={inboxCount} />

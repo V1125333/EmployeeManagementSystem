@@ -7,21 +7,21 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.authentication import AuthenticatedActor, get_authenticated_actor
+from app.core.authorization import employee_can
+from app.core.rbac import Permission, Scope
 from app.models.employee import Employee
 from app.schemas.forecasting import ForecastResponse
 from app.services.audit_service import log_audit, log_authorization_failure
 from app.services.forecasting_service import SUPPORTED_FORECAST_WINDOWS, get_workforce_forecast
-from app.services.settings_service import normalize_role
 
 
 router = APIRouter(prefix="/forecasting", tags=["Workforce Forecasting"])
 
 
 def _allowed_scope(actor: Employee) -> str:
-    role = normalize_role(actor.role)
-    if role in {"super_admin", "hr_admin", "admin", "global_access"}:
+    if employee_can(actor, Permission.FORECAST_READ, Scope.ORGANIZATION):
         return "all"
-    if role == "manager":
+    if employee_can(actor, Permission.FORECAST_READ, Scope.DIRECT_REPORTS):
         return "direct_reports"
     return "none"
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import secrets
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -18,7 +18,7 @@ from app.core.config import settings, validate_security_settings
 from app.core.database import get_db
 from app.models.employee import Employee
 from app.services.audit_service import log_audit
-from app.core.authorization import normalize_role
+from app.core.rbac import canonical_role, serialized_grants
 
 logger = logging.getLogger(__name__)
 _http_bearer = HTTPBearer(auto_error=False)
@@ -41,6 +41,7 @@ class AuthenticatedPrincipal:
     status: str
     permissions: frozenset[str]
     token_id: str
+    scopes: dict[str, frozenset[str]] = field(default_factory=dict)
     access_level: str = "standard"
     manager_id: str | None = None
     department_id: str | None = None
@@ -48,6 +49,9 @@ class AuthenticatedPrincipal:
 
     def has_permission(self, permission: str) -> bool:
         return permission in self.permissions
+
+    def has_scope(self, permission: str, scope: str) -> bool:
+        return scope in self.scopes.get(permission, frozenset())
 
 
 @dataclass(frozen=True)
@@ -167,34 +171,22 @@ def _deny_password_change_required(
     )
 
 
-def _permissions_for_employee(_employee: Employee) -> frozenset[str]:
-    """Preserve the current server-owned AI permission contract.
-
-    Broader business permissions remain governed by existing route/service role
-    and ownership rules until their later, explicitly approved migration tasks.
-    """
-    return frozenset(
-        {
-            LEAVE_BALANCE_SELF_PERMISSION,
-            LEAVE_REQUEST_SELF_PERMISSION,
-            LEAVE_ASSESS_SELF_PERMISSION,
-            LEAVE_PREPARE_SELF_PERMISSION,
-            ATTENDANCE_SELF_PERMISSION,
-            EMPLOYEE_MANAGER_SELF_PERMISSION,
-            EMPLOYEE_DIRECTORY_READ_PERMISSION,
-            TIMESHEET_SELF_PERMISSION,
-            PROJECT_ASSIGNMENTS_SELF_PERMISSION,
-        }
-    )
+def _authorization_for_employee(employee: Employee) -> tuple[frozenset[str], dict[str, frozenset[str]]]:
+    permissions, scopes = serialized_grants(employee.role)
+    return frozenset(permissions), {
+        permission: frozenset(values) for permission, values in scopes.items()
+    }
 
 
 def _build_principal(employee: Employee, claims: dict) -> AuthenticatedPrincipal:
+    permissions, scopes = _authorization_for_employee(employee)
     return AuthenticatedPrincipal(
         employee_id=employee.id,
         email=employee.work_email,
-        role=normalize_role(employee.role),
+        role=canonical_role(employee.role).value,
         status=employee.employment_status,
-        permissions=_permissions_for_employee(employee),
+        permissions=permissions,
+        scopes=scopes,
         token_id=str(claims["jti"]),
         access_level=(employee.access_level or "standard").strip().lower(),
         manager_id=employee.manager_id,

@@ -1,11 +1,31 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
+import httpx
 import pytest
 
 from app.services.orbit_agent import orbit_classifier
 from app.services.orbit_agent.orbit_capabilities import OrbitIntent
+
+
+def test_classifier_sends_valid_strict_schema_and_current_token_parameter(monkeypatch):
+    async def post(self, url, **kwargs):
+        payload = kwargs['json']
+        assert 'max_tokens' not in payload
+        assert 'temperature' not in payload
+        assert payload['max_completion_tokens'] > 0
+        schema = payload['response_format']['json_schema']['schema']
+        assert schema['additionalProperties'] is False
+        assert set(schema['required']) == set(schema['properties'])
+        return httpx.Response(200, json={'choices': [{'message': {
+            'content': json.dumps({'intent': 'ems_leave', 'confidence': 0.99})
+        }}]})
+
+    monkeypatch.setattr(httpx.AsyncClient, 'post', post)
+    content = asyncio.run(orbit_classifier._request_classifier_completion('get my leave balance'))
+    assert orbit_classifier._parse_classifier_content(content).intent is OrbitIntent.EMS_LEAVE
 
 
 def test_parse_classifier_content_accepts_supported_intent_and_confidence():

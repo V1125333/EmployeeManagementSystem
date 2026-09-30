@@ -117,7 +117,6 @@ def task6_context(monkeypatch):
         "report": _employee("report", "employee", manager_id="manager"),
         "hr_admin": _employee("hr-admin", "hr_admin"),
         "finance": _employee("finance", "finance"),
-        "admin": _employee("admin", "admin"),
         "project_manager": _employee("project-manager", "manager"),
     }
     with Session() as db:
@@ -300,9 +299,9 @@ def test_announcement_creation_and_audit_attribution_are_bearer_derived(task6_co
     )
     response = task6_context["client"].post(
         "/announcements",
-        headers=_bearer(task6_context, "admin", **{"X-User-Id": "employee", "X-User-Email": "employee@example.com"}),
+        headers=_bearer(task6_context, "hr_admin", **{"X-User-Id": "employee", "X-User-Email": "employee@example.com"}),
         json={"title": "Fixed", "message": "Synthetic", "status": "draft"},
     )
     assert response.status_code == 200
-    assert response.json()["announcement"]["created_by"] == "admin@example.com"
-    assert audit_actor_ids == ["admin"]
+    assert response.json()["announcement"]["created_by"] == "hr-admin@example.com"
+    assert audit_actor_ids == ["hr-admin"]

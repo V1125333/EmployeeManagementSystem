@@ -5,17 +5,26 @@ import { Drawer } from '@/components/ui/Drawer';
 import { useToast } from '@/components/ui/Toast';
 import { COUNTRY_CODES } from '@/data/countryCodes';
 import { cn } from '@/utils/cn';
+import { assignableRoles, ROLE_LABELS, type PermissionSubject, type UserRole } from '@/auth/rbac';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
 interface AddEmployeeDrawerProps {
   open: boolean;
   onClose: () => void;
+  currentUser?: PermissionSubject | null;
 }
 
 // ─── Dropdown Options ───
-const WORKFORCE_TYPES = ['Full-Time Employee', 'Paid Intern', 'Unpaid Intern', 'Trainee', 'Guest'];
-const ROLES = ['HR', 'Admin', 'Manager', 'Employee', 'Intern', 'Trainee', 'Guest'];
+const EMPLOYMENT_TYPES = ['full_time', 'part_time', 'contractor', 'intern', 'trainee', 'consultant'];
+const EMPLOYMENT_TYPE_LABELS: Record<string, string> = {
+  full_time: 'Full Time',
+  part_time: 'Part Time',
+  contractor: 'Contractor',
+  intern: 'Intern',
+  trainee: 'Trainee',
+  consultant: 'Consultant',
+};
 const DEPARTMENTS = ['Engineering', 'Product', 'Design', 'Marketing', 'Sales', 'Operations', 'People', 'Finance'];
 const WORK_ARRANGEMENTS = ['Remote', 'Hybrid', 'Office'];
 const MANAGERS = ['David Park', 'Sarah Chen', 'James Rivera', 'Priya Sharma', 'Marcus Chen'];
@@ -85,6 +94,7 @@ function FormSelect({
   onChange,
   placeholder,
   options,
+  getLabel = (option) => option,
   searchable,
   placement = 'down',
 }: {
@@ -92,6 +102,7 @@ function FormSelect({
   onChange: (v: string) => void;
   placeholder: string;
   options: string[];
+  getLabel?: (option: string) => string;
   searchable?: boolean;
   placement?: 'down' | 'up';
 }) {
@@ -115,7 +126,7 @@ function FormSelect({
           value ? 'text-[var(--color-brand-navy)]' : 'text-gray-400'
         )}
       >
-        <span className="truncate">{value || placeholder}</span>
+        <span className="truncate">{value ? getLabel(value) : placeholder}</span>
         <ChevronDown size={14} className={cn('shrink-0 text-gray-400 transition-transform', isOpen && 'rotate-180')} />
       </button>
 
@@ -155,7 +166,7 @@ function FormSelect({
                       : 'text-[var(--color-brand-navy)] hover:bg-hover-bg'
                   )}
                 >
-                  {opt}
+                  {getLabel(opt)}
                 </button>
               ))}
               {filtered.length === 0 && (
@@ -303,10 +314,11 @@ const INITIAL_FORM: FormState = {
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
+export function AddEmployeeDrawer({ open, onClose, currentUser }: AddEmployeeDrawerProps) {
   const { showToast } = useToast();
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
+  const roleOptions = assignableRoles(currentUser);
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -356,6 +368,7 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
       phone: form.phone,
       date_of_birth: form.dateOfBirth || null,
       workforce_type: form.workforceType,
+      employment_type: form.workforceType,
       role: form.role,
       department: form.department,
       designation: form.designation || null,
@@ -525,12 +538,13 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
 
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 [&>*]:min-w-0">
         <div>
-          <FormLabel required>Workforce Type</FormLabel>
+          <FormLabel required>Employment Type</FormLabel>
           <FormSelect
             value={form.workforceType}
             onChange={(v) => update('workforceType', v)}
-            placeholder="Select workforce type"
-            options={WORKFORCE_TYPES}
+            placeholder="Select employment type"
+            options={EMPLOYMENT_TYPES}
+            getLabel={(value) => EMPLOYMENT_TYPE_LABELS[value] || value}
           />
         </div>
         <div>
@@ -539,7 +553,8 @@ export function AddEmployeeDrawer({ open, onClose }: AddEmployeeDrawerProps) {
             value={form.role}
             onChange={(v) => update('role', v)}
             placeholder="Select role"
-            options={ROLES}
+            options={roleOptions}
+            getLabel={(value) => ROLE_LABELS[value as UserRole] || value}
           />
         </div>
       </div>

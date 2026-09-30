@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.authentication import AuthenticatedActor, get_authenticated_actor
+from app.core.authorization import employee_can
+from app.core.rbac import Permission, Scope
 from app.models.allocation import Allocation
 from app.models.client_onboarding import Client
 from app.models.employee import Employee
@@ -32,11 +34,20 @@ router = APIRouter(prefix="/projects", tags=["Projects"])
 
 
 def _is_project_admin(actor: Employee) -> bool:
-    return normalize_role(actor.role) in {"super_admin", "hr_admin", "admin", "global_access"}
+    return employee_can(actor, Permission.PROJECT_MANAGE, Scope.ORGANIZATION)
 
 
-def _require_project_admin(db: Session, actor: Employee, action: str) -> None:
+def _can_manage_project(db: Session, actor: Employee, project_id: str | None = None) -> bool:
     if _is_project_admin(actor):
+        return True
+    if not project_id or not employee_can(actor, Permission.PROJECT_MANAGE, Scope.MANAGED_PROJECTS):
+        return False
+    project = db.query(Project).filter(Project.id == project_id).first()
+    return bool(project and project.project_manager_id == actor.id)
+
+
+def _require_project_admin(db: Session, actor: Employee, action: str, project_id: str | None = None) -> None:
+    if _can_manage_project(db, actor, project_id):
         return
     log_authorization_failure(
         db,
@@ -133,11 +144,11 @@ async def assignable_employees(
     authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
     actor = authenticated_actor.employee
-    if not (_is_project_admin(actor) or normalize_role(actor.role) == "manager"):
+    if not (_is_project_admin(actor) or employee_can(actor, Permission.EMPLOYEE_READ, Scope.DIRECT_REPORTS)):
         raise HTTPException(status_code=403, detail="Not authorized to view assignable employees.")
 
     query = db.query(Employee).filter(Employee.work_email != "superadmin@reknew.ai")
-    if normalize_role(actor.role) == "manager" and not _is_project_admin(actor):
+    if employee_can(actor, Permission.EMPLOYEE_READ, Scope.DIRECT_REPORTS) and not _is_project_admin(actor):
         actor_name = _employee_name(actor)
         query = query.filter(or_(Employee.manager_id == actor.id, Employee.reporting_manager == actor_name))
 
@@ -148,7 +159,10 @@ async def assignable_employees(
     employees = query.order_by(Employee.first_name.asc(), Employee.last_name.asc()).limit(limit).all()
     managers = (
         db.query(Employee)
-        .filter(Employee.role.in_(["manager", "hr_admin", "super_admin", "admin"]), Employee.work_email != "superadmin@reknew.ai")
+        .filter(
+            Employee.role.in_(["manager", "project_manager", "resource_manager", "hr_admin", "system_admin", "super_admin"]),
+            Employee.work_email != "superadmin@reknew.ai",
+        )
         .order_by(Employee.first_name.asc(), Employee.last_name.asc())
         .all()
         if _is_project_admin(actor)
@@ -193,7 +207,7 @@ async def update_project_endpoint(
     authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
     actor = authenticated_actor.employee
-    _require_project_admin(db, actor, "project.update")
+    _require_project_admin(db, actor, "project.update", project_id)
     return get_project(db, update_project(db, project_id, data, actor).id)
 
 

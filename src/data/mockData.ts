@@ -99,7 +99,7 @@ export const leaveCalendar: CalendarDay[] = Array.from({ length: 31 }, (_, i) =>
 
 // ─── Navigation ───
 export const mainNavItems: NavItem[] = [
-  { key: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard', path: '/dashboard' },
+  { key: 'dashboard', label: 'Overview', icon: 'LayoutDashboard', path: '/dashboard' },
   { key: 'employees', label: 'Employees', icon: 'Users', path: '/employees' },
   { key: 'onboarding', label: 'Onboarding Center', icon: 'UserPlus', path: '/onboarding' },
   { key: 'client', label: 'Client Onboarding', icon: 'Briefcase', path: '/client-onboarding' },

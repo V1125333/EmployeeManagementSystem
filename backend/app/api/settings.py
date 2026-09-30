@@ -50,6 +50,8 @@ from app.services.preferences_service import (
     update_general,
     update_notifications,
 )
+from app.core.authorization import employee_can
+from app.core.rbac import Permission, Scope
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
 
@@ -226,9 +228,8 @@ async def patch_organization_security_policy(
     actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
     employee = actor.employee
-    normalized_role = (employee.role or "").strip().lower().replace(" ", "_").replace("-", "_")
-    if normalized_role not in {"super_admin", "admin", "hr_admin", "global_access"}:
-        raise HTTPException(status_code=403, detail="Admin access is required.")
+    if not employee_can(employee, Permission.SECURITY_POLICY_MANAGE, Scope.ORGANIZATION):
+        raise HTTPException(status_code=403, detail="security.policy.manage permission is required.")
     policy = get_or_create_security_policy(db, employee.id)
     before = {
         "mfa_enabled": bool(policy.mfa_enabled),

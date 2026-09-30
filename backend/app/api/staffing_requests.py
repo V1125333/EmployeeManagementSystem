@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.authentication import AuthenticatedActor, get_authenticated_actor
+from app.core.authorization import employee_can
+from app.core.rbac import Permission, Scope
 from app.models.audit import AuditLog
 from app.models.employee import Employee
 from app.models.allocation import Allocation
@@ -55,11 +57,20 @@ def _authenticated_employee(
 
 
 def _is_hr_admin(actor: Employee) -> bool:
-    return normalize_role(actor.role) in {"super_admin", "hr_admin", "admin", "global_access"}
+    return employee_can(actor, Permission.STAFFING_MANAGE, Scope.ORGANIZATION)
 
 
 def _is_manager(actor: Employee) -> bool:
-    return normalize_role(actor.role) == "manager"
+    return employee_can(actor, Permission.STAFFING_REQUEST, Scope.DIRECT_REPORTS)
+
+
+def _has_staffing_access(actor: Employee) -> bool:
+    return (
+        _is_hr_admin(actor)
+        or _is_manager(actor)
+        or employee_can(actor, Permission.STAFFING_REQUEST, Scope.SELF)
+        or employee_can(actor, Permission.STAFFING_REQUEST, Scope.MANAGED_PROJECTS)
+    )
 
 
 def _actor_name(actor: Employee) -> str:
@@ -68,7 +79,7 @@ def _actor_name(actor: Employee) -> str:
 
 
 def _require_module_access(db: Session, actor: Employee) -> None:
-    if _is_hr_admin(actor) or _is_manager(actor):
+    if _has_staffing_access(actor):
         return
     log_authorization_failure(
         db,
@@ -79,7 +90,7 @@ def _require_module_access(db: Session, actor: Employee) -> None:
         reason="Employee attempted to access staffing request module.",
     )
     db.commit()
-    raise HTTPException(status_code=403, detail="Staffing Requests are available only to managers, HR, and admins.")
+    raise HTTPException(status_code=403, detail="staffing.request or staffing.manage permission is required.")
 
 
 def _scope_query(db: Session, actor: Employee):
@@ -143,11 +154,11 @@ def _require_hr_action(db: Session, actor: Employee, row: StaffingRequest, actio
         reason="Non-HR user attempted an HR staffing request action.",
     )
     db.commit()
-    raise HTTPException(status_code=403, detail="Only HR and admins can perform this action.")
+    raise HTTPException(status_code=403, detail="staffing.manage organization permission is required.")
 
 
 def _require_hr_only(db: Session, actor: Employee, action: str, entity_id: str | None = None) -> None:
-    if normalize_role(actor.role) in {"super_admin", "hr_admin", "global_access"}:
+    if employee_can(actor, Permission.STAFFING_MANAGE, Scope.ORGANIZATION):
         return
     log_authorization_failure(
         db,
@@ -158,7 +169,7 @@ def _require_hr_only(db: Session, actor: Employee, action: str, entity_id: str |
         reason="Non-HR user attempted an HR-only staffing fulfillment action.",
     )
     db.commit()
-    raise HTTPException(status_code=403, detail="Only HR and admins can perform this action.")
+    raise HTTPException(status_code=403, detail="staffing.manage organization permission is required.")
 
 
 def _employee_option(employee: Employee) -> dict[str, Any]:
@@ -197,7 +208,7 @@ async def staffing_request_options(
     managers = [
         _employee_option(employee)
         for employee in employees
-        if normalize_role(employee.role) in {"manager", "hr_admin", "admin", "super_admin", "global_access"}
+        if normalize_role(employee.role) in {"manager", "project_manager", "resource_manager", "hr_admin", "system_admin", "super_admin"}
     ]
     projects = [
         {"id": item.id, "name": item.name, "code": item.code, "status": item.status}

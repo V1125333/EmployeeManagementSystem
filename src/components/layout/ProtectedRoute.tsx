@@ -1,10 +1,6 @@
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
-
-function isAdminRole(role?: string) {
-  const normalized = (role || '').toLowerCase().replace(/\s+/g, '_');
-  return ['super_admin', 'admin', 'hr_admin', 'global_access'].includes(normalized);
-}
+import { canAccess, type PermissionScope } from '@/auth/rbac';
 
 export function ProtectedRoute() {
   const { isAuthenticated, user } = useAuth();
@@ -20,32 +16,30 @@ export function ProtectedRoute() {
   return <Outlet />;
 }
 
-export function AdminRoute() {
+export function PermissionRoute({
+  permission,
+  anyOf,
+  scopes,
+}: {
+  permission?: string;
+  anyOf?: readonly string[];
+  scopes?: readonly PermissionScope[];
+}) {
   const { user } = useAuth();
-
-  if (!isAdminRole(user?.role)) {
-    return <Navigate to="/employee" replace />;
-  }
-
-  return <Outlet />;
-}
-
-export function EmployeeRoute() {
-  const { user } = useAuth();
-
-  if (isAdminRole(user?.role)) {
+  const allowed = permission
+    ? canAccess(user, permission, scopes)
+    : Boolean(anyOf?.some((item) => canAccess(user, item, scopes)));
+  if (!allowed) {
     return <Navigate to="/" replace />;
   }
-
   return <Outlet />;
 }
 
 export function RoleHomeRedirect() {
   const { user } = useAuth();
 
-  if (isAdminRole(user?.role)) {
-    return <Navigate to="/dashboard" replace />;
-  }
-
+  if (canAccess(user, 'employee.read', ['organization'])) return <Navigate to="/dashboard" replace />;
+  if (canAccess(user, 'security.account.manage')) return <Navigate to="/admin/security" replace />;
+  if (canAccess(user, 'staffing.manage')) return <Navigate to="/bench" replace />;
   return <Navigate to="/employee" replace />;
 }

@@ -98,6 +98,24 @@ describe('authenticatedFetch', () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
+  it('does not let a stale 401 erase a newly established session', async () => {
+    let finishOldRequest: ((value: Response) => void) | undefined;
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => new Promise<Response>((resolve) => {
+      finishOldRequest = resolve;
+    })));
+    const listener = vi.fn();
+    window.addEventListener(ORBIT_SESSION_EXPIRED_EVENT, listener);
+
+    const oldRequest = authenticatedFetch('/api/v1/slow-request');
+    writeOrbitSession({ user, token: 'new-orbit-jwt' });
+    finishOldRequest?.(response('', { status: 401 }));
+    await oldRequest;
+
+    expect(readOrbitSession()?.token).toBe('new-orbit-jwt');
+    expect(listener).not.toHaveBeenCalled();
+    window.removeEventListener(ORBIT_SESSION_EXPIRED_EVENT, listener);
+  });
+
   it('does not expire the session for an ordinary 403', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(JSON.stringify({ detail: { code: 'FORBIDDEN' } }), {
       status: 403,

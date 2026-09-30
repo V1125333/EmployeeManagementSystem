@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 
 import httpx
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from app.core.config import settings
 from app.services.orbit_agent.orbit_capabilities import OrbitIntent
@@ -70,6 +70,8 @@ class OrbitClassificationResult:
 
 
 class _ClassifierPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     intent: str
     confidence: float
 
@@ -212,8 +214,7 @@ async def _request_classifier_completion(
                 "schema": _ClassifierPayload.model_json_schema(),
             },
         },
-        "max_tokens": _classifier_max_output_tokens(),
-        "temperature": 0,
+        "max_completion_tokens": _classifier_max_output_tokens(),
     }
     async with httpx.AsyncClient(timeout=_classifier_timeout_seconds()) as client:
         response = await client.post(

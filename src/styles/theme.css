@@ -1,7 +1,7 @@
 :root {
   --color-brand-navy: #252b3a;
   --color-brand-orange: #f5a23a;
-  --color-brand-canvas: #fefefc;
+  --color-brand-canvas: #fbf8f2;
   --color-brand-surface: #fefefc;
   --color-accent: #f5a23a;
   --color-accent-light: color-mix(in srgb, var(--color-brand-orange) 12%, var(--color-brand-surface));

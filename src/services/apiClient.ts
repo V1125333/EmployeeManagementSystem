@@ -146,7 +146,13 @@ export async function authenticatedFetch(
   headers.set('Authorization', `Bearer ${orbitAccessToken}`);
   const response = await fetch(input, { ...init, headers });
   if (response.status === 401) {
-    expireOrbitSession();
+    // A request started with an older token can finish after the user has
+    // already signed in again. Never let that stale 401 erase the newer
+    // session and bounce the user back to the login page.
+    const currentOrbitAccessToken = readOrbitSession()?.token;
+    if (!currentOrbitAccessToken || currentOrbitAccessToken === orbitAccessToken) {
+      expireOrbitSession();
+    }
   } else if (response.status === 403) {
     const fields = errorFields(await readErrorBody(response.clone()));
     if (fields.code === 'PASSWORD_CHANGE_REQUIRED') {

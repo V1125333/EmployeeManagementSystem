@@ -18,6 +18,8 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.authentication import AuthenticatedActor, get_authenticated_actor
+from app.core.authorization import employee_can
+from app.core.rbac import Permission, Scope
 from app.models.employee import Employee
 from app.models.leave_attendance import Attendance, AttendanceCorrection, LeaveBalance, LeaveRequest, LeaveType
 from app.models.operations import ActivityLog, Notification, TimesheetEntry
@@ -56,17 +58,13 @@ def employee_name(employee: Employee | None) -> str:
     return f"{employee.first_name} {employee.last_name}".strip()
 
 
-def normalize_role(role: str | None) -> str:
-    return (role or "").strip().lower().replace(" ", "_")
-
-
 def is_admin_role(role: str | None) -> bool:
-    return normalize_role(role) in {"super_admin", "admin", "hr_admin", "global_access"}
+    return employee_can(Employee(role=role or ""), Permission.LEAVE_MANAGE, Scope.ORGANIZATION)
 
 
 def require_admin(user: Employee) -> Employee:
-    if not is_admin_role(user.role):
-        raise HTTPException(status_code=403, detail="Only Super Admin and HR roles can access Time Off & Attendance administration.")
+    if not employee_can(user, Permission.LEAVE_MANAGE, Scope.ORGANIZATION):
+        raise HTTPException(status_code=403, detail="leave.manage organization permission is required.")
     return user
 
 

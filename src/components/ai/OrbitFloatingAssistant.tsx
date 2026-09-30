@@ -36,6 +36,12 @@ export function OrbitFloatingAssistant() {
   }, [isOpen]);
 
   useEffect(() => {
+    const openAssistant = () => setIsOpen(true);
+    window.addEventListener('reknew:open-orbit', openAssistant);
+    return () => window.removeEventListener('reknew:open-orbit', openAssistant);
+  }, []);
+
+  useEffect(() => {
     const viewport = messageViewportRef.current;
     if (!viewport) return;
     viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
@@ -65,8 +71,14 @@ export function OrbitFloatingAssistant() {
         },
       ]);
     } catch (reason) {
-      const friendlyMessage = reason instanceof ApiError && reason.message
-        ? FALLBACK_ERROR
+      const friendlyMessage = reason instanceof ApiError
+        ? reason.status === 401
+          ? 'Your session has expired. Please sign in again.'
+          : reason.code === 'ORBIT_AI_TIMEOUT'
+            ? 'Orbit AI took too long to respond. Please try again.'
+            : reason.code === 'ORBIT_AI_UNAVAILABLE'
+              ? 'Orbit AI is temporarily unavailable. Please try again shortly.'
+              : FALLBACK_ERROR
         : FALLBACK_ERROR;
       setError(friendlyMessage);
       setMessages((current) => [
@@ -88,11 +100,11 @@ export function OrbitFloatingAssistant() {
           <header className="border-b border-[#e9e1d3] bg-[#fbf8f2]/95 px-5 pb-4 pt-4 backdrop-blur-sm">
             <div className="flex items-start justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#1c7d73] to-[#12433f] shadow-[0_8px_22px_rgba(18,67,63,.18)]">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#f97316] to-[#c2410c] shadow-[0_8px_22px_rgba(194,65,12,.18)]">
                   <OrbitAIGlyph className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
-                  <div className="truncate text-[10.5px] font-bold uppercase tracking-[1.1px] text-[#1c7d73]">
+                  <div className="truncate text-[10.5px] font-bold uppercase tracking-[1.1px] text-[#c2410c]">
                     Orbit AI
                   </div>
                   <h2 className="truncate text-[15px] font-semibold text-[#221f1a]">Your ReKnew Assistant</h2>
@@ -102,7 +114,7 @@ export function OrbitFloatingAssistant() {
                 type="button"
                 aria-label="Close Orbit AI"
                 onClick={() => setIsOpen(false)}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#8a8270] transition hover:bg-[#eee7dc] hover:text-[#221f1a] focus:outline-none focus:ring-2 focus:ring-[#1c7d73]/35"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#8a8270] transition hover:bg-[#eee7dc] hover:text-[#221f1a] focus:outline-none focus:ring-2 focus:ring-[#f97316]/35"
               >
                 <X size={17} />
               </button>
@@ -127,7 +139,7 @@ export function OrbitFloatingAssistant() {
                   )}
                 >
                   {message.role === 'assistant' && (
-                    <div className="mb-1.5 flex items-center gap-2 text-[9.5px] font-bold uppercase tracking-[1px] text-[#1c7d73]">
+                    <div className="mb-1.5 flex items-center gap-2 text-[9.5px] font-bold uppercase tracking-[1px] text-[#c2410c]">
                       <Bot size={12} />
                       Orbit AI
                     </div>
@@ -140,7 +152,7 @@ export function OrbitFloatingAssistant() {
             {isLoading && (
               <div className="flex justify-start">
                 <div className="rounded-[18px] rounded-bl-[6px] border border-[#e9e1d3] bg-white/90 px-4 py-3 text-[13px] text-[#6f6757] shadow-sm">
-                  <div className="mb-1 text-[9.5px] font-bold uppercase tracking-[1px] text-[#1c7d73]">Orbit AI</div>
+                  <div className="mb-1 text-[9.5px] font-bold uppercase tracking-[1px] text-[#c2410c]">Orbit AI</div>
                   <span role="status">Orbit is thinking...</span>
                 </div>
               </div>
@@ -168,7 +180,7 @@ export function OrbitFloatingAssistant() {
                 }}
                 placeholder="Ask Orbit..."
                 aria-label="Ask Orbit AI"
-                className="min-h-[52px] flex-1 resize-none rounded-2xl border border-[#d9d1c2] bg-white px-4 py-3 text-[13px] text-[#221f1a] outline-none transition placeholder:text-[#8a8270] focus:border-[#1c7d73] focus:ring-2 focus:ring-[#1c7d73]/15 disabled:opacity-70"
+                className="min-h-[52px] flex-1 resize-none rounded-2xl border border-[#d9d1c2] bg-white px-4 py-3 text-[13px] text-[#221f1a] outline-none transition placeholder:text-[#8a8270] focus:border-[#f97316] focus:ring-2 focus:ring-[#f97316]/15 disabled:opacity-70"
               />
               <Button
                 type="button"
@@ -195,7 +207,7 @@ export function OrbitFloatingAssistant() {
           aria-label={isOpen ? 'Hide Orbit AI assistant' : 'Open Orbit AI assistant'}
           title="Orbit AI"
           onClick={() => setIsOpen((current) => !current)}
-          className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-[#1c7d73] to-[#12433f] text-white shadow-[0_18px_45px_rgba(18,67,63,.28)] transition hover:-translate-y-0.5 hover:shadow-[0_22px_55px_rgba(18,67,63,.32)] focus:outline-none focus:ring-2 focus:ring-[#1c7d73]/35"
+          className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-[#f97316] to-[#c2410c] text-white shadow-[0_18px_45px_rgba(194,65,12,.28)] transition hover:-translate-y-0.5 hover:shadow-[0_22px_55px_rgba(194,65,12,.32)] focus:outline-none focus:ring-2 focus:ring-[#f97316]/35"
         >
           <OrbitAIGlyph className="h-6 w-6" />
         </button>

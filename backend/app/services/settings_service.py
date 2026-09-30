@@ -21,6 +21,7 @@ from app.schemas.settings import (
     SupportTicketCreate,
 )
 from app.services.mfa_policy_service import update_user_mfa_preference
+from app.core.rbac import Permission, normalize_identifier, role_has_permission
 
 
 def utc_now() -> datetime:
@@ -43,15 +44,21 @@ def get_current_employee(db: Session, user_id: str | None, user_email: str | Non
 
 
 def normalize_role(role: str | None) -> str:
-    return (role or "").strip().lower().replace(" ", "_").replace("-", "_")
+    return normalize_identifier(role)
 
 
 def is_admin_role(role: str | None) -> bool:
-    return normalize_role(role) in {"super_admin", "admin", "hr_admin", "global_access"}
+    try:
+        return role_has_permission(role or "", Permission.EMPLOYEE_READ_SENSITIVE)
+    except ValueError:
+        return False
 
 
 def is_manager_or_admin_role(role: str | None) -> bool:
-    return normalize_role(role) in {"manager", "super_admin", "admin", "hr_admin", "global_access"}
+    try:
+        return role_has_permission(role or "", Permission.LEAVE_APPROVE)
+    except ValueError:
+        return False
 
 
 def require_admin_employee(db: Session, user_id: str | None, user_email: str | None) -> Employee:

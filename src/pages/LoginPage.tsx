@@ -245,12 +245,10 @@ export function LoginPage() {
       }
       if (data.force_password_change && data.employee) {
         setUserFromApi({ ...data.employee, force_password_change: true }, data.token);
-        navigate('/force-change-password', { replace: true });
         return;
       }
       if (data.token && data.employee) {
         setUserFromApi(data.employee, data.token);
-        navigate('/', { replace: true });
         return;
       }
       setLoginChallengeToken(data.login_challenge_token || '');
@@ -282,7 +280,6 @@ export function LoginPage() {
         return;
       }
       setUserFromApi({ ...data.employee, force_password_change: data.force_password_change }, data.token);
-      navigate('/');
     } catch {
       setError('Cannot connect to server. Please try again.');
     } finally {

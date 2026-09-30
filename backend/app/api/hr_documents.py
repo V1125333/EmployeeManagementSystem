@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.authentication import AuthenticatedActor, get_authenticated_actor
+from app.core.authorization import employee_can
+from app.core.rbac import Permission, Scope
 from app.schemas.hr_document import InternshipCompletionLetterRequest
-from app.services.settings_service import is_admin_role
 from app.services.security_service import log_sensitive_access
 from app.services.hr_document_service import (
     build_internship_completion_filename,
@@ -28,8 +29,8 @@ async def generate_internship_completion_letter(
     authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
     actor = authenticated_actor.employee
-    if not is_admin_role(actor.role):
-        raise HTTPException(status_code=403, detail="Admin access is required.")
+    if not employee_can(actor, Permission.DOCUMENT_MANAGE_HR, Scope.ORGANIZATION):
+        raise HTTPException(status_code=403, detail="document.manage_hr permission is required.")
     if format == "pdf":
         content = generate_internship_completion_pdf(request)
         media_type = "application/pdf"

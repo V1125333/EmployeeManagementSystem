@@ -19,7 +19,7 @@ from app.models.operations import Notification, TimesheetEntry, TimesheetIdempot
 
 
 BACKEND = Path(__file__).resolve().parents[1]
-HEAD = "20260816_0003"
+HEAD = "20260905_0004"
 BASELINE = "20260801_0001"
 
 

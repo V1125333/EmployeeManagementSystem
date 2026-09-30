@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.authentication import AuthenticatedActor, get_authenticated_actor
+from app.core.authorization import employee_can
+from app.core.rbac import Permission, Scope
 from app.models.client_onboarding import (
     Client,
     ClientActivityLog,
@@ -25,7 +27,6 @@ from app.models.client_onboarding import (
 )
 from app.models.employee import Employee
 from app.services.audit_service import log_audit
-from app.services.settings_service import is_admin_role
 
 router = APIRouter(prefix="/admin/client-onboarding", tags=["Client Onboarding"])
 
@@ -58,8 +59,8 @@ def authenticated_admin(
     authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ) -> Employee:
     user = authenticated_actor.employee
-    if not is_admin_role(user.role):
-        raise HTTPException(status_code=403, detail="Only Super Admin and HR/Admin roles can access Client Onboarding.")
+    if not employee_can(user, Permission.CLIENT_MANAGE, Scope.ORGANIZATION):
+        raise HTTPException(status_code=403, detail="client.manage permission is required.")
     return user
 
 

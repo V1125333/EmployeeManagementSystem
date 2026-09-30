@@ -18,6 +18,7 @@ from fastapi import HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.models.employee import Employee
+from app.core.rbac import Permission, Scope, UserRole, canonical_role, grants_for_role, normalize_identifier, role_has_permission
 
 if TYPE_CHECKING:
     from app.core.authentication import AuthenticatedPrincipal
@@ -25,16 +26,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-ADMIN_ROLES = frozenset(
-    {"super_admin", "admin", "hr_admin", "global_access"}
-)
-MANAGER_OR_ADMIN_ROLES = frozenset({*ADMIN_ROLES, "manager"})
-AUDIT_VIEWER_ROLES = frozenset({"super_admin", "hr_admin", "global_access"})
+ADMIN_ROLES = frozenset({UserRole.HR_ADMIN.value, UserRole.SYSTEM_ADMIN.value, UserRole.SUPER_ADMIN.value})
+MANAGER_OR_ADMIN_ROLES = frozenset({*ADMIN_ROLES, UserRole.MANAGER.value})
+AUDIT_VIEWER_ROLES = frozenset({UserRole.HR_ADMIN.value, UserRole.SYSTEM_ADMIN.value, UserRole.SUPER_ADMIN.value})
 
 
 def normalize_role(role: str | None) -> str:
     """Normalize spelling only; normalization never grants an unknown role."""
-    return (role or "").strip().lower().replace(" ", "_").replace("-", "_")
+    return normalize_identifier(role)
 
 
 def normalized_roles(roles: Iterable[str]) -> frozenset[str]:
@@ -45,7 +44,53 @@ def has_any_role(
     principal: "AuthenticatedPrincipal",
     allowed_roles: Iterable[str],
 ) -> bool:
-    return normalize_role(principal.role) in normalized_roles(allowed_roles)
+    try:
+        return canonical_role(principal.role).value in normalized_roles(allowed_roles)
+    except ValueError:
+        return False
+
+
+def employee_has_permission(employee: Employee, permission: str | Permission) -> bool:
+    try:
+        return role_has_permission(employee.role, permission)
+    except ValueError:
+        return False
+
+
+def employee_has_scope(employee: Employee, permission: str | Permission, scope: str | Scope) -> bool:
+    try:
+        permission_value = Permission(permission) if not isinstance(permission, Permission) else permission
+        scope_value = Scope(scope) if not isinstance(scope, Scope) else scope
+        return scope_value in grants_for_role(employee.role).get(permission_value, frozenset())
+    except ValueError:
+        return False
+
+
+def employee_can(employee: Employee, permission: str | Permission, scope: str | Scope | None = None) -> bool:
+    if scope is None:
+        return employee_has_permission(employee, permission)
+    return employee_has_scope(employee, permission, scope)
+
+
+def require_permission(
+    principal: "AuthenticatedPrincipal",
+    permission: str | Permission,
+    *,
+    scope: str | None = None,
+    db: Session | None = None,
+    request: Request | None = None,
+    actor: Employee | None = None,
+    entity_type: str = "protected_resource",
+    entity_id: str | None = None,
+) -> "AuthenticatedPrincipal":
+    value = permission.value if isinstance(permission, Permission) else permission
+    if principal.has_permission(value) and (scope is None or principal.has_scope(value, scope)):
+        return principal
+    deny_authorization(
+        db=db, request=request, actor=actor, action=value,
+        entity_type=entity_type, entity_id=entity_id,
+        reason=f"Permission '{value}' with scope '{scope or 'any'}' is required.",
+    )
 
 
 def is_self_or_authorized_role(

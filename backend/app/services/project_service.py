@@ -18,7 +18,8 @@ from app.models.operations import Project, ProjectDocument
 from app.schemas.operations import ProjectCreate, ProjectUpdate
 from app.services.attachment_service import validate_attachment
 from app.services.audit_service import changed_fields, log_audit
-from app.services.settings_service import normalize_role
+from app.core.authorization import employee_can
+from app.core.rbac import Permission, Scope
 from app.services.storage.base import StorageProvider
 from app.services.storage.storage_factory import get_storage
 
@@ -26,7 +27,17 @@ PROJECT_DOCUMENT_TYPES = {"CONTRACT", "SOW", "NDA", "INVOICE", "REPORT", "OTHER"
 
 
 def _is_project_admin(actor: Employee) -> bool:
-    return normalize_role(actor.role) in {"super_admin", "hr_admin", "admin", "global_access"}
+    return employee_can(actor, Permission.PROJECT_MANAGE, Scope.ORGANIZATION)
+
+
+def _can_manage_project(actor: Employee, project: Project) -> bool:
+    return bool(
+        _is_project_admin(actor)
+        or (
+            project.project_manager_id == actor.id
+            and employee_can(actor, Permission.PROJECT_MANAGE, Scope.MANAGED_PROJECTS)
+        )
+    )
 
 
 def _employee_name_from_row(employee: Employee | None) -> str | None:
@@ -307,8 +318,8 @@ def upload_project_document(
     document_type: str,
 ) -> ProjectDocument:
     project = get_project_record(db, project_id)
-    if not _is_project_admin(actor):
-        raise HTTPException(status_code=403, detail="Only HR Admin or Super Admin can upload project documents.")
+    if not _can_manage_project(actor, project):
+        raise HTTPException(status_code=403, detail="project.manage permission for this project is required.")
 
     document_type = (document_type or "OTHER").upper()
     _validate_project_document(file_name, content_type, file_bytes, document_type)
@@ -384,7 +395,7 @@ def delete_project_document(db: Session, actor: Employee, project_id: str, docum
     doc = _project_document_query(db, project_id, document_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found.")
-    if not _is_project_admin(actor):
+    if not _can_manage_project(actor, project):
         raise HTTPException(status_code=403, detail="Not authorized to delete this project document.")
     doc.is_deleted = True
     doc.deleted_at = datetime.utcnow()

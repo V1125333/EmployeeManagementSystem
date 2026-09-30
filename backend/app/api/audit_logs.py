@@ -15,16 +15,21 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.authentication import AuthenticatedActor, get_authenticated_actor
+from app.core.authorization import employee_can
+from app.core.rbac import Permission, Scope
 from app.models.employee import Employee
 from app.models.audit import AuditLog
 from app.services.audit_service import log_audit, log_authorization_failure
-from app.services.settings_service import normalize_role
 
 router = APIRouter(prefix="/audit-logs", tags=["Audit Logs"])
 
 
 def can_view_audit(role: str | None) -> bool:
-    return normalize_role(role) in {"super_admin", "hr_admin", "global_access"}
+    probe = Employee(role=role or "")
+    return (
+        employee_can(probe, Permission.AUDIT_READ_HR, Scope.ORGANIZATION)
+        or employee_can(probe, Permission.AUDIT_READ_SECURITY, Scope.ORGANIZATION)
+    )
 
 
 def serialize_audit(row: AuditLog) -> dict:
@@ -162,7 +167,7 @@ async def export_audit_logs(
     authenticated_actor: AuthenticatedActor = Depends(get_authenticated_actor),
 ):
     requester = authenticated_actor.employee
-    if normalize_role(requester.role) != "super_admin":
+    if not employee_can(requester, Permission.AUDIT_EXPORT, Scope.ORGANIZATION):
         log_authorization_failure(
             db,
             requester,

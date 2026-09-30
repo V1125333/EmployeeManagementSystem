@@ -28,6 +28,8 @@ from app.models.transactional_email import AccountActivationToken
 from app.models.settings import UserSettings
 from app.services.audit_service import log_audit, mask_email
 from app.services.mfa_policy_service import is_mfa_required, policy_values
+from app.core.authorization import employee_can
+from app.core.rbac import Permission, Scope, canonical_role, serialized_grants
 from app.services.preferences_service import get_or_create_preferences
 from app.services.transactional_email_service import enqueue_email, verify_activation_token
 
@@ -150,14 +152,19 @@ def clear_failed_reset(db: Session, employee: Employee) -> None:
 
 
 def _admin_roles() -> set[str]:
-    return {"super_admin", "admin", "hr_admin", "global_access"}
+    return {"system_admin", "super_admin"}
 
 
 def _normalize_role(role: str | None) -> str:
-    return (role or "").strip().lower().replace(" ", "_")
+    try:
+        return canonical_role(role).value
+    except ValueError:
+        return ""
 
 
 def _login_response(employee: Employee) -> dict:
+    role = canonical_role(employee.role)
+    permissions, scopes = serialized_grants(role)
     return {
         "success": True,
         "message": "Login successful",
@@ -167,7 +174,9 @@ def _login_response(employee: Employee) -> dict:
             "id": employee.id,
             "name": f"{employee.first_name} {employee.last_name}",
             "email": employee.work_email,
-            "role": employee.role,
+            "role": role.value,
+            "permissions": permissions,
+            "scopes": scopes,
             "department": employee.department,
             "profile_image_url": employee.profile_image_url,
         },
@@ -770,10 +779,10 @@ def admin_reset_password(
     request=None,
 ) -> dict:
     """Admin-triggered temporary password reset with forced change on next login."""
-    if _normalize_role(actor.role) not in {"super_admin", "hr_admin", "admin"}:
+    if not employee_can(actor, Permission.SECURITY_ACCOUNT_MANAGE, Scope.ORGANIZATION):
         _audit(
             db, actor, "admin_password_reset_denied", employee_id,
-            reason="Insufficient role", request=request,
+            reason="security.account.manage permission is required", request=request,
         )
         raise HTTPException(status_code=403, detail="You are not allowed to reset employee passwords.")
 
@@ -999,8 +1008,8 @@ def create_unlock_request_authenticated(
 
 
 def _require_unlock_admin(admin: Employee) -> None:
-    if _normalize_role(admin.role) not in _admin_roles():
-        raise HTTPException(status_code=403, detail="Only Super Admin, Admin, or HR can review account unlocks.")
+    if not employee_can(admin, Permission.SECURITY_ACCOUNT_MANAGE, Scope.ORGANIZATION):
+        raise HTTPException(status_code=403, detail="security.account.manage permission is required.")
 
 
 def approve_unlock(db: Session, admin: Employee, request_id: str, admin_notes: str | None = None) -> dict:
