@@ -133,7 +133,7 @@ const defaultLegacy: LegacySettings = {
 };
 
 function isAdminRole(role?: string) {
-  return ['super_admin', 'admin', 'hr_admin', 'global_access'].includes((role || '').toLowerCase().replace(/\s+/g, '_'));
+  return ['super_admin', 'system_admin', 'admin', 'hr_admin', 'global_access'].includes((role || '').toLowerCase().replace(/\s+/g, '_'));
 }
 
 function initials(name: string) {
@@ -461,6 +461,7 @@ export function SettingsPage() {
     : ['My Dashboard', 'Apply Leave', 'Timesheets', 'Check In / Out', 'Documents', 'Company Handbook'];
   const currentGeneral = { ...preferences, ...generalDraft } as UserPreferences;
   const currentNotifications = { ...preferences, ...notificationDraft } as UserPreferences;
+  const canEditManagedIdentity = isAdminRole(user?.role);
 
   useEffect(() => {
     async function loadSettings() {
@@ -612,23 +613,33 @@ export function SettingsPage() {
   async function saveProfile() {
     if (!profile) return;
     setSavingSection('profile');
+    setError('');
     try {
+      const employeePayload = {
+        phone: profile.phone,
+        ...(canEditManagedIdentity ? {
+          first_name: profile.first_name,
+          last_name: profile.last_name,
+        } : {}),
+      };
       const employeeRes = await authenticatedFetch(`${API_BASE}/employees/${profile.id}`, {
         method: 'PUT',
         headers: JSON_HEADERS,
-        body: JSON.stringify({
-          first_name: profile.first_name,
-          last_name: profile.last_name,
-          phone: profile.phone,
-        }),
+        body: JSON.stringify(employeePayload),
       });
-      if (!employeeRes.ok) throw new Error('Could not save profile.');
+      if (!employeeRes.ok) {
+        const data = await employeeRes.json().catch(() => null);
+        throw new Error(data?.detail || data?.message || 'Could not save profile.');
+      }
       const prefRes = await authenticatedFetch(`${API_BASE}/settings/preferences/general`, {
         method: 'PATCH',
         headers: JSON_HEADERS,
         body: JSON.stringify({ timezone: profile.timezone, date_format: profile.date_format }),
       });
-      if (!prefRes.ok) throw new Error('Could not save profile preferences.');
+      if (!prefRes.ok) {
+        const data = await prefRes.json().catch(() => null);
+        throw new Error(data?.detail || data?.message || 'Could not save profile preferences.');
+      }
       await theme.refreshPreferences();
       showToast({ message: 'Profile saved' });
     } catch (err) {
@@ -803,8 +814,8 @@ export function SettingsPage() {
                     {savingSection === 'profile-upload' ? 'Uploading' : 'Upload'}
                   </Button>
                 </div>
-                <Field label="First Name"><input value={profile.first_name} onChange={(e) => setProfile({ ...profile, first_name: e.target.value })} className={inputClass()} /></Field>
-                <Field label="Last Name"><input value={profile.last_name} onChange={(e) => setProfile({ ...profile, last_name: e.target.value })} className={inputClass()} /></Field>
+                <Field label="First Name" hint={!canEditManagedIdentity ? 'Managed by HR/Admin.' : undefined}><input value={profile.first_name} readOnly={!canEditManagedIdentity} onChange={(e) => setProfile({ ...profile, first_name: e.target.value })} className={cn(inputClass(), !canEditManagedIdentity && 'bg-hover-bg text-gray-500')} /></Field>
+                <Field label="Last Name" hint={!canEditManagedIdentity ? 'Managed by HR/Admin.' : undefined}><input value={profile.last_name} readOnly={!canEditManagedIdentity} onChange={(e) => setProfile({ ...profile, last_name: e.target.value })} className={cn(inputClass(), !canEditManagedIdentity && 'bg-hover-bg text-gray-500')} /></Field>
                 <Field label="Phone Number"><input value={profile.phone || ''} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} className={inputClass()} /></Field>
                 <Field label="Work Email" hint="Work email is managed by HR/Admin."><input value={profile.work_email} readOnly className={`${inputClass()} bg-hover-bg text-gray-500`} /></Field>
                 <Field label="Timezone"><SearchableTimezone value={profile.timezone} onChange={(timezone) => setProfile({ ...profile, timezone })} /></Field>

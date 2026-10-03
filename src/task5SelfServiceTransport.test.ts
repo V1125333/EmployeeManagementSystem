@@ -52,4 +52,11 @@ describe('Foundation Phase 0 Task 5 self-service transport', () => {
     expect(settingsSource.toLowerCase()).not.toContain('x-user-email');
     expect(settingsSource.toLowerCase()).not.toContain('x-user-name');
   });
+
+  it('keeps HR-managed identity fields read-only for employees and out of their update payload', () => {
+    expect(settingsSource).toContain('readOnly={!canEditManagedIdentity}');
+    expect(settingsSource).toContain("Managed by HR/Admin.");
+    expect(settingsSource).toContain('...(canEditManagedIdentity ? {');
+    expect(settingsSource).toContain("data?.detail || data?.message || 'Could not save profile.'");
+  });
 });
