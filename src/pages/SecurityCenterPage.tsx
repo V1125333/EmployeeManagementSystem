@@ -45,6 +45,91 @@ function formatDateTime(value?: string) {
   return new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+interface UnlockModalProps {
+  intent: NonNullable<UnlockIntent>;
+  result: UnlockResult;
+  adminNotes: string;
+  actionLoading: boolean;
+  onAdminNotesChange: (value: string) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+  onCopyTemporaryPassword: () => void;
+}
+
+function UnlockModal({
+  intent,
+  result,
+  adminNotes,
+  actionLoading,
+  onAdminNotesChange,
+  onClose,
+  onSubmit,
+  onCopyTemporaryPassword,
+}: UnlockModalProps) {
+  const hasTemporaryPassword = Boolean(result?.temporaryPassword);
+  return (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/45 px-4">
+      <div className="w-full max-w-[520px] rounded-2xl border border-[var(--color-border)] bg-white shadow-[0_28px_90px_rgba(17,24,39,0.24)]">
+        <div className="flex items-start justify-between border-b border-[var(--color-border)] px-6 py-5">
+          <div>
+            <div className="text-lg font-bold text-[var(--color-brand-navy)]">{hasTemporaryPassword ? 'Account unlocked' : intent.title}</div>
+            <div className="mt-1 text-sm text-gray-500">{intent.employeeName}</div>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-gray-400 transition hover:bg-hover-bg hover:text-[var(--color-brand-navy)]" aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+
+        {hasTemporaryPassword ? (
+          <div className="space-y-4 px-6 py-5">
+            <div className="flex items-start gap-3 rounded-xl border border-status-success/20 bg-status-success/5 px-4 py-3 text-status-success">
+              <CheckCircle size={18} className="mt-0.5 shrink-0" />
+              <div className="text-sm font-semibold">{result?.message}</div>
+            </div>
+            <div>
+              <div className="mb-2 text-[12px] font-bold uppercase tracking-wide text-gray-400">Temporary password</div>
+              <div className="flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-warm-bg p-3">
+                <code className="min-w-0 flex-1 select-all truncate text-[15px] font-bold text-[var(--color-brand-navy)]">{result?.temporaryPassword}</code>
+                <Button size="sm" variant="ghost" icon={<Copy size={14} />} onClick={onCopyTemporaryPassword}>Copy</Button>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-gray-500">
+                Share this temporary password securely. The employee will be required to create a new password on next login.
+              </p>
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={onClose}>Done</Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4 px-6 py-5">
+            <label className="block">
+              <span className="mb-2 block text-[13px] font-semibold text-[var(--color-brand-navy)]">Admin notes for audit trail</span>
+              <textarea
+                value={adminNotes}
+                onChange={(event) => onAdminNotesChange(event.target.value.slice(0, 500))}
+                className="min-h-[112px] w-full resize-none rounded-xl border border-[var(--color-border)] bg-warm-bg px-3.5 py-3 text-sm font-medium text-[var(--color-brand-navy)] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10"
+                placeholder="Example: Direct admin unlock after identity verification"
+                autoFocus
+              />
+            </label>
+            <div className="rounded-xl bg-warm-bg px-4 py-3 text-xs leading-5 text-gray-500">
+              {intent.destructive
+                ? 'Rejecting keeps the account locked and stores your notes for audit history.'
+                : 'Unlocking generates a temporary password and forces the employee to change it before accessing the app.'}
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={onClose} disabled={actionLoading}>Cancel</Button>
+              <Button onClick={onSubmit} disabled={actionLoading}>
+                {actionLoading ? 'Processing...' : intent.destructive ? 'Reject Request' : 'Unlock & Generate Password'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function SecurityCenterPage() {
   const [tab, setTab] = useState<'locked' | 'requests'>('locked');
   const [lockedAccounts, setLockedAccounts] = useState<LockedAccount[]>([]);
@@ -140,72 +225,6 @@ export function SecurityCenterPage() {
     return { url, title, employeeName, defaultNotes, destructive };
   }
 
-  function UnlockModal() {
-    if (!unlockIntent) return null;
-    const hasTemporaryPassword = Boolean(unlockResult?.temporaryPassword);
-    return (
-      <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/45 px-4">
-        <div className="w-full max-w-[520px] rounded-2xl border border-[var(--color-border)] bg-white shadow-[0_28px_90px_rgba(17,24,39,0.24)]">
-          <div className="flex items-start justify-between border-b border-[var(--color-border)] px-6 py-5">
-            <div>
-              <div className="text-lg font-bold text-[var(--color-brand-navy)]">{hasTemporaryPassword ? 'Account unlocked' : unlockIntent.title}</div>
-              <div className="mt-1 text-sm text-gray-500">{unlockIntent.employeeName}</div>
-            </div>
-            <button type="button" onClick={closeUnlockModal} className="rounded-lg p-1.5 text-gray-400 transition hover:bg-hover-bg hover:text-[var(--color-brand-navy)]" aria-label="Close">
-              <X size={18} />
-            </button>
-          </div>
-
-          {hasTemporaryPassword ? (
-            <div className="space-y-4 px-6 py-5">
-              <div className="flex items-start gap-3 rounded-xl border border-status-success/20 bg-status-success/5 px-4 py-3 text-status-success">
-                <CheckCircle size={18} className="mt-0.5 shrink-0" />
-                <div className="text-sm font-semibold">{unlockResult?.message}</div>
-              </div>
-              <div>
-                <div className="mb-2 text-[12px] font-bold uppercase tracking-wide text-gray-400">Temporary password</div>
-                <div className="flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-warm-bg p-3">
-                  <code className="min-w-0 flex-1 select-all truncate text-[15px] font-bold text-[var(--color-brand-navy)]">{unlockResult?.temporaryPassword}</code>
-                  <Button size="sm" variant="ghost" icon={<Copy size={14} />} onClick={copyTemporaryPassword}>Copy</Button>
-                </div>
-                <p className="mt-2 text-xs leading-5 text-gray-500">
-                  Share this temporary password securely. The employee will be required to create a new password on next login.
-                </p>
-              </div>
-              <div className="flex justify-end">
-                <Button onClick={closeUnlockModal}>Done</Button>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-4 px-6 py-5">
-              <label className="block">
-                <span className="mb-2 block text-[13px] font-semibold text-[var(--color-brand-navy)]">Admin notes for audit trail</span>
-                <textarea
-                  value={adminNotes}
-                  onChange={(event) => setAdminNotes(event.target.value.slice(0, 500))}
-                  className="min-h-[112px] w-full resize-none rounded-xl border border-[var(--color-border)] bg-warm-bg px-3.5 py-3 text-sm font-medium text-[var(--color-brand-navy)] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10"
-                  placeholder="Example: Direct admin unlock after identity verification"
-                  autoFocus
-                />
-              </label>
-              <div className="rounded-xl bg-warm-bg px-4 py-3 text-xs leading-5 text-gray-500">
-                {unlockIntent.destructive
-                  ? 'Rejecting keeps the account locked and stores your notes for audit history.'
-                  : 'Unlocking generates a temporary password and forces the employee to change it before accessing the app.'}
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="ghost" onClick={closeUnlockModal} disabled={actionLoading}>Cancel</Button>
-                <Button onClick={submitAction} disabled={actionLoading}>
-                  {actionLoading ? 'Processing...' : unlockIntent.destructive ? 'Reject Request' : 'Unlock & Generate Password'}
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -288,7 +307,18 @@ export function SecurityCenterPage() {
           )}
         </Card>
       )}
-      <UnlockModal />
+      {unlockIntent && (
+        <UnlockModal
+          intent={unlockIntent}
+          result={unlockResult}
+          adminNotes={adminNotes}
+          actionLoading={actionLoading}
+          onAdminNotesChange={setAdminNotes}
+          onClose={closeUnlockModal}
+          onSubmit={submitAction}
+          onCopyTemporaryPassword={copyTemporaryPassword}
+        />
+      )}
     </div>
   );
 }

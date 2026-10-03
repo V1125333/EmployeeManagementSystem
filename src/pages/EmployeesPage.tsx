@@ -784,6 +784,50 @@ interface EditFormState {
   change_reason: string;
 }
 
+interface EditEmployeeFieldProps {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options?: string[];
+  type?: string;
+}
+
+function EditEmployeeField({
+  label,
+  value,
+  onChange,
+  options,
+  type = 'text',
+}: EditEmployeeFieldProps) {
+  return (
+    <div>
+      <label className="block text-[13px] font-semibold text-[var(--color-brand-navy)] mb-1.5">
+        {label}
+      </label>
+      {options ? (
+        <select
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="w-full px-3.5 py-2.5 rounded-xl text-[14px] font-medium bg-warm-bg border border-[var(--color-border)] text-[var(--color-brand-navy)] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10"
+        >
+          {options.map((option) => (
+            <option key={option} value={option}>
+              {roleLabels[option] || EMPLOYMENT_TYPE_LABELS[option] || option}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          type={type}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="w-full px-3.5 py-2.5 rounded-xl text-[14px] font-medium bg-warm-bg border border-[var(--color-border)] text-[var(--color-brand-navy)] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10"
+        />
+      )}
+    </div>
+  );
+}
+
 function EditEmployeeDrawer({
   employee,
   employees,
@@ -918,46 +962,6 @@ function EditEmployeeDrawer({
     }
   };
 
-  const Field = ({
-    label,
-    value,
-    onChange,
-    options,
-    type = 'text',
-  }: {
-    label: string;
-    value: string;
-    onChange: (value: string) => void;
-    options?: string[];
-    type?: string;
-  }) => (
-    <div>
-      <label className="block text-[13px] font-semibold text-[var(--color-brand-navy)] mb-1.5">
-        {label}
-      </label>
-      {options ? (
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-full px-3.5 py-2.5 rounded-xl text-[14px] font-medium bg-warm-bg border border-[var(--color-border)] text-[var(--color-brand-navy)] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10"
-        >
-          {options.map((option) => (
-            <option key={option} value={option}>
-              {roleLabels[option] || EMPLOYMENT_TYPE_LABELS[option] || option}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <input
-          type={type}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-full px-3.5 py-2.5 rounded-xl text-[14px] font-medium bg-warm-bg border border-[var(--color-border)] text-[var(--color-brand-navy)] outline-none focus:border-olive/40 focus:ring-2 focus:ring-olive/10"
-        />
-      )}
-    </div>
-  );
-
   return (
     <Drawer
       open={open}
@@ -991,20 +995,20 @@ function EditEmployeeDrawer({
       }
     >
       <div className="grid grid-cols-2 gap-4">
-        <Field label="First Name" value={form.first_name} onChange={(v) => update('first_name', v)} />
-        <Field label="Last Name" value={form.last_name} onChange={(v) => update('last_name', v)} />
-        <Field label="Phone" value={form.phone} onChange={(v) => update('phone', v)} />
-        <Field label="Department" value={form.department} onChange={(v) => update('department', v)} options={DEPARTMENTS.slice(1)} />
-        <Field label="Designation" value={form.designation} onChange={(v) => update('designation', v)} options={designationOptions} />
-        <Field label="Role" value={form.role} onChange={(v) => update('role', v)} options={editableRoleOptions} />
-        <Field label="Employment Type" value={form.workforce_type} onChange={(v) => update('workforce_type', v)} options={optionWithCurrent(EMPLOYMENT_TYPES, form.workforce_type)} />
-        <Field label="Status" value={form.employment_status} onChange={(v) => update('employment_status', v)} options={STATUSES.slice(1)} />
-        <Field label="Work Arrangement" value={form.work_location} onChange={(v) => update('work_location', v)} options={optionWithCurrent(WORK_ARRANGEMENTS.slice(1), form.work_location)} />
-        <Field label="Work City" value={form.work_city} onChange={(v) => update('work_city', v)} />
-        <Field label="State / Province" value={form.work_state} onChange={(v) => update('work_state', v)} />
-        <Field label="Work Country" value={form.work_country} onChange={(v) => update('work_country', v)} />
-        <Field label="Reporting Manager" value={form.reporting_manager} onChange={(v) => update('reporting_manager', v)} options={managerOptions} />
-        <Field label="Joining Date" value={form.joining_date} onChange={(v) => update('joining_date', v)} type="date" />
+        <EditEmployeeField label="First Name" value={form.first_name} onChange={(v) => update('first_name', v)} />
+        <EditEmployeeField label="Last Name" value={form.last_name} onChange={(v) => update('last_name', v)} />
+        <EditEmployeeField label="Phone" value={form.phone} onChange={(v) => update('phone', v)} />
+        <EditEmployeeField label="Department" value={form.department} onChange={(v) => update('department', v)} options={DEPARTMENTS.slice(1)} />
+        <EditEmployeeField label="Designation" value={form.designation} onChange={(v) => update('designation', v)} options={designationOptions} />
+        <EditEmployeeField label="Role" value={form.role} onChange={(v) => update('role', v)} options={editableRoleOptions} />
+        <EditEmployeeField label="Employment Type" value={form.workforce_type} onChange={(v) => update('workforce_type', v)} options={optionWithCurrent(EMPLOYMENT_TYPES, form.workforce_type)} />
+        <EditEmployeeField label="Status" value={form.employment_status} onChange={(v) => update('employment_status', v)} options={STATUSES.slice(1)} />
+        <EditEmployeeField label="Work Arrangement" value={form.work_location} onChange={(v) => update('work_location', v)} options={optionWithCurrent(WORK_ARRANGEMENTS.slice(1), form.work_location)} />
+        <EditEmployeeField label="Work City" value={form.work_city} onChange={(v) => update('work_city', v)} />
+        <EditEmployeeField label="State / Province" value={form.work_state} onChange={(v) => update('work_state', v)} />
+        <EditEmployeeField label="Work Country" value={form.work_country} onChange={(v) => update('work_country', v)} />
+        <EditEmployeeField label="Reporting Manager" value={form.reporting_manager} onChange={(v) => update('reporting_manager', v)} options={managerOptions} />
+        <EditEmployeeField label="Joining Date" value={form.joining_date} onChange={(v) => update('joining_date', v)} type="date" />
         <div className="col-span-2">
           <label className="mb-1.5 block text-[13px] font-semibold text-[var(--color-brand-navy)]">
             Reason for employment change
