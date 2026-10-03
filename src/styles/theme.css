@@ -203,3 +203,11 @@
   --layout-main-padding-x: 2rem;
   --layout-main-padding-y: 1.75rem;
 }
+
+@media (max-width: 767px) {
+  [data-compact="true"],
+  [data-compact="false"] {
+    --layout-main-padding-x: 1rem;
+    --layout-main-padding-y: 1rem;
+  }
+}

@@ -13,8 +13,8 @@ describe('AddEmployeeDrawer layout', () => {
     );
 
     const title = screen.getByRole('heading', { name: 'Add Employee' });
-    const panel = title.closest('.relative.h-full');
-    expect(panel).toHaveClass('w-[680px]', 'max-w-full', 'overflow-hidden');
+    const panel = title.closest('.relative');
+    expect(panel).toHaveClass('w-[680px]', 'h-[100dvh]', 'max-w-full', 'overflow-hidden', 'max-sm:!w-full');
 
     const content = panel?.querySelector('.overflow-y-auto');
     expect(content).toHaveClass('min-w-0', 'overflow-x-hidden');

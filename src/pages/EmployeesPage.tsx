@@ -994,7 +994,7 @@ function EditEmployeeDrawer({
         </div>
       }
     >
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <EditEmployeeField label="First Name" value={form.first_name} onChange={(v) => update('first_name', v)} />
         <EditEmployeeField label="Last Name" value={form.last_name} onChange={(v) => update('last_name', v)} />
         <EditEmployeeField label="Phone" value={form.phone} onChange={(v) => update('phone', v)} />
@@ -1326,7 +1326,7 @@ export function EmployeesPage() {
   ];
 
   return (
-    <div className="-mx-[var(--layout-main-padding-x)] -my-[var(--layout-main-padding-y)] min-h-[calc(100vh-3.5rem)] bg-[#f7f3ec] px-8 py-[26px]">
+    <div className="-mx-[var(--layout-main-padding-x)] -my-[var(--layout-main-padding-y)] min-h-[calc(100vh-3.5rem)] bg-[#f7f3ec] px-4 py-5 sm:px-8 sm:py-[26px]">
       {/* Header */}
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -1335,10 +1335,10 @@ export function EmployeesPage() {
             {headerCountText}
           </p>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2.5">
-          <button type="button" onClick={() => navigate('/organization')} className="flex h-11 items-center gap-2 rounded-[11px] border border-[#ece5d8] bg-white px-4 text-[13px] font-bold text-[#1f2430] hover:border-[#d97a34]"><Network size={15} />Organization Chart</button>
+        <div className="grid w-full grid-cols-2 gap-2.5 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
+          <button type="button" onClick={() => navigate('/organization')} className="col-span-2 flex h-11 items-center justify-center gap-2 rounded-[11px] border border-[#ece5d8] bg-white px-4 text-[13px] font-bold text-[#1f2430] hover:border-[#d97a34] sm:col-auto"><Network size={15} />Organization Chart</button>
           <select
-            className="h-11 rounded-[11px] border border-[#ece5d8] bg-white px-4 text-[13px] font-bold text-[#d97a34] outline-none focus:border-[#d97a34]"
+            className="h-11 min-w-0 rounded-[11px] border border-[#ece5d8] bg-white px-3 text-[13px] font-bold text-[#d97a34] outline-none focus:border-[#d97a34] sm:px-4"
             value={exportLevel}
             onChange={(event) => setExportLevel(event.target.value as 'basic' | 'hr' | 'payroll')}
             aria-label="Employee export level"
@@ -1347,9 +1347,9 @@ export function EmployeesPage() {
             <option value="hr">Full export</option>
             <option value="payroll">Payroll CSV</option>
           </select>
-          <button type="button" disabled={exporting} onClick={exportCsv} className="flex h-11 items-center gap-2 rounded-[11px] border border-[#ece5d8] bg-white px-4 text-[13px] font-bold text-[#1f2430] hover:border-[#d97a34] disabled:opacity-50"><Download size={15} />{exporting ? 'Exporting' : 'Export'}</button>
-          <button type="button" onClick={() => setShowBulkUpload(true)} className="flex h-11 items-center gap-2 rounded-[11px] border border-[#d97a34] bg-white px-4 text-[13px] font-bold text-[#d97a34] hover:bg-[#fff7ef]"><Upload size={15} />Bulk Upload</button>
-          <button type="button" onClick={() => setShowAddEmployee(true)} className="flex h-11 items-center gap-2 rounded-[11px] bg-[#2b3243] px-4 text-[13px] font-bold text-white shadow-[0_4px_12px_rgba(43,50,67,.22)] hover:bg-[#1f2430]"><UserPlus size={15} />Add Employee</button>
+          <button type="button" disabled={exporting} onClick={exportCsv} className="flex h-11 items-center justify-center gap-2 rounded-[11px] border border-[#ece5d8] bg-white px-3 text-[13px] font-bold text-[#1f2430] hover:border-[#d97a34] disabled:opacity-50 sm:px-4"><Download size={15} />{exporting ? 'Exporting' : 'Export'}</button>
+          <button type="button" onClick={() => setShowBulkUpload(true)} className="flex h-11 items-center justify-center gap-2 rounded-[11px] border border-[#d97a34] bg-white px-3 text-[13px] font-bold text-[#d97a34] hover:bg-[#fff7ef] sm:px-4"><Upload size={15} />Bulk Upload</button>
+          <button type="button" onClick={() => setShowAddEmployee(true)} className="col-span-2 flex h-11 items-center justify-center gap-2 rounded-[11px] bg-[#2b3243] px-4 text-[13px] font-bold text-white shadow-[0_4px_12px_rgba(43,50,67,.22)] hover:bg-[#1f2430] sm:col-auto"><UserPlus size={15} />Add Employee</button>
         </div>
       </div>
 
@@ -1398,7 +1398,50 @@ export function EmployeesPage() {
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto rounded-[16px] border border-[#ece5d8] bg-white">
+      {loading && (
+        <div className="mb-4 flex items-center justify-center rounded-2xl border border-[#ece5d8] bg-white py-16 text-sm text-gray-400 md:hidden">
+          Loading employees...
+        </div>
+      )}
+      {!loading && employees.length === 0 && (
+        <div className="mb-4 flex flex-col items-center justify-center rounded-2xl border border-[#ece5d8] bg-white px-5 py-16 text-center md:hidden">
+          <div className="mb-3 text-3xl">👥</div>
+          <div className="mb-1 text-[15px] font-semibold text-[var(--color-brand-navy)]">No employees found</div>
+          <div className="text-sm text-gray-500">{hasActiveFilters ? 'Try adjusting your filters' : 'Add your first employee to get started'}</div>
+        </div>
+      )}
+      {!loading && employees.length > 0 && (
+        <div className="mb-4 grid gap-3 md:hidden">
+          {employees.map((emp, employeeIndex) => {
+            const initials = `${emp.first_name[0]}${emp.last_name[0]}`.toUpperCase();
+            const avatarTones = ['bg-[#fff0e1] text-[#d97a34]', 'bg-[#edf5ec] text-[#3f7d3f]', 'bg-[#eaeef6] text-[#5a6f9e]', 'bg-[#f0eafb] text-[#8a6bbf]'];
+            const presentation = projectStatusPresentation[emp.project_status || 'bench'] || projectStatusPresentation.bench;
+            return (
+              <div key={emp.id} className="w-full rounded-2xl border border-[#ece5d8] bg-white p-4 text-left shadow-sm">
+                <div className="flex items-start gap-3">
+                  <button type="button" onClick={() => setSelectedEmployee(emp)} className="flex min-w-0 flex-1 items-start gap-3 text-left">
+                    <span className={cn('grid h-11 w-11 shrink-0 place-items-center rounded-full text-sm font-bold', avatarTones[employeeIndex % avatarTones.length])}>{initials}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-bold text-[#1f2430]">{emp.first_name} {emp.last_name}</span>
+                      <span className="block truncate text-sm text-gray-500">{emp.work_email}</span>
+                      <span className="mt-2 flex flex-wrap items-center gap-2"><Badge variant={presentation.variant}>{presentation.label}</Badge><Badge variant={statusVariant[emp.employment_status || ''] || 'neutral'}>{emp.employment_status}</Badge></span>
+                    </span>
+                  </button>
+                  <button type="button" onClick={() => setEditingEmployee(emp)} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-[#ece5d8] text-[#8a8371]" aria-label={`Edit ${emp.first_name} ${emp.last_name}`}><Pencil size={16} /></button>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 border-t border-[#f3ecdf] pt-3 text-xs text-gray-500">
+                  <div><span className="block text-[10px] uppercase text-gray-400">Department</span>{emp.department || 'Not assigned'}</div>
+                  <div><span className="block text-[10px] uppercase text-gray-400">Role</span>{roleLabels[emp.role] || emp.role}</div>
+                  <div><span className="block text-[10px] uppercase text-gray-400">Manager</span><span className="line-clamp-1">{emp.reporting_manager || 'Not assigned'}</span></div>
+                  <div><span className="block text-[10px] uppercase text-gray-400">Location</span><span className="line-clamp-1">{employeeWorkLocation(emp)}</span></div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="hidden overflow-x-auto rounded-[16px] border border-[#ece5d8] bg-white md:block">
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="text-sm text-gray-400">Loading employees...</div>

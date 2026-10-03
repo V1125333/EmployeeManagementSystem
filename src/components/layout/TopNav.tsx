@@ -4,7 +4,7 @@ import type { ElementType } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Bell, HelpCircle, Inbox, InboxIcon,
-  LogIn, Megaphone, Search, ShieldQuestion, Sparkles, UserCog, X,
+  LogIn, Megaphone, Menu, Search, ShieldQuestion, Sparkles, UserCog, X,
 } from 'lucide-react';
 import { Badge, Button } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
@@ -118,7 +118,7 @@ function ownTimesheetPath(role?: string) {
   return isAdminRole(role) ? '/timesheets' : '/employee/timesheets';
 }
 
-export function TopNav() {
+export function TopNav({ onOpenMobileNavigation }: { onOpenMobileNavigation?: () => void }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [openPanel, setOpenPanel] = useState<'inbox' | 'notifications' | 'help' | null>(null);
@@ -424,10 +424,13 @@ export function TopNav() {
   );
 
   return (
-    <header className="h-16 flex items-center justify-between gap-4 px-7 bg-warm-card border-b border-[var(--color-border)] sticky top-0 z-30">
-      <div className="flex min-w-0 items-center gap-3">
-      <div ref={searchRef} className="relative flex min-w-0 items-center">
-        <div className={cn('flex items-center gap-2 bg-warm-bg border rounded-btn px-3.5 py-[7px] w-[340px] transition-colors', searchOpen ? 'border-olive shadow-sm' : 'border-[var(--color-border)]')}>
+    <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-2 border-b border-[var(--color-border)] bg-warm-card px-3 pt-[env(safe-area-inset-top)] sm:px-5 md:h-16 md:gap-4 md:px-7">
+      <div className="flex min-w-0 flex-1 items-center gap-2 md:gap-3">
+      <button type="button" onClick={onOpenMobileNavigation} aria-label="Open navigation" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[var(--color-border)] text-[var(--color-brand-navy)] md:hidden">
+        <Menu size={20} />
+      </button>
+      <div ref={searchRef} className="relative flex min-w-0 flex-1 items-center md:flex-none">
+        <div className={cn('flex w-full max-w-[340px] items-center gap-2 rounded-btn border bg-warm-bg px-3 py-[7px] transition-colors sm:min-w-[220px] md:w-[340px]', searchOpen ? 'border-olive shadow-sm' : 'border-[var(--color-border)]')}>
           <Search size={16} className="text-gray-400 shrink-0" />
           <input
             type="text"
@@ -441,8 +444,8 @@ export function TopNav() {
               if (event.key === 'Enter') submitSearch();
               if (event.key === 'Escape') setSearchOpen(false);
             }}
-            placeholder="Search employees, projects, skills..."
-            className="bg-transparent border-none outline-none text-[13px] text-[var(--color-brand-navy)] placeholder:text-gray-400 w-full font-sans"
+            placeholder="Search..."
+            className="w-full min-w-0 border-none bg-transparent font-sans text-base text-[var(--color-brand-navy)] outline-none placeholder:text-gray-400 md:text-[13px]"
           />
           {searchQuery && (
             <button aria-label="Clear search" onClick={closeSearch} className="text-gray-400 hover:text-gray-600">
@@ -520,7 +523,7 @@ export function TopNav() {
       </button>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-0.5 sm:gap-2 md:gap-3">
         <button
           type="button"
           onClick={() => navigate('/employee/check-in')}
@@ -643,7 +646,7 @@ export function TopNav() {
           </div>
 
           <div className="relative">
-            <IconButton type="help" Icon={HelpCircle} badge={0} />
+            <span className="hidden sm:block"><IconButton type="help" Icon={HelpCircle} badge={0} /></span>
             {openPanel === 'help' && (
               <div onMouseDown={(event) => event.stopPropagation()} className="absolute right-0 top-11 w-[270px] max-w-[calc(100vw-2rem)] rounded-2xl border border-[var(--color-border)] bg-warm-card shadow-card-lg z-50 overflow-hidden p-2">
                 {[

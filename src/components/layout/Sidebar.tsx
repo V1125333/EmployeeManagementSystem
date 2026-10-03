@@ -4,7 +4,7 @@ import {
   Network, Package, Settings, Shield, FileText,
   PanelLeftClose, PanelLeftOpen, Award, Files, CalendarPlus,
   WalletCards, ClipboardCheck, Clock3, LogIn, Send, PartyPopper,
-  BookOpen, CalendarClock, ClipboardList, Bot,
+  BookOpen, CalendarClock, ClipboardList, Bot, X,
 } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { mainNavItems, adminNavItems, employeeNavItems, resourceNavItems } from '@/data/mockData';
@@ -55,7 +55,12 @@ const NAV_ACCESS: Record<string, { permission: string; scopes?: PermissionScope[
   '/admin/audit-trail': { permission: 'audit.read_hr' },
 };
 
-export function Sidebar() {
+interface SidebarProps {
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
+}
+
+export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
@@ -97,8 +102,12 @@ export function Sidebar() {
     scopes: {},
   };
 
-  const handleViewProfile = () => navigate('/profile');
-  const handleSettings = () => navigate('/settings');
+  const goTo = (path: string) => {
+    navigate(path);
+    onMobileClose?.();
+  };
+  const handleViewProfile = () => goTo('/profile');
+  const handleSettings = () => goTo('/settings');
   const handleSignOut = () => {
     logout();
     navigate('/login');
@@ -114,11 +123,11 @@ export function Sidebar() {
 
     return (
       <button
-        onClick={() => navigate(item.path)}
+        onClick={() => goTo(item.path)}
         title={collapsed ? displayLabel : undefined}
         className={cn(
           'relative w-full flex items-center gap-2.5 rounded-lg text-[13.5px] font-medium transition-all duration-150 mb-0.5',
-          collapsed ? 'justify-center px-0 py-2.5' : 'px-3.5 py-2.5',
+          collapsed ? 'px-3.5 py-2.5 md:justify-center md:px-0' : 'px-3.5 py-2.5',
           active
             ? 'border border-accent-mid bg-accent-light text-[var(--color-nav-active-text)] shadow-sm'
             : 'border border-transparent text-gray-500 hover:border-accent-mid hover:bg-hover-bg hover:text-[var(--color-nav-active-text)]'
@@ -126,26 +135,32 @@ export function Sidebar() {
       >
         {active && <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-[var(--color-nav-active-bar)]" />}
         <IconComp size={18} className={cn('shrink-0', active ? 'text-[var(--color-nav-active-bar)]' : 'text-gray-500')} />
-        {!collapsed && <span className="truncate">{displayLabel}</span>}
+        <span className={cn('truncate', collapsed && 'md:hidden')}>{displayLabel}</span>
       </button>
     );
   };
 
   return (
+    <>
+      {mobileOpen && (
+        <button type="button" aria-label="Close navigation" onClick={onMobileClose} className="fixed inset-0 z-40 bg-black/35 backdrop-blur-[1px] md:hidden" />
+      )}
     <aside
       className={cn(
-        'fixed top-0 left-0 h-screen bg-warm-card border-r border-[var(--color-border)] z-50 flex flex-col transition-all duration-250',
-        collapsed ? 'w-16' : 'w-60'
+        'fixed left-0 top-0 z-50 flex h-[100dvh] w-[min(20rem,86vw)] flex-col border-r border-[var(--color-border)] bg-warm-card transition-all duration-250',
+        mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full',
+        'md:translate-x-0 md:shadow-none',
+        collapsed ? 'md:w-16' : 'md:w-60'
       )}
     >
       {/* Logo */}
       <div
         className={cn(
           'flex h-14 shrink-0 items-center border-b border-[var(--color-border)]',
-          collapsed ? 'justify-center px-2' : 'justify-between px-5'
+          collapsed ? 'justify-between px-5 md:justify-center md:px-2' : 'justify-between px-5'
         )}
       >
-        <div className={cn('flex items-center overflow-hidden', collapsed && 'hidden')}>
+        <div className={cn('flex items-center overflow-hidden', collapsed && 'md:hidden')}>
           <img
             src="/reknew-orbit.png"
             alt="Reknew Orbit"
@@ -160,7 +175,8 @@ export function Sidebar() {
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           className={cn(
             'h-8 w-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-hover-bg hover:text-accent transition-all duration-150',
-            collapsed && 'h-10 w-10 border border-[var(--color-border)] bg-warm-card p-1'
+            collapsed && 'md:h-10 md:w-10 md:border md:border-[var(--color-border)] md:bg-warm-card md:p-1',
+            'hidden md:flex'
           )}
         >
           {collapsed ? (
@@ -169,22 +185,25 @@ export function Sidebar() {
             <PanelLeftClose size={16} />
           )}
         </button>
+        <button type="button" onClick={onMobileClose} aria-label="Close navigation" className="flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:bg-hover-bg md:hidden">
+          <X size={20} />
+        </button>
       </div>
 
       {/* Navigation */}
-      <nav className={cn('flex-1 overflow-y-auto', collapsed ? 'px-2 py-3' : 'px-3 py-3')}>
+      <nav className={cn('flex-1 overflow-y-auto overscroll-contain', collapsed ? 'px-3 py-3 md:px-2' : 'px-3 py-3')}>
         <>
             {overviewNavigation.map((item) => (
               <NavButton key={item.key} item={item} />
             ))}
-            {!collapsed && <div className="px-3.5 pb-2 text-[10px] font-semibold uppercase tracking-widest text-gray-400">My Workspace</div>}
+            <div className={cn('px-3.5 pb-2 text-[10px] font-semibold uppercase tracking-widest text-gray-400', collapsed && 'md:hidden')}>My Workspace</div>
             {primaryEmployeeNavigation.map((item) => (
               <NavButton key={item.key} item={item} />
             ))}
             {careerEmployeeNavigation.length > 0 && (
               <>
                 <div className={cn('my-3', collapsed ? 'px-1' : 'px-3.5')}>
-                  {!collapsed && (
+                  {(!collapsed || mobileOpen) && (
                     <div className="text-[10px] font-semibold text-gray-400 tracking-widest uppercase">
                       Career & Work
                     </div>
@@ -199,7 +218,7 @@ export function Sidebar() {
             {visible(resourceNavItems).length > 0 && (
               <>
                 <div className={cn('my-3', collapsed ? 'px-1' : 'px-3.5')}>
-                  {!collapsed && (
+                  {(!collapsed || mobileOpen) && (
                     <div className="text-[10px] font-semibold text-gray-400 tracking-widest uppercase">
                       Resource Management
                     </div>
@@ -214,7 +233,7 @@ export function Sidebar() {
             {operationsNavigation.length > 0 && (
               <>
                 <div className={cn('my-3', collapsed ? 'px-1' : 'px-3.5')}>
-                  {!collapsed && <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">HR & Operations</div>}
+                  {(!collapsed || mobileOpen) && <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">HR & Operations</div>}
                   {collapsed && <div className="h-px bg-[var(--color-border)]" />}
                 </div>
                 {operationsNavigation.map((item) => <NavButton key={item.key} item={item} />)}
@@ -223,7 +242,7 @@ export function Sidebar() {
             {visible(adminNavItems).length > 0 && (
               <>
                 <div className={cn('my-3', collapsed ? 'px-1' : 'px-3.5')}>
-                  {!collapsed && <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Administration & Security</div>}
+                  {(!collapsed || mobileOpen) && <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Administration & Security</div>}
                   {collapsed && <div className="h-px bg-[var(--color-border)]" />}
                 </div>
                 {visible(adminNavItems).map((item) => <NavButton key={item.key} item={item} />)}
@@ -235,7 +254,7 @@ export function Sidebar() {
       <div className="shrink-0 border-t border-[var(--color-border)] px-3 py-3">
         <ProfileDropdown
           user={currentUser}
-          variant={collapsed ? 'collapsed' : 'sidebar'}
+          variant={collapsed && !mobileOpen ? 'collapsed' : 'sidebar'}
           placement="top-left"
           onViewProfile={handleViewProfile}
           onSettings={handleSettings}
@@ -243,5 +262,6 @@ export function Sidebar() {
         />
       </div>
     </aside>
+    </>
   );
 }

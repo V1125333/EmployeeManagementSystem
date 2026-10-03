@@ -53,13 +53,13 @@ export function Drawer({
         ref={drawerRef}
         className={cn(
           width,
-          'relative h-full max-w-full overflow-hidden bg-warm-card border-l border-[var(--color-border)] shadow-[-8px_0_30px_rgba(47,52,55,0.08)]',
+          'relative h-[100dvh] max-w-full overflow-hidden bg-warm-card border-l border-[var(--color-border)] shadow-[-8px_0_30px_rgba(47,52,55,0.08)] max-sm:!w-full',
           'flex min-h-0 flex-col',
           'animate-[slideInRight_0.3s_cubic-bezier(0.16,1,0.3,1)]'
         )}
       >
         {/* Header */}
-        <div className="px-7 pt-7 pb-5 border-b border-[var(--color-border)] shrink-0">
+        <div className="shrink-0 border-b border-[var(--color-border)] px-4 pb-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-7 sm:pb-5 sm:pt-7">
           <div className="flex items-start justify-between">
             <div>
               <h2 className="text-xl font-bold text-[var(--color-brand-navy)] tracking-tight">
@@ -85,7 +85,7 @@ export function Drawer({
 
         {/* Footer */}
         {footer && (
-          <div className="shrink-0 border-t border-[var(--color-border)] bg-warm-card px-7 py-3 shadow-[0_-8px_20px_rgba(47,52,55,0.04)]">
+          <div className="shrink-0 border-t border-[var(--color-border)] bg-warm-card px-4 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_20px_rgba(47,52,55,0.04)] sm:px-7">
             {footer}
           </div>
         )}
