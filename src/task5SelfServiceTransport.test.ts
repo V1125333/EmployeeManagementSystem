@@ -59,4 +59,9 @@ describe('Foundation Phase 0 Task 5 self-service transport', () => {
     expect(settingsSource).toContain('...(canEditManagedIdentity ? {');
     expect(settingsSource).toContain("data?.detail || data?.message || 'Could not save profile.'");
   });
+
+  it('uses the shared header search instead of duplicating search on the employee dashboard', () => {
+    expect(portalSource).not.toContain('Search people, projects, docs...');
+    expect(topNavSource).toContain('Search employees, projects, skills...');
+  });
 });

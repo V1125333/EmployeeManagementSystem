@@ -9,7 +9,7 @@ import {
   BookOpen,
   CalendarCheck, CalendarClock, CalendarPlus, CheckCircle2, ChevronDown, ClipboardCheck,
   Clock3, Copy, Download, FileText, FolderKanban, Hourglass, LogIn, Pencil, Plus,
-  Grid2X2, GraduationCap, List, MapPin, RefreshCw, Search, Send, ShieldAlert,
+  Grid2X2, GraduationCap, List, MapPin, RefreshCw, Send, ShieldAlert,
   Trash2, Upload, UsersRound, WalletCards, X,
 } from 'lucide-react';
 import { Badge, Button, Card, CardHeader } from '@/components/ui';
@@ -1854,7 +1854,6 @@ export function EmployeeDashboardPage() {
   const [employeeContext, setEmployeeContext] = useState<EmployeeDashboardContext | null>(null);
   const [holidays, setHolidays] = useState<HolidayItem[]>([]);
   const [documents, setDocuments] = useState<DashboardDocument[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     if (!user) return;
@@ -1991,20 +1990,6 @@ export function EmployeeDashboardPage() {
     }));
   const visibleBriefingItems = briefingItems.slice(0, 3);
 
-  const runDashboardSearch = () => {
-    const term = searchQuery.trim().toLowerCase();
-    if (!term) return;
-    if (/document|file|payslip|certificate/.test(term)) navigate('/employee/documents');
-    else if (/project|allocation/.test(term)) navigate('/projects');
-    else if (/people|person|manager|org/.test(term)) navigate('/profile?tab=organization');
-    else if (/leave|vacation|sick|casual|earned/.test(term)) navigate('/employee/apply-leave');
-    else if (/timesheet|time entry|hours/.test(term)) navigate('/employee/timesheets');
-    else if (/attendance|check in|check out|clock/.test(term)) navigate('/employee/check-in');
-    else if (/holiday/.test(term)) navigate('/employee/holidays');
-    else if (/request|support/.test(term)) navigate('/employee/requests');
-    else navigate('/employee');
-  };
-
   const nextHoliday = holidays[0];
   const actionNeededDocument = documents.find((document) => document.status === 'action_needed');
   type ComingUpItem = {
@@ -2066,17 +2051,13 @@ export function EmployeeDashboardPage() {
 
   return (
     <div className="animate-fade-up pb-[86px] text-[#1f2430]">
-      <header className="mb-6 flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+      <header className="mb-6">
         <div>
           <h1 className="text-[27px] font-bold tracking-[-.035em]">{greeting}, {firstName}</h1>
           <p className="mt-1 text-sm text-[#8a8371]">
             {dateLabel} · {employee?.designation || 'Employee'}, {employee?.department || 'Department not set'} · reports to {managerName}
           </p>
         </div>
-        <form onSubmit={(event) => { event.preventDefault(); runDashboardSearch(); }} className="relative w-full lg:w-[286px]">
-          <Search size={14} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#a99e8a]" />
-          <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search people, projects, docs..." className="h-12 w-full rounded-[13px] border border-[#e6dccb] bg-white pl-11 pr-4 text-sm outline-none transition placeholder:text-[#9d9584] focus:border-[#d97a34] focus:ring-2 focus:ring-[#d97a34]/10" />
-        </form>
       </header>
 
       {error && <div className="mb-5 rounded-xl border border-[#d64545]/20 bg-[#fcecec] px-4 py-3 text-sm text-[#d64545]">{error}</div>}
