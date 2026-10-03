@@ -6,6 +6,7 @@ import { useToast } from '@/components/ui/Toast';
 import { COUNTRY_CODES } from '@/data/countryCodes';
 import { cn } from '@/utils/cn';
 import { assignableRoles, ROLE_LABELS, type PermissionSubject, type UserRole } from '@/auth/rbac';
+import { apiErrorMessage } from '@/utils/apiError';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
@@ -97,6 +98,7 @@ function FormSelect({
   getLabel = (option) => option,
   searchable,
   placement = 'down',
+  error,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -105,6 +107,7 @@ function FormSelect({
   getLabel?: (option: string) => string;
   searchable?: boolean;
   placement?: 'down' | 'up';
+  error?: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -120,11 +123,13 @@ function FormSelect({
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
           'w-full flex items-center justify-between py-2.5 px-4 rounded-xl text-[14px] font-medium',
-          'bg-warm-bg border border-[var(--color-border)]',
+          'bg-warm-bg border',
+          error ? 'border-status-error/40' : 'border-[var(--color-border)]',
           'outline-none transition-all duration-150',
           'hover:border-accent/30',
           value ? 'text-[var(--color-brand-navy)]' : 'text-gray-400'
         )}
+        aria-invalid={Boolean(error)}
       >
         <span className="truncate">{value ? getLabel(value) : placeholder}</span>
         <ChevronDown size={14} className={cn('shrink-0 text-gray-400 transition-transform', isOpen && 'rotate-180')} />
@@ -176,6 +181,7 @@ function FormSelect({
           </div>
         </>
       )}
+      {error && <div className="mt-1.5 flex items-center gap-1.5 text-[12px] font-medium text-status-error"><AlertCircle size={12} />{error}</div>}
     </div>
   );
 }
@@ -185,11 +191,13 @@ function PhoneInput({
   onCountryChange,
   phone,
   onPhoneChange,
+  error,
 }: {
   countryCode: string;
   onCountryChange: (v: string) => void;
   phone: string;
   onPhoneChange: (v: string) => void;
+  error?: string;
 }) {
   const [showCodes, setShowCodes] = useState(false);
   const [codeSearch, setCodeSearch] = useState('');
@@ -258,7 +266,8 @@ function PhoneInput({
         value={phone}
         onChange={(e) => onPhoneChange(e.target.value)}
         placeholder="Enter phone number"
-        className="min-w-0 flex-1 py-2.5 px-4 rounded-xl text-[14px] font-medium bg-warm-bg border border-[var(--color-border)] text-[var(--color-brand-navy)] placeholder:text-gray-400 outline-none transition-all focus:border-accent/40 focus:ring-2 focus:ring-accent-light font-sans"
+        aria-invalid={Boolean(error)}
+        className={cn('min-w-0 flex-1 py-2.5 px-4 rounded-xl text-[14px] font-medium bg-warm-bg border text-[var(--color-brand-navy)] placeholder:text-gray-400 outline-none transition-all focus:border-accent/40 focus:ring-2 focus:ring-accent-light font-sans', error ? 'border-status-error/40' : 'border-[var(--color-border)]')}
       />
     </div>
   );
@@ -274,7 +283,7 @@ function SectionTitle({ children }: { children: string }) {
 
 // ─── Main Component ───
 
-interface FormState {
+export interface FormState {
   firstName: string;
   lastName: string;
   workEmail: string;
@@ -293,7 +302,7 @@ interface FormState {
   dateOfBirth: string;
 }
 
-const INITIAL_FORM: FormState = {
+export const INITIAL_FORM: FormState = {
   firstName: '',
   lastName: '',
   workEmail: '',
@@ -314,6 +323,35 @@ const INITIAL_FORM: FormState = {
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+export function validateAddEmployeeForm(form: FormState, today = new Date()): Partial<Record<keyof FormState, string>> {
+  const newErrors: Partial<Record<keyof FormState, string>> = {};
+  const todayInput = today.toISOString().slice(0, 10);
+  const phoneDigits = form.phone.replace(/\D/g, '');
+
+  if (!form.firstName.trim()) newErrors.firstName = 'First name is required';
+  else if (form.firstName.trim().length > 100) newErrors.firstName = 'First name must be 100 characters or fewer';
+  if (!form.lastName.trim()) newErrors.lastName = 'Last name is required';
+  else if (form.lastName.trim().length > 100) newErrors.lastName = 'Last name must be 100 characters or fewer';
+  if (!form.workEmail.trim()) newErrors.workEmail = 'Work email is required';
+  else if (!EMAIL_PATTERN.test(form.workEmail.trim())) newErrors.workEmail = 'Enter a valid work email address.';
+  if (!form.phone.trim()) newErrors.phone = 'Phone number is required';
+  else if (phoneDigits.length < 7 || phoneDigits.length > 15 || form.phone.trim().length > 20) newErrors.phone = 'Enter a valid phone number with 7 to 15 digits';
+  if (!form.dateOfBirth) newErrors.dateOfBirth = 'Date of birth is required for setup code';
+  else if (form.dateOfBirth > todayInput) newErrors.dateOfBirth = 'Date of birth cannot be in the future';
+  if (!form.workforceType) newErrors.workforceType = 'Employment type is required';
+  if (!form.role) newErrors.role = 'Role is required';
+  if (!form.department) newErrors.department = 'Department is required';
+  if (!form.reportingManager) newErrors.reportingManager = 'Reporting manager is required';
+  if (!form.joiningDate) newErrors.joiningDate = 'Joining date is required';
+  if (!form.workLocation) newErrors.workLocation = 'Work arrangement is required';
+  if (!form.workCity.trim()) newErrors.workCity = 'Work city is required';
+  else if (form.workCity.trim().length > 120) newErrors.workCity = 'Work city must be 120 characters or fewer';
+  if (form.workState.trim().length > 120) newErrors.workState = 'State / province must be 120 characters or fewer';
+  if (!form.workCountry.trim()) newErrors.workCountry = 'Work country is required';
+  else if (form.workCountry.trim().length > 120) newErrors.workCountry = 'Work country must be 120 characters or fewer';
+  return newErrors;
+}
+
 export function AddEmployeeDrawer({ open, onClose, currentUser }: AddEmployeeDrawerProps) {
   const { showToast } = useToast();
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
@@ -329,26 +367,7 @@ export function AddEmployeeDrawer({ open, onClose, currentUser }: AddEmployeeDra
   };
 
   const validate = (): boolean => {
-    const newErrors: Partial<Record<keyof FormState, string>> = {};
-
-    if (!form.firstName.trim()) newErrors.firstName = 'First name is required';
-    if (!form.lastName.trim()) newErrors.lastName = 'Last name is required';
-    if (!form.workEmail.trim()) {
-      newErrors.workEmail = 'Work email is required';
-    } else if (!EMAIL_PATTERN.test(form.workEmail.trim())) {
-      newErrors.workEmail = 'Enter a valid work email address.';
-    }
-    if (!form.phone.trim()) newErrors.phone = 'Phone number is required';
-    if (!form.dateOfBirth) newErrors.dateOfBirth = 'Date of birth is required for setup code';
-    if (!form.workforceType) newErrors.workforceType = 'Required';
-    if (!form.role) newErrors.role = 'Required';
-    if (!form.department) newErrors.department = 'Required';
-    if (!form.reportingManager) newErrors.reportingManager = 'Required';
-    if (!form.joiningDate) newErrors.joiningDate = 'Required';
-    if (!form.workLocation) newErrors.workLocation = 'Required';
-    if (!form.workCity.trim()) newErrors.workCity = 'Work city is required';
-    if (!form.workCountry.trim()) newErrors.workCountry = 'Work country is required';
-
+    const newErrors = validateAddEmployeeForm(form);
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -361,11 +380,11 @@ export function AddEmployeeDrawer({ open, onClose, currentUser }: AddEmployeeDra
 
     // Build API payload
     const payload = {
-      first_name: form.firstName,
-      last_name: form.lastName,
-      work_email: form.workEmail,
+      first_name: form.firstName.trim(),
+      last_name: form.lastName.trim(),
+      work_email: form.workEmail.trim().toLowerCase(),
       country_code: form.countryCode,
-      phone: form.phone,
+      phone: form.phone.trim(),
       date_of_birth: form.dateOfBirth || null,
       workforce_type: form.workforceType,
       employment_type: form.workforceType,
@@ -391,10 +410,11 @@ export function AddEmployeeDrawer({ open, onClose, currentUser }: AddEmployeeDra
 
       if (!response.ok) {
         const error = await response.json().catch(() => null);
-        throw new Error(error?.detail || `API error: ${response.status}`);
+        throw new Error(apiErrorMessage(error, `API error: ${response.status}`));
       }
 
       const result = await response.json();
+      if (!result.success) throw new Error(result.message || 'Unable to add employee.');
 
       setForm(INITIAL_FORM);
       setErrors({});
@@ -497,6 +517,7 @@ export function AddEmployeeDrawer({ open, onClose, currentUser }: AddEmployeeDra
             onCountryChange={(v) => update('countryCode', v)}
             phone={form.phone}
             onPhoneChange={(v) => update('phone', v)}
+            error={errors.phone}
           />
           {errors.phone && (
             <div className="flex items-center gap-1.5 mt-1.5">
@@ -512,11 +533,14 @@ export function AddEmployeeDrawer({ open, onClose, currentUser }: AddEmployeeDra
         <div className="relative w-full sm:w-1/2">
           <input
             type="date"
+            max={new Date().toISOString().slice(0, 10)}
             value={form.dateOfBirth}
             onChange={(e) => update('dateOfBirth', e.target.value)}
+            aria-invalid={Boolean(errors.dateOfBirth)}
             className={cn(
               'w-full py-2.5 px-4 rounded-xl text-[14px] font-medium',
-              'bg-warm-bg border border-[var(--color-border)]',
+              'bg-warm-bg border',
+              errors.dateOfBirth ? 'border-status-error/40' : 'border-[var(--color-border)]',
               'text-[var(--color-brand-navy)] outline-none transition-all duration-150',
               'focus:border-accent/40 focus:ring-2 focus:ring-accent-light font-sans',
               !form.dateOfBirth && 'text-gray-400'
@@ -545,6 +569,7 @@ export function AddEmployeeDrawer({ open, onClose, currentUser }: AddEmployeeDra
             placeholder="Select employment type"
             options={EMPLOYMENT_TYPES}
             getLabel={(value) => EMPLOYMENT_TYPE_LABELS[value] || value}
+            error={errors.workforceType}
           />
         </div>
         <div>
@@ -555,6 +580,7 @@ export function AddEmployeeDrawer({ open, onClose, currentUser }: AddEmployeeDra
             placeholder="Select role"
             options={roleOptions}
             getLabel={(value) => ROLE_LABELS[value as UserRole] || value}
+            error={errors.role}
           />
         </div>
       </div>
@@ -567,6 +593,7 @@ export function AddEmployeeDrawer({ open, onClose, currentUser }: AddEmployeeDra
             onChange={(v) => update('department', v)}
             placeholder="Select department"
             options={DEPARTMENTS}
+            error={errors.department}
           />
         </div>
         <div>
@@ -588,6 +615,7 @@ export function AddEmployeeDrawer({ open, onClose, currentUser }: AddEmployeeDra
             placeholder="Search and select manager"
             options={MANAGERS}
             searchable
+            error={errors.reportingManager}
           />
         </div>
         <div>
@@ -597,9 +625,11 @@ export function AddEmployeeDrawer({ open, onClose, currentUser }: AddEmployeeDra
               type="date"
               value={form.joiningDate}
               onChange={(e) => update('joiningDate', e.target.value)}
+              aria-invalid={Boolean(errors.joiningDate)}
               className={cn(
                 'w-full py-2.5 px-4 rounded-xl text-[14px] font-medium',
-                'bg-warm-bg border border-[var(--color-border)]',
+                'bg-warm-bg border',
+                errors.joiningDate ? 'border-status-error/40' : 'border-[var(--color-border)]',
                 'text-[var(--color-brand-navy)] outline-none transition-all duration-150',
                 'focus:border-accent/40 focus:ring-2 focus:ring-accent-light font-sans',
                 !form.joiningDate && 'text-gray-400'
@@ -623,8 +653,8 @@ export function AddEmployeeDrawer({ open, onClose, currentUser }: AddEmployeeDra
           placeholder="Select work arrangement"
           options={WORK_ARRANGEMENTS}
           placement="up"
+          error={errors.workLocation}
         />
-        {errors.workLocation && <div className="mt-1.5 text-[12px] font-medium text-status-error">{errors.workLocation}</div>}
       </div>
 
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 [&>*]:min-w-0">
@@ -634,7 +664,7 @@ export function AddEmployeeDrawer({ open, onClose, currentUser }: AddEmployeeDra
         </div>
         <div>
           <FormLabel>State / Province</FormLabel>
-          <FormInput value={form.workState} onChange={(v) => update('workState', v)} placeholder="e.g. CT" />
+          <FormInput value={form.workState} onChange={(v) => update('workState', v)} placeholder="e.g. CT" error={errors.workState} />
         </div>
       </div>
 

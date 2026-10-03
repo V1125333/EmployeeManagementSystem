@@ -1268,6 +1268,11 @@ async def add_employee(
     require_role_assignment(actor, data.role)
     try:
         result = create_employee(db, data)
+        if not result.success:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "EMPLOYEE_ALREADY_EXISTS", "message": result.message},
+            )
         if result.success and result.employee_id:
             log_audit(
                 db,
@@ -1280,6 +1285,8 @@ async def add_employee(
             )
             db.commit()
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error adding employee: {e}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -32,6 +32,38 @@ class AddEmployeeRequest(BaseModel):
     work_state: Optional[str] = Field(default=None, max_length=120)
     work_country: Optional[str] = Field(default=None, max_length=120)
 
+    @field_validator("first_name", "last_name", "department", "reporting_manager", "work_location")
+    @classmethod
+    def validate_required_text(cls, value: str):
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("must not be blank")
+        return normalized
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, value: str):
+        normalized = value.strip()
+        digit_count = sum(character.isdigit() for character in normalized)
+        if digit_count < 7 or digit_count > 15:
+            raise ValueError("must contain 7 to 15 digits")
+        return normalized
+
+    @field_validator("date_of_birth")
+    @classmethod
+    def validate_date_of_birth(cls, value: Optional[date]):
+        if value is not None and value > date.today():
+            raise ValueError("cannot be in the future")
+        return value
+
+    @field_validator("work_city", "work_state", "work_country")
+    @classmethod
+    def normalize_optional_location(cls, value: Optional[str]):
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
     @field_validator("role", mode="before")
     @classmethod
     def validate_role(cls, value):

@@ -16,7 +16,8 @@ import { Badge, Button, Card, CardHeader } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
 import { HourCentricTimesheetsPage } from '@/pages/timesheets/HourCentricTimesheetsPage';
 import { cn } from '@/utils/cn';
-import { apiErrorMessage, findOverlappingLeaveRequest } from '@/utils/leaveRequestValidation';
+import { apiErrorMessage } from '@/utils/apiError';
+import { findOverlappingLeaveRequest } from '@/utils/leaveRequestValidation';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 const JSON_HEADERS = { 'Content-Type': 'application/json' };

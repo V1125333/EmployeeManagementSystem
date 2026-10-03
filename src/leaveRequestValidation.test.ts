@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import portalSource from './pages/EmployeePortalPages.tsx?raw';
 import uiSource from './components/ui/index.tsx?raw';
-import { apiErrorMessage, findOverlappingLeaveRequest } from './utils/leaveRequestValidation';
+import { apiErrorMessage } from './utils/apiError';
+import { findOverlappingLeaveRequest } from './utils/leaveRequestValidation';
 
 describe('leave request validation feedback', () => {
   it('marks the reason as required and shows an inline error after an attempted action', () => {
