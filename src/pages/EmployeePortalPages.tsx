@@ -16,6 +16,7 @@ import { Badge, Button, Card, CardHeader } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
 import { HourCentricTimesheetsPage } from '@/pages/timesheets/HourCentricTimesheetsPage';
 import { cn } from '@/utils/cn';
+import { apiErrorMessage, findOverlappingLeaveRequest } from '@/utils/leaveRequestValidation';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
@@ -1611,24 +1612,6 @@ function DashboardQuickAction({ icon, label, onClick, disabled = false }: { icon
   );
 }
 
-function apiErrorMessage(payload: unknown, fallback: string): string {
-  if (!payload || typeof payload !== 'object') return fallback;
-  const response = payload as { detail?: unknown; message?: unknown };
-  if (typeof response.detail === 'string' && response.detail.trim()) return response.detail;
-  if (response.detail && typeof response.detail === 'object') {
-    const detail = response.detail as { message?: unknown; msg?: unknown };
-    if (typeof detail.message === 'string' && detail.message.trim()) return detail.message;
-    if (typeof detail.msg === 'string' && detail.msg.trim()) return detail.msg;
-  }
-  if (Array.isArray(response.detail)) {
-    const messages = response.detail
-      .map((item) => item && typeof item === 'object' && 'msg' in item ? String(item.msg) : '')
-      .filter(Boolean);
-    if (messages.length) return messages.join(' ');
-  }
-  return typeof response.message === 'string' && response.message.trim() ? response.message : fallback;
-}
-
 function EmployeeDashboardPageLegacy() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -2524,14 +2507,12 @@ export function ApplyLeavePage() {
     && (isHolidayLeave ? selectedHolidayId : leaveForm.reason.trim())
   );
   const reasonMissing = !isHolidayLeave && !leaveForm.reason.trim();
-  const overlappingLeaveRequest = leaveForm.fromDate && leaveForm.toDate
-    ? leaveRequests.find((request) => (
-        request.id !== editingLeaveId
-        && ['pending', 'approved'].includes(request.status)
-        && request.start_date <= leaveForm.toDate
-        && request.end_date >= leaveForm.fromDate
-      ))
-    : undefined;
+  const overlappingLeaveRequest = findOverlappingLeaveRequest(
+    leaveRequests,
+    leaveForm.fromDate,
+    leaveForm.toDate,
+    editingLeaveId,
+  );
   const overlapMessage = overlappingLeaveRequest
     ? `You already have a ${overlappingLeaveRequest.status} leave request from ${formatDate(overlappingLeaveRequest.start_date)} to ${formatDate(overlappingLeaveRequest.end_date)}. Choose dates that do not overlap.`
     : null;
