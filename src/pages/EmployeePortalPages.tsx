@@ -2164,6 +2164,7 @@ export function ApplyLeavePage() {
   const [savingLeave, setSavingLeave] = useState<'draft' | 'submit' | null>(null);
   const [leaveError, setLeaveError] = useState<string | null>(null);
   const [leaveSuccess, setLeaveSuccess] = useState<string | null>(null);
+  const [leaveValidationAttempted, setLeaveValidationAttempted] = useState(false);
   const [quickLeaveApplied, setQuickLeaveApplied] = useState(false);
   const [floatingHolidays, setFloatingHolidays] = useState<HolidayItem[]>([]);
   const [selectedHolidayId, setSelectedHolidayId] = useState('');
@@ -2203,6 +2204,8 @@ export function ApplyLeavePage() {
   }, [loadLeaveSummary]);
 
   const updateLeaveForm = (key: keyof typeof leaveForm, value: string) => {
+    setLeaveError(null);
+    setLeaveValidationAttempted(false);
     setLeaveForm((current) => {
       const next = { ...current, [key]: value };
       if (key === 'fromDate' && next.toDate && value && next.toDate < value) {
@@ -2213,6 +2216,7 @@ export function ApplyLeavePage() {
   };
 
   const saveLeaveRequest = async (action: 'draft' | 'submit') => {
+    setLeaveValidationAttempted(true);
     setSavingLeave(action);
     setLeaveError(null);
     setLeaveSuccess(null);
@@ -2277,6 +2281,7 @@ export function ApplyLeavePage() {
         reason: '',
       }));
       setSelectedHolidayId('');
+      setLeaveValidationAttempted(false);
       setLeaveSuccess(action === 'draft' ? 'Leave request saved as draft.' : `Leave request submitted. Pending with ${data.reporting_manager || 'Super Admin'}.`);
     } catch (err) {
       setLeaveError(err instanceof Error ? err.message : 'Could not save leave request.');
@@ -2497,12 +2502,12 @@ export function ApplyLeavePage() {
     && leaveForm.toDate
     && (isHolidayLeave ? selectedHolidayId : leaveForm.reason.trim())
   );
+  const reasonMissing = !isHolidayLeave && !leaveForm.reason.trim();
   const submitDisabled = Boolean(
     savingLeave
     || loadingLeave
     || loadingWorkingDays
-    || !formComplete
-    || requestedWorkingDays <= 0
+    || (formComplete && requestedWorkingDays <= 0)
     || selectedLeaveUnavailable
     || hasInsufficientBalance
     || (leavePolicyMessage && selectedPolicy?.allow_future_dates === false)
@@ -2560,8 +2565,9 @@ export function ApplyLeavePage() {
             </div>
 
             {!isHolidayLeave && <label className="block">
-              <div className="mb-2 flex justify-between gap-4"><span className="text-[13px] font-bold text-[#1f2430]">Reason</span><span className="text-xs text-[#a99e8a]">{leaveForm.reason.length} / 200</span></div>
-              <textarea value={leaveForm.reason} onChange={(event) => updateLeaveForm('reason', event.target.value)} placeholder="Add a short reason…" rows={4} maxLength={200} className="w-full resize-none rounded-[10px] border border-[#e4daca] bg-[#faf8f3] px-4 py-3 text-sm text-[#1f2430] outline-none transition placeholder:text-[#aaa394] focus:border-[#d97a34] focus:ring-2 focus:ring-[#d97a34]/10" />
+              <div className="mb-2 flex justify-between gap-4"><span className="text-[13px] font-bold text-[#1f2430]">Reason <span className="text-[#d64545]" aria-hidden="true">*</span><span className="sr-only">required</span></span><span className="text-xs text-[#a99e8a]">{leaveForm.reason.length} / 200</span></div>
+              <textarea required aria-invalid={leaveValidationAttempted && reasonMissing} aria-describedby="leave-reason-help" value={leaveForm.reason} onChange={(event) => updateLeaveForm('reason', event.target.value)} placeholder="Add a short reason…" rows={4} maxLength={200} className={cn('w-full resize-none rounded-[10px] border bg-[#faf8f3] px-4 py-3 text-sm text-[#1f2430] outline-none transition placeholder:text-[#aaa394] focus:ring-2', leaveValidationAttempted && reasonMissing ? 'border-[#d64545] focus:border-[#d64545] focus:ring-[#d64545]/10' : 'border-[#e4daca] focus:border-[#d97a34] focus:ring-[#d97a34]/10')} />
+              <div id="leave-reason-help" className={cn('mt-2 text-xs', leaveValidationAttempted && reasonMissing ? 'font-semibold text-[#d64545]' : 'text-[#8a8371]')}>{leaveValidationAttempted && reasonMissing ? 'Reason is required to save or submit this request.' : 'Required · Add a short explanation for your approver.'}</div>
               {leavePolicyMessage && <div className={cn('mt-2 text-xs font-semibold', selectedPolicy?.allow_future_dates === false ? 'text-[#d64545]' : 'text-[#c47b1a]')}>{leavePolicyMessage}</div>}
             </label>}
           </div>
@@ -2585,9 +2591,10 @@ export function ApplyLeavePage() {
             <div className="min-w-0"><div className="text-[10px] font-bold uppercase tracking-[.08em] text-[#a99e8a]">Approver</div><div className="truncate text-sm font-bold">{reportingManager}</div></div>
           </div>
           <div className="mt-5 grid grid-cols-2 gap-3">
-            <Button variant="ghost" disabled={!!savingLeave || loadingLeave || !formComplete} onClick={() => saveLeaveRequest('draft')} className="border-[#e4daca] bg-white text-[#1f2430] hover:bg-[#fbf5ea]">{savingLeave === 'draft' ? 'Saving…' : 'Save Draft'}</Button>
+            <Button variant="ghost" disabled={!!savingLeave || loadingLeave} onClick={() => saveLeaveRequest('draft')} className="border-[#e4daca] bg-white text-[#1f2430] hover:bg-[#fbf5ea]">{savingLeave === 'draft' ? 'Saving…' : 'Save Draft'}</Button>
             <Button disabled={submitDisabled} onClick={() => saveLeaveRequest('submit')} className="border-[#d97a34] bg-[#d97a34] shadow-[0_7px_16px_rgba(217,122,52,.18)] hover:bg-[#c9611f]">{savingLeave === 'submit' ? 'Submitting…' : editingLeaveId ? 'Submit Draft' : 'Submit Request'}</Button>
           </div>
+          {leaveError && <div role="alert" className="mt-3 rounded-lg border border-[#d64545]/20 bg-[#fcecec] px-3 py-2 text-xs font-semibold text-[#d64545]">{leaveError}</div>}
         </aside>
       </div>
 

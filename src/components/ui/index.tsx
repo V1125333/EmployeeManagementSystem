@@ -142,7 +142,7 @@ export function Button({
   return (
     <button
       className={cn(
-        'inline-flex items-center gap-1.5 font-semibold rounded-btn transition-all duration-150 cursor-pointer',
+        'inline-flex items-center gap-1.5 font-semibold rounded-btn transition-all duration-150 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100',
         size === 'sm' ? 'px-3 py-1.5 text-xs' : 'px-4 py-2 text-[13px]',
         variant === 'primary' &&
           'bg-[var(--color-text-primary)] text-warm-card shadow-sm hover:opacity-90 active:scale-[0.98]',
