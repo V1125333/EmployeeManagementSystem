@@ -1611,6 +1611,24 @@ function DashboardQuickAction({ icon, label, onClick, disabled = false }: { icon
   );
 }
 
+function apiErrorMessage(payload: unknown, fallback: string): string {
+  if (!payload || typeof payload !== 'object') return fallback;
+  const response = payload as { detail?: unknown; message?: unknown };
+  if (typeof response.detail === 'string' && response.detail.trim()) return response.detail;
+  if (response.detail && typeof response.detail === 'object') {
+    const detail = response.detail as { message?: unknown; msg?: unknown };
+    if (typeof detail.message === 'string' && detail.message.trim()) return detail.message;
+    if (typeof detail.msg === 'string' && detail.msg.trim()) return detail.msg;
+  }
+  if (Array.isArray(response.detail)) {
+    const messages = response.detail
+      .map((item) => item && typeof item === 'object' && 'msg' in item ? String(item.msg) : '')
+      .filter(Boolean);
+    if (messages.length) return messages.join(' ');
+  }
+  return typeof response.message === 'string' && response.message.trim() ? response.message : fallback;
+}
+
 function EmployeeDashboardPageLegacy() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -2230,6 +2248,9 @@ export function ApplyLeavePage() {
       if (leaveForm.toDate < leaveForm.fromDate) {
         throw new Error('End date must be on or after start date.');
       }
+      if (overlappingLeaveRequest && overlapMessage) {
+        throw new Error(overlapMessage);
+      }
       if (minAllowedDate && (leaveForm.fromDate < minAllowedDate || leaveForm.toDate < minAllowedDate)) {
         if (leaveSummary?.joining_date && (leaveForm.fromDate < leaveSummary.joining_date || leaveForm.toDate < leaveSummary.joining_date)) {
           throw new Error(`Leave cannot be applied before your joining date (${formatDate(leaveSummary.joining_date)}).`);
@@ -2267,7 +2288,7 @@ export function ApplyLeavePage() {
         }),
       });
       const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.detail || 'Could not save leave request.');
+      if (!res.ok) throw new Error(apiErrorMessage(data, 'Could not save leave request.'));
       setLeaveSummary(data);
       setReportingManager(data.reporting_manager || 'Not assigned');
       setEditingLeaveId(null);
@@ -2503,6 +2524,17 @@ export function ApplyLeavePage() {
     && (isHolidayLeave ? selectedHolidayId : leaveForm.reason.trim())
   );
   const reasonMissing = !isHolidayLeave && !leaveForm.reason.trim();
+  const overlappingLeaveRequest = leaveForm.fromDate && leaveForm.toDate
+    ? leaveRequests.find((request) => (
+        request.id !== editingLeaveId
+        && ['pending', 'approved'].includes(request.status)
+        && request.start_date <= leaveForm.toDate
+        && request.end_date >= leaveForm.fromDate
+      ))
+    : undefined;
+  const overlapMessage = overlappingLeaveRequest
+    ? `You already have a ${overlappingLeaveRequest.status} leave request from ${formatDate(overlappingLeaveRequest.start_date)} to ${formatDate(overlappingLeaveRequest.end_date)}. Choose dates that do not overlap.`
+    : null;
   const submitDisabled = Boolean(
     savingLeave
     || loadingLeave
@@ -2563,6 +2595,7 @@ export function ApplyLeavePage() {
               <CalendarCheck size={17} className="text-[#d97a34]" />
               {loadingWorkingDays ? <span>Calculating working days…</span> : leaveForm.fromDate && leaveForm.toDate ? <><span>You&apos;re requesting</span><strong className="text-[15px] text-[#b8611f]">{requestedWorkingDays} working {requestedWorkingDays === 1 ? 'day' : 'days'}</strong><span>({requestDateLabel} · {workingDays?.weekends || 0} weekend day{workingDays?.weekends === 1 ? '' : 's'}{workingDays?.holidays ? ` and ${workingDays.holidays} holiday${workingDays.holidays === 1 ? '' : 's'}` : ''} excluded)</span></> : <span>Select a date range to calculate working days; weekends and company holidays will be excluded.</span>}
             </div>
+            {overlapMessage && <div role="alert" className="rounded-xl border border-[#d64545]/20 bg-[#fcecec] px-4 py-3 text-sm font-semibold text-[#d64545]">{overlapMessage}</div>}
 
             {!isHolidayLeave && <label className="block">
               <div className="mb-2 flex justify-between gap-4"><span className="text-[13px] font-bold text-[#1f2430]">Reason <span className="text-[#d64545]" aria-hidden="true">*</span><span className="sr-only">required</span></span><span className="text-xs text-[#a99e8a]">{leaveForm.reason.length} / 200</span></div>

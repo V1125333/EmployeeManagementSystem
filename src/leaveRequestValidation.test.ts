@@ -18,4 +18,10 @@ describe('leave request validation feedback', () => {
   it('styles genuinely disabled shared buttons as unavailable', () => {
     expect(uiSource).toContain('disabled:cursor-not-allowed disabled:opacity-50');
   });
+
+  it('renders structured API errors and warns about overlapping pending leave', () => {
+    expect(portalSource).toContain("typeof detail.message === 'string'");
+    expect(portalSource).toContain("['pending', 'approved'].includes(request.status)");
+    expect(portalSource).toContain('Choose dates that do not overlap.');
+  });
 });
